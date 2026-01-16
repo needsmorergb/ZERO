@@ -11,7 +11,13 @@ A Chrome extension that provides **ZERØ** (zero-risk) paper trading functionali
 
 ## Installation
 
-### From Source (Development)
+### Method 1: Packed Extension (.crx) - Recommended for Users
+1. Download the `zero-dist.crx` file.
+2. Open Chrome and navigate to `chrome://extensions/`.
+3. Enable **"Developer mode"** in the top right.
+4. Drag and drop the `.crx` file into the window to install.
+
+### Method 2: From Source (Development)
 
 1. Clone or download this repository
 2. Open Chrome and navigate to `chrome://extensions/`
