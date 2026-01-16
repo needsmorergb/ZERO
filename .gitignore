@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Build outputs
+dist/
+build/
+*.bundle.js.map
+
+# --- PROTECTED SOURCE CODE ---
+# These files contain the core logic/IP and are excluded from public repos.
+# Only the compiled/minified 'src/content.bundle.js' is shared.
+src/content.source.js
+src/content.js
+src/terminals/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Extension packaging
+*.zip
+*.crx
+*.pem
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Temporary files
+*.tmp
+.cache/
