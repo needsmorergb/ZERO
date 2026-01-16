@@ -81,20 +81,6 @@ sol-paper-ext/
    - Platform-specific logic for extracting token information
    - Currently supports Axiom with Padre support planned
 
-## Configuration
-
-### Customizing URLs
-
-Edit `src/popup/popup.js` to change the default platform URLs:
-
-```javascript
-const CONFIG = {
-  AXIOM_URL: "https://axiom.trade/@yourhandle",
-  TERMINAL_URL: "https://trade.padre.gg/rk/yourhandle",
-  DISCORD_URL: "https://discord.gg/yourinvite",
-};
-```
-
 ## Development
 
 ### Building
