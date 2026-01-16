@@ -9,7 +9,7 @@
   const $ = (id) => document.getElementById(id);
 
   // Set asset URLs
-  $("paperIcon").src = chrome.runtime.getURL("assets/paper-48.png");
+  $("paperIcon").src = chrome.runtime.getURL("assets/zero-48.png");
   $("axiomLogo").src = chrome.runtime.getURL("assets/axiom.png");
   $("terminalLogo").src = chrome.runtime.getURL("assets/terminal.png");
 

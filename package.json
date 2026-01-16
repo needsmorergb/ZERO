@@ -1,7 +1,7 @@
 {
-  "name": "solana-paper-trader-extension",
-  "version": "0.1.0",
-  "description": "Paper trading overlay for Solana spot on Axiom and Terminal (Padre)",
+  "name": "zero-solana-paper-trading",
+  "version": "0.4.0",
+  "description": "ZERØ - Zero risk paper trading overlay for Solana on Axiom and Terminal.",
   "private": true,
   "type": "module",
   "scripts": {

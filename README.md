@@ -1,10 +1,10 @@
-# Solana Paper Trader Overlay
+# ZERØ - Solana Paper Trading
 
-A Chrome extension that provides paper trading functionality for Solana spot trading on Axiom and Terminal (Padre) platforms.
+A Chrome extension that provides **ZERØ** (zero-risk) paper trading functionality for Solana spot trading on Axiom and Terminal (Padre) platforms.
 
 ## Features
 
-- 📊 **Paper Trading Overlay**: Simulated trading without risking real funds
+- 📊 **ZERØ Trading Overlay**: Simulated trading without risking real funds
 - 💰 **Real-time Price Tracking**: Monitors SOL/USD prices from multiple sources (Coinbase, Kraken)
 - 🎯 **Multi-Platform Support**: Works with Axiom and Terminal (Padre)
 - 🔒 **Safe**: Your real wallet is never touched by this extension
@@ -21,10 +21,10 @@ A Chrome extension that provides paper trading functionality for Solana spot tra
 
 ## Usage
 
-1. Click the extension icon in your browser toolbar
+1. Click the ZERØ icon in your browser toolbar
 2. Choose either "Launch Axiom" or "Launch Terminal" to open the trading platform
 3. The extension will automatically activate on supported platforms
-4. Look for the "Paper mode active" badge in the bottom-right corner
+4. Look for the "ZERØ mode active" badge in the bottom-right corner
 
 ## Architecture
 
