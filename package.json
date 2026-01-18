@@ -1,6 +1,6 @@
 {
   "name": "zero-solana-paper-trading",
-  "version": "0.4.0",
+  "version": "0.8.0",
   "description": "ZERØ - Zero risk paper trading overlay for Solana on Axiom and Terminal.",
   "private": true,
   "type": "module",

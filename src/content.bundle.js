@@ -13,12 +13,14 @@
     }
     const EXT = {
       KEY: "sol_paper_trader_v1",
-      VERSION: "0.1.0",
+      VERSION: "0.8.0",
       DEBUG: true,
-      // Enable for debugging P&L issues
       PLATFORM: PLATFORM.name
     };
-    const log = (...m) => EXT.DEBUG && console.log("%cpaper:Padre v51-Brand", "color: #ff0; font-weight: bold", ...m);
+    const log = (...m) => EXT.DEBUG && console.log(`%c[ZER\xD8 ${EXT.VERSION}]`, "color: #14b8a6; font-weight: bold; background: #0d1117; padding: 2px 6px; border-radius: 3px;", ...m);
+    console.log("%c ================================", "color: #14b8a6");
+    console.log(`%c \u{1F3AF} ZER\xD8 Extension v${EXT.VERSION} LOADED \u{1F3AF}`, "color: #14b8a6; font-weight: bold; font-size: 16px; background: #0d1117; padding: 8px 16px; border-radius: 6px;");
+    console.log("%c ================================", "color: #14b8a6");
     const DEFAULTS = {
       enabled: true,
       buyHudDocked: true,
@@ -1900,26 +1902,62 @@
         timestamp: ts
       }, "*");
     }
+    const sessionRenderedMints = /* @__PURE__ */ new Set();
+    let lastRenderCallTs = 0;
+    let renderCallCount = 0;
     function renderTradeMarkers() {
-      if (!PLATFORM.isPadre || !STATE.trades || STATE.trades.length === 0)
-        return;
-      const currentMint = getCurrentTokenMint();
-      if (!currentMint) {
-        log("renderTradeMarkers: No current token mint found");
+      renderCallCount++;
+      const callId = renderCallCount;
+      const now = Date.now();
+      const timeSinceLast = now - lastRenderCallTs;
+      log(`\u{1F4CD} renderTradeMarkers CALLED #${callId} (${timeSinceLast}ms since last)`);
+      if (!PLATFORM.isPadre) {
+        log(`renderTradeMarkers #${callId}: Not on Padre, skipping`);
         return;
       }
-      const tokenTrades = STATE.trades.filter((t) => t.mint === currentMint);
-      log("renderTradeMarkers: Found", tokenTrades.length, "trades for", currentMint);
-      tokenTrades.forEach((trade) => {
-        const ts = Math.floor(trade.ts / 1e3);
-        createTradeMarker(
-          trade.side.toLowerCase(),
-          trade.priceUsd,
-          trade.solSize,
-          trade.marketCap,
-          ts
-        );
+      if (timeSinceLast < 5e3 && lastRenderCallTs > 0) {
+        log(`\u{1F4CD} renderTradeMarkers #${callId}: THROTTLED (only ${timeSinceLast}ms since last call)`);
+        return;
+      }
+      if (!STATE.trades || STATE.trades.length === 0) {
+        log(`renderTradeMarkers #${callId}: No trades in STATE, count:`, STATE.trades?.length || 0);
+        return;
+      }
+      const currentMint = getCurrentTokenMint();
+      const currentStable = getStableToken();
+      const tokenKey = currentMint || currentStable?.symbol || "";
+      log(`\u{1F4CD} renderTradeMarkers #${callId}: tokenKey="${tokenKey}", sessionRenderedMints has: ${[...sessionRenderedMints].join(", ") || "none"}`);
+      if (sessionRenderedMints.has(tokenKey)) {
+        log(`\u{1F4CD} renderTradeMarkers #${callId}: Already rendered for ${tokenKey} - SKIPPING`);
+        return;
+      }
+      log("renderTradeMarkers: Looking for trades matching mint:", currentMint, "or symbol:", currentStable?.symbol);
+      log("renderTradeMarkers: Total trades in STATE:", STATE.trades.length);
+      if (!currentMint && !currentStable?.symbol) {
+        log("renderTradeMarkers: No current token identifier found");
+        return;
+      }
+      const tokenTrades = STATE.trades.filter((t) => {
+        if (t.mint && currentMint && t.mint === currentMint)
+          return true;
+        if (t.symbol && currentStable?.symbol && t.symbol === currentStable.symbol)
+          return true;
+        return false;
       });
+      log("\u{1F4CD} renderTradeMarkers: Found", tokenTrades.length, "trades for current token");
+      if (tokenTrades.length === 0) {
+        log("renderTradeMarkers: No trades match current token");
+        return;
+      }
+      sessionRenderedMints.add(tokenKey);
+      lastRenderCallTs = Date.now();
+      log(`\u{1F4CD} Marked ${tokenKey} as rendered. Session rendered mints: ${sessionRenderedMints.size}. lastRenderCallTs updated.`);
+      log("\u{1F4CD} Sending RENDER_STORED_MARKERS message with", tokenTrades.length, "trades");
+      window.postMessage({
+        __paper: true,
+        type: "RENDER_STORED_MARKERS",
+        trades: tokenTrades
+      }, "*");
     }
     function getCurrentTokenMint() {
       const urlMatch = window.location.pathname.match(/\/([A-Za-z0-9]{32,})/);
@@ -2161,8 +2199,9 @@
               log("[v51 BUY] Added", solAmount, "SOL. Total:", pos.totalSolSpent, "Weighted Entry MC:", weightedEntryMC);
               if (!STATE.trades)
                 STATE.trades = [];
+              const tradeTs = Date.now();
               STATE.trades.push({
-                ts: Date.now(),
+                ts: tradeTs,
                 side: "BUY",
                 symbol,
                 mint,
@@ -2173,7 +2212,7 @@
               });
               await saveState();
               updatePnlHud();
-              createTradeMarker("buy", currentPriceUsd, solAmount, marketCap);
+              createTradeMarker("buy", currentPriceUsd, solAmount, marketCap, tradeTs);
               log("Buy executed:", {
                 symbol,
                 solAmount,
@@ -2302,8 +2341,9 @@
               const sellMarketCap = getMarketCap();
               if (!STATE.trades)
                 STATE.trades = [];
+              const tradeTs = Date.now();
               STATE.trades.push({
-                ts: Date.now(),
+                ts: tradeTs,
                 side: "SELL",
                 symbol,
                 mint,
@@ -2314,20 +2354,23 @@
                 pnlSol: realizedPnlSol,
                 // For analyzeRecentTrades
                 marketCap: sellMarketCap,
-                exitMc: sellMarketCap,
-                entryMc: pos.entryMarketCap || null,
                 entryTs: pos.entryTs || null,
-                exitTs: Date.now()
+                entryMarketCap: pos.entryMarketCap || null,
+                holdTimeMs: tradeTs - (pos.entryTs || tradeTs)
               });
-              await saveState();
+              if (pos.tokenQty <= 1e-6) {
+                delete STATE.positions[posKey];
+                updatePnlHud();
+              }
               updatePnlHud();
+              await saveState();
               const sellNow = Date.now();
               const entryTs = pos.entryTs || 0;
               const holdTimeMs = sellNow - entryTs;
               const entryMC = pos.entryMarketCap || sellMarketCap;
               const mcRatio = entryMC > 0 ? sellMarketCap / entryMC : 1;
               const pctGainLoss = (mcRatio - 1) * 100;
-              if (realizedPnlSol < 0 && holdTimeMs < 3e4) {
+              if (holdTimeMs < 3e4 && realizedPnlSol < 0) {
                 setTimeout(() => showProfessorCritique("quick_exit_loss", holdTimeMs), 500);
               }
               if (realizedPnlSol < 0 && pctGainLoss > -10 && pctGainLoss < -2 && holdTimeMs > 3e4) {
@@ -2345,7 +2388,7 @@
               STATE.lastSellTs = sellNow;
               STATE.lastSellPnl = realizedPnlSol;
               await saveState();
-              createTradeMarker("sell", currentPriceUsd, solReceived, sellMarketCap);
+              createTradeMarker("sell", currentPriceUsd, solReceived, sellMarketCap, tradeTs);
               const pnlSign = realizedPnlSol >= 0 ? "+" : "";
               const status = root.querySelector('[data-k="status"]');
               if (status)
@@ -2775,10 +2818,17 @@
             }, 2e3);
           }
           if (isOnTradePage2() && hudInitialized) {
+            sessionRenderedMints.clear();
+            log("Cleared sessionRenderedMints for fresh chart");
+            log("Navigation detected, will refresh HUDs and markers for new token if needed");
             setTimeout(() => {
               log("Refreshing HUDs for new token...");
               updatePnlHud();
               updateBuyHud();
+              waitForTvWidget(() => {
+                log("Re-rendering trade markers for new token...");
+                renderTradeMarkers();
+              }, 3e3);
             }, 1500);
           }
         }
