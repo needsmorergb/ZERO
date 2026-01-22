@@ -28,7 +28,7 @@ html, body {
   margin-bottom: 12px;
 }
 
-.paperIcon { width: 22px; height: 22px; }
+.zeroIcon { width: 22px; height: 22px; }
 .titleBlock { display: flex; flex-direction: column; gap: 2px; }
 .title { font-weight: 800; letter-spacing: 0.2px; }
 .sub { font-size: 12px; color: var(--muted); }

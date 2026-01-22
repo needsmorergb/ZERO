@@ -55,8 +55,10 @@
       // Array of recent buy timestamps (for FOMO detection)
       sessionTradeCount: 0,
       // Count of trades this session (for overtrading)
-      sessionStartTs: 0
+      sessionStartTs: 0,
       // When this trading session started
+      tutorialCompleted: false
+      // Flag for Professor walkthrough persistence
     };
     const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
     function nowLocalTimeString(ts) {
@@ -88,16 +90,37 @@
     }
     function storageGet(key) {
       return new Promise((resolve) => {
-        if (!isChromeStorageAvailable())
-          return resolve(void 0);
-        chrome.storage.local.get([key], (res) => resolve(res[key]));
+        try {
+          if (!isChromeStorageAvailable())
+            return resolve(void 0);
+          chrome.storage.local.get([key], (res) => {
+            if (chrome.runtime.lastError) {
+              console.warn("[paper] Storage get error:", chrome.runtime.lastError.message);
+              return resolve(void 0);
+            }
+            resolve(res[key]);
+          });
+        } catch (e) {
+          console.warn("[paper] Storage get exception:", e.message);
+          resolve(void 0);
+        }
       });
     }
     function storageSet(obj) {
       return new Promise((resolve) => {
-        if (!isChromeStorageAvailable())
-          return resolve();
-        chrome.storage.local.set(obj, () => resolve());
+        try {
+          if (!isChromeStorageAvailable())
+            return resolve();
+          chrome.storage.local.set(obj, () => {
+            if (chrome.runtime.lastError) {
+              console.warn("[paper] Storage set error:", chrome.runtime.lastError.message);
+            }
+            resolve();
+          });
+        } catch (e) {
+          console.warn("[paper] Storage set exception:", e.message);
+          resolve();
+        }
       });
     }
     function deepMerge(base, patch) {
@@ -1638,6 +1661,28 @@
         ];
         message = messages[Math.floor(Math.random() * messages.length)];
         message += "\n\n\u{1F4A1} Tip: Once up 20%+, set a trailing stop or take partial profits.";
+      } else if (trigger === "big_win") {
+        const pctGain = value.toFixed(0);
+        title = "\u{1F389} Big Win!";
+        const messages = [
+          `+${pctGain}% on that trade! Incredible. Now's the time to breathe and NOT revenge buy something else.`,
+          `${pctGain}% profit! You crushed it. Take a moment to celebrate - then step away for 10 minutes.`,
+          `MASSIVE WIN at +${pctGain}%! Don't let this go to your head. Overconfidence is the silent killer.`,
+          `+${pctGain}% secured! The adrenaline high is real, but calm traders make more money over time.`
+        ];
+        message = messages[Math.floor(Math.random() * messages.length)];
+        message += "\n\n\u{1F4A1} Pro Tip: After a big win, take a break. Your next trade is likely to be overconfident and poorly timed.";
+      } else if (trigger === "big_loss") {
+        const pctLoss = Math.abs(value).toFixed(0);
+        title = "\u{1F494} Tough Loss";
+        const messages = [
+          `-${pctLoss}% is painful. Take a breath. The market will be here tomorrow.`,
+          `Down ${pctLoss}% on that one. Shake it off. Every pro trader has these days.`,
+          `A -${pctLoss}% hit stings. Now is NOT the time to revenge trade. Walk away for 15 minutes.`,
+          `Ouch, -${pctLoss}%. This is where amateurs blow up trying to make it back. Don't be that guy.`
+        ];
+        message = messages[Math.floor(Math.random() * messages.length)];
+        message += "\n\n\u{1F4A1} Pro Tip: After a big loss, your judgment is impaired. Step away from the screen and do something else.";
       } else if (trigger === "achievement") {
         title = "\u{1F3C6} Incredible Achievement!";
         const achievementMessages = [
@@ -1733,6 +1778,157 @@
         }
       });
       log("Professor critique shown:", trigger, value);
+    }
+    const TUTORIAL_CSS = `
+    .professor-overlay.tutorial-mode {
+      background: transparent !important;
+      pointer-events: none !important;
+    }
+    .professor-overlay.tutorial-mode .professor-container {
+      pointer-events: auto !important;
+    }
+    .highlight-active {
+      outline: 3px solid #14b8a6 !important;
+      outline-offset: 4px !important;
+      box-shadow: 0 0 30px rgba(20,184,166,0.8) !important;
+      animation: highlightGlow 1.5s ease-in-out infinite !important;
+    }
+    @keyframes highlightGlow {
+      0%, 100% { outline-color: #14b8a6; box-shadow: 0 0 20px rgba(20,184,166,0.6); }
+      50% { outline-color: #5eead4; box-shadow: 0 0 40px rgba(20,184,166,1); }
+    }
+  `;
+    function ensureTutorialStyle() {
+      const root = getShadowRoot();
+      if (root.getElementById("paper-tutorial-style"))
+        return;
+      const style = document.createElement("style");
+      style.id = "paper-tutorial-style";
+      style.textContent = TUTORIAL_CSS;
+      root.appendChild(style);
+    }
+    const TUTORIAL_STEPS = [
+      {
+        title: "\u{1F44B} Welcome to ZER\xD8!",
+        message: "I'm Professor Zero, and I'm here to help you master Solana trading without risking a single penny!<br><br>This is a <b>Paper Trading Simulation</b>. Everything looks real, but your wallet is completely safe.",
+        highlightId: null
+      },
+      {
+        title: "\u{1F6E1}\uFE0F Zero Risk, Real Data",
+        message: "See that overlay? That's your command center.<br><br>We use <b>real-time market data</b> to simulate exactly what would happen if you traded for real. Same prices, same thrills, zero risk.",
+        highlightId: IDS.banner
+      },
+      {
+        title: "\u{1F4CA} Your P&L Tracker",
+        message: "Keep an eye on the <b>P&L (Profit & Loss)</b> bar.<br><br>It tracks your wins and losses in real-time. I'll pop in occasionally to give you tips!<br><br>\u26A0\uFE0F The <b>RESET</b> button clears your entire session - balance, trades, and P&L.",
+        highlightId: IDS.pnlHud
+      },
+      {
+        title: "\u{1F4B8} Buying & Selling",
+        message: "Use the <b>HUD Panel</b> to place trades.<br><br>Enter an amount and click <b>BUY</b>. When you're ready to exit, switch to the <b>SELL</b> tab.<br><br>Try to build your 10 SOL starting balance into a fortune!",
+        highlightId: IDS.buyHud
+      },
+      {
+        title: "\u{1F680} Ready to Trade?",
+        message: "That's it! You're ready to hit the markets.<br><br>Remember: The goal is to learn. Don't be afraid to make mistakes here\u2014that's how you get better.<br><br><b>Good luck, trader!</b>",
+        highlightId: null
+      }
+    ];
+    function showProfessorTutorial(stepIndex = 0) {
+      const container = getShadowContainer();
+      if (!container)
+        return;
+      const professorImgUrl = typeof chrome !== "undefined" && chrome.runtime?.getURL ? chrome.runtime.getURL("src/professor.png") : "";
+      const step = TUTORIAL_STEPS[stepIndex];
+      if (!step)
+        return;
+      const existing = container.querySelector(".professor-overlay");
+      if (existing)
+        existing.remove();
+      const overlay = document.createElement("div");
+      overlay.className = "professor-overlay";
+      overlay.classList.add("tutorial-mode");
+      const isLastStep = stepIndex === TUTORIAL_STEPS.length - 1;
+      const btnText = isLastStep ? "Let's Go! \u{1F680}" : "Next \u27A1\uFE0F";
+      overlay.innerHTML = `
+      <div class="professor-container">
+        ${professorImgUrl ? `<img class="professor-image" src="${professorImgUrl}" alt="Professor">` : ""}
+        <div class="professor-bubble">
+          <div class="professor-title">${step.title}</div>
+          <div class="professor-message">${step.message}</div>
+          <div class="professor-stats" style="margin-top:10px;text-align:right;color:#64748b;font-size:12px;">
+            Step ${stepIndex + 1} of ${TUTORIAL_STEPS.length}
+          </div>
+          <button class="professor-dismiss">${btnText}</button>
+        </div>
+      </div>
+    `;
+      container.appendChild(overlay);
+      overlay.querySelector(".professor-dismiss").addEventListener("click", async () => {
+        if (isLastStep) {
+          overlay.style.animation = "professorFadeIn 0.2s ease-out reverse";
+          setTimeout(() => overlay.remove(), 200);
+          STATE.tutorialCompleted = true;
+          await saveState();
+          log("Tutorial completed.");
+        } else {
+          showProfessorTutorial(stepIndex + 1);
+        }
+      });
+    }
+    function showProfessorTutorial2(stepIndex = 0) {
+      const container = getShadowContainer();
+      const shadowRoot2 = getShadowRoot();
+      if (!container || !shadowRoot2)
+        return;
+      ensureTutorialStyle();
+      const professorImgUrl = typeof chrome !== "undefined" && chrome.runtime?.getURL ? chrome.runtime.getURL("src/professor.png") : "";
+      const step = TUTORIAL_STEPS[stepIndex];
+      if (!step)
+        return;
+      const highlighted = container.querySelectorAll(".highlight-active");
+      highlighted.forEach((el) => el.classList.remove("highlight-active"));
+      if (step.highlightId) {
+        const target = shadowRoot2.getElementById(step.highlightId);
+        if (target) {
+          target.classList.add("highlight-active");
+        }
+      }
+      const existing = container.querySelector(".professor-overlay");
+      if (existing)
+        existing.remove();
+      const overlay = document.createElement("div");
+      overlay.className = "professor-overlay";
+      overlay.classList.add("tutorial-mode");
+      const isLastStep = stepIndex === TUTORIAL_STEPS.length - 1;
+      const btnText = isLastStep ? "Let's Go! \u{1F680}" : "Next \u27A1\uFE0F";
+      overlay.innerHTML = `
+      <div class="professor-container">
+        ${professorImgUrl ? `<img class="professor-image" src="${professorImgUrl}" alt="Professor">` : ""}
+        <div class="professor-bubble">
+          <div class="professor-title">${step.title}</div>
+          <div class="professor-message">${step.message}</div>
+          <div class="professor-stats" style="margin-top:10px;text-align:right;color:#64748b;font-size:12px;">
+            Step ${stepIndex + 1} of ${TUTORIAL_STEPS.length}
+          </div>
+          <button class="professor-dismiss">${btnText}</button>
+        </div>
+      </div>
+    `;
+      container.appendChild(overlay);
+      overlay.querySelector(".professor-dismiss").addEventListener("click", async () => {
+        if (isLastStep) {
+          overlay.style.animation = "professorFadeIn 0.2s ease-out reverse";
+          setTimeout(() => overlay.remove(), 200);
+          const highlighted2 = container.querySelectorAll(".highlight-active");
+          highlighted2.forEach((el) => el.classList.remove("highlight-active"));
+          STATE.tutorialCompleted = true;
+          await saveState();
+          log("Tutorial completed.");
+        } else {
+          showProfessorTutorial2(stepIndex + 1);
+        }
+      });
     }
     function updatePnlHud() {
       const root = getShadowRoot().getElementById(IDS.pnlHud);
@@ -2387,6 +2583,12 @@
               }
               STATE.lastSellTs = sellNow;
               STATE.lastSellPnl = realizedPnlSol;
+              if (pctGainLoss >= 50) {
+                setTimeout(() => showProfessorCritique("big_win", pctGainLoss), 1300);
+              }
+              if (pctGainLoss <= -30) {
+                setTimeout(() => showProfessorCritique("big_loss", pctGainLoss), 1300);
+              }
               await saveState();
               createTradeMarker("sell", currentPriceUsd, solReceived, sellMarketCap, tradeTs);
               const pnlSign = realizedPnlSol >= 0 ? "+" : "";
@@ -2785,11 +2987,19 @@
       if (isOnTradePage2()) {
         setTimeout(() => {
           minimalBoot().catch((e) => console.warn("[paper] boot error", e));
+          setTimeout(() => {
+            if (!STATE.tutorialCompleted && !sessionTutorialTriggered && getShadowContainer()) {
+              sessionTutorialTriggered = true;
+              log("Triggering Professor Tutorial from Initial Load");
+              showProfessorTutorial2(0);
+            }
+          }, 1e3);
         }, 3e3);
       }
       let lastPath = window.location.pathname;
       let lastHref = window.location.href;
       let hudInitialized = false;
+      let sessionTutorialTriggered = false;
       const updateVisibility = () => {
         const banner = shadowRoot?.getElementById?.("paper-mode-banner");
         const pnlHud = shadowRoot?.getElementById?.("paper-pnl-hud");
@@ -2811,11 +3021,20 @@
           lastPath = currentPath;
           lastHref = currentHref;
           updateVisibility();
-          if (isOnTradePage2() && !hudInitialized) {
-            hudInitialized = true;
-            setTimeout(() => {
-              minimalBoot().catch((e) => console.warn("[paper] boot error", e));
-            }, 2e3);
+          if (isOnTradePage2()) {
+            if (!hudInitialized) {
+              hudInitialized = true;
+              setTimeout(() => {
+                minimalBoot().catch((e) => console.warn("[paper] boot error", e));
+              }, 2e3);
+            }
+            if (!STATE.tutorialCompleted && !sessionTutorialTriggered) {
+              if (getShadowContainer()) {
+                sessionTutorialTriggered = true;
+                log("Triggering Professor Tutorial from Nav Loop");
+                setTimeout(() => showProfessorTutorial2(0), 1e3);
+              }
+            }
           }
           if (isOnTradePage2() && hudInitialized) {
             sessionRenderedMints.clear();

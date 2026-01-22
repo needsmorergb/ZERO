@@ -1,5 +1,5 @@
 // Paper Trader Auto-Fix - Chart Markers & Price Monitoring
-// Version: 0.7.0
+// Version: 0.8.0
 
 (function () {
     'use strict';
@@ -253,6 +253,11 @@
             // Queue the marker for when widget becomes available
             console.log(`[auto-fix v${VERSION}] Widget not ready, queuing marker for later`);
             pendingMarkers.push({ side, price, marketCap, timestamp });
+
+            // Trigger immediate retry attempts (faster than 2s poll interval)
+            setTimeout(processPendingMarkers, 100);
+            setTimeout(processPendingMarkers, 500);
+            setTimeout(processPendingMarkers, 1000);
             return null;
         }
     }
