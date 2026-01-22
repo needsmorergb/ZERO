@@ -9,6 +9,13 @@ A Chrome extension that provides **ZERØ** (zero-risk) paper trading functionali
 - 🎯 **Multi-Platform Support**: Works with Axiom and Terminal (Padre)
 - 🔒 **Safe**: Your real wallet is never touched by this extension
 
+## Recent Changes
+
+### [v0.9.0]
+- 🎯 **ZERØ Branding Sync**: Unified branding across all HUDs and UI elements.
+- 🧙‍♂️ **Professor Walkthrough Fix**: Walkthrough now only triggers once on first launch.
+- 💎 **Visual Polish**: Updated icons and UI cleanup for a cleaner look.
+
 ## Installation
 
 ### Method 1: Packed Extension (.crx) - Recommended for Users
