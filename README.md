@@ -11,6 +11,9 @@ A Chrome extension that provides **ZERØ** (zero-risk) paper trading functionali
 
 ## Recent Changes
 
+### [v0.9.1]
+- 🧙‍♂️ **Professor Walkthrough Fix (Final)**: Resolved a race condition where the walkthrough would trigger before saved state was fully loaded.
+
 ### [v0.9.0]
 - 🎯 **ZERØ Branding Sync**: Unified branding across all HUDs and UI elements.
 - 🧙‍♂️ **Professor Walkthrough Fix**: Walkthrough now only triggers once on first launch.
