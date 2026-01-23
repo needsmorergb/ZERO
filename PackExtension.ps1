@@ -1,6 +1,6 @@
 $chromePath = "C:\Program Files\Google\Chrome\Application\chrome.exe"
-$releaseDir = "zero-solana-v0.9.0"
-$outputCrx = "zero-solana-v0.9.0.crx"
+$releaseDir = "zero-solana-v0.9.1"
+$outputCrx = "zero-solana-v0.9.1.crx"
 
 # 1. Prepare Clean Folder
 if (Test-Path $releaseDir) { Remove-Item $releaseDir -Recurse -Force }

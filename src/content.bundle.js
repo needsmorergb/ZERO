@@ -13,7 +13,7 @@
     }
     const EXT = {
       KEY: "sol_paper_trader_v1",
-      VERSION: "0.8.0",
+      VERSION: "0.9.0",
       DEBUG: true,
       PLATFORM: PLATFORM.name
     };
@@ -665,6 +665,7 @@
 `;
     let STATE = deepMerge(DEFAULTS, {});
     let tradePanelDockHost = null;
+    let stateLoaded = false;
     let booted = false;
     let observer = null;
     let renderScheduled = false;
@@ -699,6 +700,8 @@
         STATE.cashSol = STATE.startSol;
       if (!Number.isFinite(STATE.equitySol))
         STATE.equitySol = STATE.cashSol;
+      stateLoaded = true;
+      log("State loaded, tutorialCompleted:", STATE.tutorialCompleted);
     }
     async function saveState() {
       await storageSet({ [EXT.KEY]: STATE });
@@ -2988,7 +2991,7 @@
         setTimeout(() => {
           minimalBoot().catch((e) => console.warn("[paper] boot error", e));
           setTimeout(() => {
-            if (!STATE.tutorialCompleted && !sessionTutorialTriggered && getShadowContainer()) {
+            if (stateLoaded && !STATE.tutorialCompleted && !sessionTutorialTriggered && getShadowContainer()) {
               sessionTutorialTriggered = true;
               log("Triggering Professor Tutorial from Initial Load");
               showProfessorTutorial2(0);
@@ -3028,7 +3031,7 @@
                 minimalBoot().catch((e) => console.warn("[paper] boot error", e));
               }, 2e3);
             }
-            if (!STATE.tutorialCompleted && !sessionTutorialTriggered) {
+            if (stateLoaded && !STATE.tutorialCompleted && !sessionTutorialTriggered) {
               if (getShadowContainer()) {
                 sessionTutorialTriggered = true;
                 log("Triggering Professor Tutorial from Nav Loop");
