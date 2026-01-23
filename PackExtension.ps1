@@ -30,7 +30,15 @@ Start-Sleep -Seconds 2
 
 if (Test-Path "$releaseDir.crx") {
     Write-Host "Success! Created $releaseDir.crx"
-    # Clean up folder
+    
+    # 3. Cleanup: CRITICAL - Always remove the .pem file (secret key)
+    # This prevents security warnings in Chrome and accidental distribution
+    if (Test-Path "$releaseDir.pem") {
+        Remove-Item "$releaseDir.pem" -Force
+        Write-Host "Purged secret key file: $releaseDir.pem"
+    }
+
+    # Clean up preparation folder
     Remove-Item $releaseDir -Recurse -Force
 }
 else {
