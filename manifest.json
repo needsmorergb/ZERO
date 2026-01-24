@@ -1,0 +1,73 @@
+{
+  "manifest_version": 3,
+  "name": "ZERØ - Solana Paper Trading",
+  "version": "1.7.1",
+  "description": "Zero risk paper trading overlay for Solana on Axiom and Terminal.",
+  "permissions": [
+    "storage",
+    "alarms",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://axiom.trade/*",
+    "https://trade.padre.gg/*",
+    "https://api.coinbase.com/*",
+    "https://api.kraken.com/*",
+    "https://api.dexscreener.com/*",
+    "https://price.jup.ag/*"
+  ],
+  "icons": {
+    "16": "assets/zero-16.png",
+    "32": "assets/zero-32.png",
+    "48": "assets/zero-48.png",
+    "128": "assets/zero-128.png"
+  },
+  "action": {
+    "default_title": "ZERØ",
+    "default_popup": "src/popup/popup.html",
+    "default_icon": {
+      "16": "assets/zero-16.png",
+      "32": "assets/zero-32.png",
+      "48": "assets/zero-48.png",
+      "128": "assets/zero-128.png"
+    }
+  },
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://axiom.trade/*",
+        "https://trade.padre.gg/*"
+      ],
+      "js": [
+        "src/content.bundle.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://axiom.trade/*",
+        "https://trade.padre.gg/*"
+      ],
+      "js": [
+        "src/bridge.main.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "src/page-bridge.js",
+        "src/professor.png"
+      ],
+      "matches": [
+        "https://axiom.trade/*",
+        "https://trade.padre.gg/*"
+      ]
+    }
+  ]
+}

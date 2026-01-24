@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HUD Debugger</title>
+    <style>
+        body {
+            background: #333;
+            height: 100vh;
+            margin: 0;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>HUD Debugger</h1>
+    <p>Testing HUD positioning...</p>
+
+    <!-- MOCK SCRIPT -->
+    <script>
+        // Mock State
+        const Store = {
+            state: {
+                settings: {
+                    enabled: true,
+                    buyHudDocked: false, // Start FLOATING
+                    buyHudPos: { x: 5000, y: 100 }, // Intentionally BAD position (off screen right)
+                    quickBuySols: [0.5, 1, 2],
+                    quickSellPcts: [25, 50, 100],
+                    strategies: ["Trend", "Range"]
+                },
+                session: { trades: [] }
+            },
+            save: async () => { console.log('Saved state:', Store.state.settings.buyHudPos); }
+        };
+
+        // Styles extracted from styles.js (Current V0.9.8 State)
+        const IDS = { buyHud: "paper-buyhud-root" };
+        const CSS = `
+            #${IDS.buyHud}{ z-index: 2147483644; pointer-events: auto; font-size: 12px; font-family: sans-serif; }
+            #${IDS.buyHud}.floating{ position: fixed; left: auto; top: 100px; width: 300px; max-width: calc(100vw - 24px); }
+            #${IDS.buyHud}.docked{ position: fixed; right: 16px; top: 320px; width: 300px; z-index: 2147483645; }
+            
+            /* Add panel styles so we can see it */
+            #${IDS.buyHud} .panel { background: #0d1117; border: 1px solid #14b8a6; border-radius: 12px; color: white; min-height: 200px; }
+            #${IDS.buyHud} .panelHeader { padding: 10px; background: #161b22; cursor: grab; border-bottom: 1px solid #14b8a6; }
+            #${IDS.buyHud} .panelHeader:active { cursor: grabbing; }
+        `;
+
+        // Logic from HUD.js (Current V0.9.8)
+        function px(n) { return n + 'px'; }
+        function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+
+        const HUD = {
+            init() {
+                this.setupShadow();
+                this.mountBuyHud();
+            },
+
+            setupShadow() {
+                const host = document.createElement('div');
+                host.id = 'shadow-host';
+                document.body.appendChild(host);
+                this.shadowRoot = host.attachShadow({ mode: 'open' });
+
+                const style = document.createElement('style');
+                style.textContent = CSS;
+                this.shadowRoot.appendChild(style);
+
+                const container = document.createElement('div');
+                container.id = 'paper-shadow-container';
+                this.shadowRoot.appendChild(container);
+                this.container = container;
+            },
+
+            mountBuyHud() {
+                let root = this.container.querySelector('#' + IDS.buyHud);
+
+                if (!root) {
+                    root = document.createElement('div');
+                    root.id = IDS.buyHud;
+                    // Initial positioning logic (from mountBuyHud)
+                    root.className = Store.state.settings.buyHudDocked ? 'docked' : 'floating';
+                    if (!Store.state.settings.buyHudDocked) {
+                        // Initial float pos (safe default)
+                        const safeX = window.innerWidth - 340;
+                        root.style.left = px(safeX > 0 ? safeX : 20);
+                        root.style.top = '100px';
+                        root.style.right = 'auto'; // Ensure right is cleared
+                    }
+                    this.container.appendChild(root);
+
+                    // Render content
+                    root.innerHTML = `
+                        <div class="panel">
+                            <div class="panelHeader">DRAG ME (Header) <button id="dockBtn">Dock</button></div>
+                            <div class="body">HUD Body Content</div>
+                        </div>
+                    `;
+
+                    this.setupInteractions(root);
+                }
+
+                this.updateBuyHud();
+            },
+
+            updateBuyHud() {
+                let root = this.container.querySelector('#' + IDS.buyHud);
+                root.className = Store.state.settings.buyHudDocked ? "docked" : "floating";
+
+                if (!Store.state.settings.buyHudDocked) {
+                    // Logic from updateBuyHud (v0.9.8)
+                    const p = Store.state.settings.buyHudPos;
+                    if (p) {
+                        const maxX = window.innerWidth - 300;
+                        const safeX = clamp(p.x, 0, maxX > 0 ? maxX : 0);
+                        root.style.left = px(safeX);
+                        root.style.top = px(p.y);
+                        root.style.right = 'auto';
+
+                        console.log(`Updated Pos: x=${safeX} (Original: ${p.x}), y=${p.y}, MaxX=${maxX}`);
+                    }
+                } else {
+                    root.style.left = "";
+                    root.style.top = "";
+                    root.style.right = "";
+                }
+            },
+
+            setupInteractions(root) {
+                const header = root.querySelector('.panelHeader');
+
+                // Drag Logic
+                let dragging = false;
+                let startX = 0, startY = 0;
+
+                header.addEventListener('mousedown', (e) => {
+                    dragging = true;
+                    startX = e.clientX;
+                    startY = e.clientY;
+                    e.preventDefault();
+
+                    const move = (ev) => {
+                        if (!dragging) return;
+                        const dx = ev.clientX - startX;
+                        const dy = ev.clientY - startY;
+                        startX = ev.clientX;
+                        startY = ev.clientY;
+
+                        // State update logic
+                        const s = Store.state.settings;
+                        s.buyHudPos.x = clamp(s.buyHudPos.x + dx, 0, window.innerWidth - 300);
+                        s.buyHudPos.y = clamp(s.buyHudPos.y + dy, 34, window.innerHeight - 300);
+
+                        root.style.left = px(s.buyHudPos.x);
+                        root.style.right = 'auto';
+                        root.style.top = px(s.buyHudPos.y);
+
+                        // console.log('Dragging:', s.buyHudPos);
+                    };
+
+                    const up = () => {
+                        dragging = false;
+                        window.removeEventListener('mousemove', move);
+                        window.removeEventListener('mouseup', up);
+                    };
+
+                    window.addEventListener('mousemove', move);
+                    window.addEventListener('mouseup', up);
+                });
+
+                // Dock button
+                root.querySelector('#dockBtn').addEventListener('click', () => {
+                    Store.state.settings.buyHudDocked = !Store.state.settings.buyHudDocked;
+                    this.updateBuyHud();
+                });
+            }
+        };
+
+        HUD.init();
+    </script>
+</body>
+
+</html>

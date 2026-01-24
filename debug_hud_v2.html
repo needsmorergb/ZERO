@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZERØ HUD Debug V2</title>
+    <style>
+        body {
+            background: #000;
+            color: #fff;
+            font-family: sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+
+        #app-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 9999;
+        }
+
+        /* --- INJECTED CSS FROM STYLES.JS --- */
+        .zero-inline-icon {
+            height: 14px;
+            width: 14px;
+            vertical-align: -2px;
+            margin: 0 1px;
+            display: inline-block;
+        }
+
+        #paper-mode-banner {
+            position: fixed;
+            left: 0;
+            right: 0;
+            top: 0;
+            height: 44px;
+            z-index: 2147483646;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+            pointer-events: auto;
+            background: #0d1117;
+            border-bottom: 1px solid rgba(20, 184, 166, 0.15);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        #paper-mode-banner .inner {
+            display: flex;
+            align-items: center;
+            gap: 24px;
+            font-size: 12px;
+            letter-spacing: 0.3px;
+        }
+
+        #paper-mode-banner .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 999px;
+            background: #14b8a6;
+            box-shadow: 0 0 8px rgba(20, 184, 166, 0.5);
+        }
+
+        #paper-mode-banner.disabled .dot {
+            background: #475569;
+            box-shadow: none;
+        }
+
+        #paper-mode-banner .label {
+            color: #14b8a6;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        #paper-mode-banner .state {
+            color: #f8fafc;
+            font-weight: 600;
+        }
+
+        #paper-mode-banner.disabled .state {
+            color: #64748b;
+        }
+
+        #paper-mode-banner .hint {
+            color: #64748b;
+            font-weight: 500;
+        }
+
+        #paper-pnl-hud {
+            position: fixed;
+            z-index: 2147483645;
+            width: 720px;
+            max-width: calc(100vw - 24px);
+            pointer-events: auto;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        #paper-pnl-hud.docked {
+            left: 50%;
+            transform: translateX(-50%);
+            top: 50px;
+        }
+
+        #paper-pnl-hud.floating {
+            left: 20px;
+            top: 60px;
+            transform: none;
+        }
+
+        #paper-pnl-hud .card {
+            background: #0d1117;
+            border: 1px solid rgba(20, 184, 166, 0.15);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        #paper-pnl-hud .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 20px;
+            background: #0d1117;
+            border-bottom: 1px solid rgba(20, 184, 166, 0.1);
+            cursor: grab;
+        }
+
+        #paper-pnl-hud .header:active {
+            cursor: grabbing;
+        }
+
+        #paper-pnl-hud .title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 13px;
+            font-weight: 700;
+            color: #14b8a6;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+
+        #paper-pnl-hud .title .dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 999px;
+            background: #14b8a6;
+            box-shadow: 0 0 10px rgba(20, 184, 166, 0.5);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+                transform: scale(1)
+            }
+
+            50% {
+                opacity: 0.6;
+                transform: scale(0.9)
+            }
+        }
+
+        #paper-pnl-hud .controls {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 11px;
+            color: #64748b;
+        }
+
+        #paper-pnl-hud .stat.streak .v {
+            font-size: 20px;
+            font-weight: 800;
+            color: #14b8a6;
+        }
+
+        #paper-pnl-hud .stat.streak.loss .v {
+            color: #ef4444;
+        }
+
+        #paper-pnl-hud .stat.streak.win .v {
+            color: #14b8a6;
+            animation: streakPulse 1s infinite;
+        }
+
+        @keyframes streakPulse {
+            0% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.05);
+            }
+
+            100% {
+                transform: scale(1);
+            }
+        }
+
+        #paper-pnl-hud .pillBtn {
+            border: 1px solid rgba(20, 184, 166, 0.2);
+            background: transparent;
+            color: #94a3b8;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 11px;
+            transition: all 0.2s;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+
+        #paper-pnl-hud .pillBtn:hover {
+            background: rgba(20, 184, 166, 0.1);
+            border-color: rgba(20, 184, 166, 0.4);
+            color: #14b8a6;
+        }
+
+        #paper-pnl-hud .startSol {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        #paper-pnl-hud input.startSolInput {
+            width: 70px;
+            border: 1px solid rgba(20, 184, 166, 0.2);
+            background: #161b22;
+            color: #f8fafc;
+            padding: 6px 10px;
+            border-radius: 6px;
+            outline: none;
+            font-weight: 600;
+            pointer-events: auto;
+            cursor: text;
+            transition: all 0.2s;
+        }
+
+        #paper-pnl-hud input.startSolInput:focus {
+            border-color: #14b8a6;
+        }
+
+        #paper-pnl-hud .stats {
+            display: flex;
+            gap: 0;
+            padding: 0;
+            border-top: 1px solid rgba(20, 184, 166, 0.1);
+        }
+
+        #paper-pnl-hud .stat {
+            flex: 1;
+            background: transparent;
+            border: none;
+            border-right: 1px solid rgba(20, 184, 166, 0.1);
+            border-radius: 0;
+            padding: 16px 20px;
+            text-align: left;
+            transition: background 0.2s;
+        }
+
+        #paper-pnl-hud .stat:last-child {
+            border-right: none;
+        }
+
+        #paper-pnl-hud .stat:hover {
+            background: rgba(20, 184, 166, 0.05);
+        }
+
+        #paper-pnl-hud .stat .k {
+            font-size: 10px;
+            color: #64748b;
+            margin-bottom: 4px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        #paper-pnl-hud .stat .v {
+            font-size: 16px;
+            font-weight: 700;
+            color: #f8fafc;
+        }
+
+        #paper-pnl-hud .tradeList {
+            max-height: 200px;
+            overflow: auto;
+            border-top: 1px solid rgba(20, 184, 166, 0.1);
+        }
+
+        #paper-pnl-hud .tradeRow {
+            display: grid;
+            grid-template-columns: 70px 70px 50px 100px 80px 70px;
+            gap: 8px;
+            padding: 10px 16px;
+            border-bottom: 1px solid rgba(20, 184, 166, 0.05);
+            font-size: 11px;
+            color: #e2e8f0;
+            align-items: center;
+        }
+
+        #paper-pnl-hud .tradeRow:hover {
+            background: rgba(20, 184, 166, 0.03);
+        }
+
+        #paper-pnl-hud .tradeRow .muted {
+            color: #64748b;
+        }
+
+        #paper-pnl-hud .tag {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-weight: 700;
+            font-size: 10px;
+            text-transform: uppercase;
+        }
+
+        #paper-pnl-hud .tag.buy {
+            background: rgba(20, 184, 166, 0.15);
+            color: #14b8a6;
+        }
+
+        #paper-pnl-hud .tag.sell {
+            background: rgba(239, 68, 68, 0.15);
+            color: #ef4444;
+        }
+
+        #paper-buyhud-root {
+            z-index: 2147483644;
+            pointer-events: auto;
+            font-size: 12px;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        #paper-buyhud-root.floating {
+            position: fixed;
+            left: auto;
+            top: 100px;
+            width: 300px;
+            max-width: calc(100vw - 24px);
+        }
+
+        #paper-buyhud-root.docked {
+            position: fixed;
+            right: 16px;
+            top: 320px;
+            width: 300px;
+            z-index: 2147483645;
+        }
+
+        #paper-buyhud-root .panel {
+            background: #0d1117;
+            border: 1px solid rgba(20, 184, 166, 0.15);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        #paper-buyhud-root.docked .panel {
+            border-radius: 10px;
+        }
+
+        #paper-buyhud-root .panelHeader {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            background: #0d1117;
+            border-bottom: 1px solid rgba(20, 184, 166, 0.1);
+            cursor: grab;
+        }
+
+        #paper-buyhud-root .panelHeader:active {
+            cursor: grabbing;
+        }
+
+        #paper-buyhud-root .panelTitle {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 700;
+            color: #14b8a6;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        #paper-buyhud-root .panelTitle .dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 999px;
+            background: #14b8a6;
+            box-shadow: 0 0 10px rgba(20, 184, 166, 0.5);
+        }
+
+        #paper-buyhud-root .panelBtns {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        #paper-buyhud-root .btn {
+            border: 1px solid rgba(20, 184, 166, 0.2);
+            background: transparent;
+            color: #94a3b8;
+            padding: 6px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 10px;
+            transition: all 0.2s;
+            text-transform: uppercase;
+        }
+
+        #paper-buyhud-root .btn:hover {
+            background: rgba(20, 184, 166, 0.1);
+            border-color: rgba(20, 184, 166, 0.4);
+            color: #14b8a6;
+        }
+
+        #paper-buyhud-root .tabs {
+            display: flex;
+            gap: 8px;
+            padding: 12px 16px 0;
+        }
+
+        #paper-buyhud-root .tab {
+            flex: 1;
+            border: 1px solid rgba(20, 184, 166, 0.15);
+            background: #161b22;
+            color: #94a3b8;
+            padding: 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 700;
+            font-size: 11px;
+            text-align: center;
+            transition: all 0.2s;
+            text-transform: uppercase;
+        }
+
+        #paper-buyhud-root .tab.active {
+            background: rgba(20, 184, 166, 0.15);
+            border-color: #14b8a6;
+            color: #14b8a6;
+        }
+
+        #paper-buyhud-root .tab:hover:not(.active) {
+            background: #1c2128;
+            border-color: rgba(20, 184, 166, 0.25);
+        }
+
+        #paper-buyhud-root .body {
+            padding: 14px 16px;
+        }
+
+        #paper-buyhud-root .fieldLabel {
+            color: #64748b;
+            font-weight: 600;
+            margin-bottom: 8px;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        #paper-buyhud-root input.field {
+            width: 100%;
+            border: 1px solid rgba(20, 184, 166, 0.2);
+            background: #161b22;
+            color: #f8fafc;
+            padding: 12px 14px;
+            border-radius: 8px;
+            outline: none;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        #paper-buyhud-root input.field:focus {
+            border-color: #14b8a6;
+        }
+
+        #paper-buyhud-root .quickRow {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        #paper-buyhud-root .qbtn {
+            border: 1px solid rgba(20, 184, 166, 0.15);
+            background: #161b22;
+            color: #94a3b8;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 11px;
+            transition: all 0.2s;
+        }
+
+        #paper-buyhud-root .qbtn:hover {
+            background: rgba(20, 184, 166, 0.1);
+            border-color: rgba(20, 184, 166, 0.3);
+            color: #14b8a6;
+        }
+
+        #paper-buyhud-root .action {
+            margin-top: 14px;
+            width: 100%;
+            border: none;
+            background: #14b8a6;
+            color: #0d1117;
+            padding: 12px 14px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 800;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            transition: all 0.2s;
+        }
+
+        #paper-buyhud-root .action:hover {
+            background: #2dd4bf;
+        }
+
+        #paper-buyhud-root .action.sell {
+            background: #ef4444;
+            color: white;
+        }
+
+        #paper-buyhud-root .action.sell:hover {
+            background: #f87171;
+        }
+
+        #paper-buyhud-root .status {
+            margin-top: 10px;
+            padding: 10px 12px;
+            border-radius: 8px;
+            background: #161b22;
+            border: 1px solid rgba(20, 184, 166, 0.1);
+            color: #64748b;
+            font-weight: 600;
+            min-height: 40px;
+            font-size: 11px;
+        }
+
+        /* Settings Modal */
+        .settings-modal {
+            background: #0d1117;
+            border: 1px solid rgba(20, 184, 166, 0.2);
+            border-radius: 16px;
+            padding: 24px;
+            width: 320px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8);
+            font-family: 'Inter', sans-serif;
+            animation: scaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .settings-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            border-bottom: 1px solid rgba(20, 184, 166, 0.1);
+            padding-bottom: 12px;
+        }
+
+        .settings-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: #f8fafc;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .settings-close {
+            background: none;
+            border: none;
+            color: #64748b;
+            cursor: pointer;
+            font-size: 18px;
+            transition: color 0.2s;
+        }
+
+        .settings-close:hover {
+            color: #f8fafc;
+        }
+
+        .setting-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .setting-info {
+            flex: 1;
+        }
+
+        .setting-name {
+            font-size: 13px;
+            font-weight: 600;
+            color: #e2e8f0;
+            margin-bottom: 2px;
+        }
+
+        .setting-desc {
+            font-size: 11px;
+            color: #94a3b8;
+            line-height: 1.3;
+        }
+
+        /* Toggle Switch */
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 40px;
+            height: 22px;
+            flex-shrink: 0;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #1e293b;
+            transition: .3s;
+            border-radius: 22px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 3px;
+            bottom: 2px;
+            background-color: white;
+            transition: .3s;
+            border-radius: 50%;
+        }
+
+        input:checked+.slider {
+            background-color: #14b8a6;
+            border-color: #14b8a6;
+        }
+
+        input:checked+.slider:before {
+            transform: translateX(18px);
+        }
+
+        /* Shadow Mode Overrides */
+        .shadow-mode .slider {
+            background-color: #451a03;
+        }
+
+        .shadow-mode input:checked+.slider {
+            background-color: #f59e0b;
+            border-color: #f59e0b;
+        }
+
+        .shadow-mode #paper-pnl-hud .title .dot {
+            background: #f59e0b;
+            box-shadow: 0 0 10px rgba(245, 158, 11, 0.5);
+        }
+
+        .shadow-mode #paper-pnl-hud .title {
+            color: #f59e0b;
+        }
+
+        .shadow-mode #paper-buyhud-root .panelTitle .dot {
+            background: #f59e0b;
+            box-shadow: 0 0 10px rgba(245, 158, 11, 0.5);
+        }
+
+        .shadow-mode #paper-buyhud-root .panelTitle {
+            color: #f59e0b;
+        }
+
+        .shadow-mode #paper-buyhud-root .action {
+            background: #f59e0b;
+            color: #000;
+        }
+
+        .shadow-mode #paper-buyhud-root .action:hover {
+            background: #fbbf24;
+        }
+
+        .shadow-mode #paper-mode-banner .label {
+            color: #f59e0b;
+        }
+
+        .shadow-mode #paper-mode-banner .dot {
+            background: #f59e0b;
+            box-shadow: 0 0 8px rgba(245, 158, 11, 0.5);
+        }
+    </style>
+</head>
+
+<body>
+    <div id="app-container">
+        <!-- Mock HUD elements injected by JS -->
+    </div>
+
+    <script>
+        // --- MOCKED STORE ---
+        const Store = {
+            state: {
+                settings: {
+                    enabled: true,
+                    buyHudDocked: false, // FORCE UNDOCKED FOR TESTING
+                    pnlDocked: true,
+                    buyHudPos: null, // FORCE NULL TO TEST DEFAULT LOGIC
+                    pnlPos: { x: 20, y: 60 },
+                    startSol: 100,
+                    quickBuySols: [0.1, 0.5, 1.0],
+                    quickSellPcts: [10, 25, 50],
+                    tradingMode: 'paper'
+                },
+                session: { balance: 100, realized: 0, winStreak: 0, lossStreak: 0, trades: [] },
+                trades: {}
+            },
+            save: async () => console.log('Store saved', Store.state)
+        };
+        const Trading = {
+            fmtSol: (n) => n.toFixed(4),
+            getUnrealizedPnl: () => 0.05
+        };
+        const OverlayManager = {
+            getContainer: () => document.getElementById('app-container'),
+            getShadowRoot: () => ({ getElementById: (id) => document.getElementById(id), insertBefore: () => { } })
+        };
+        const IDS = { banner: "paper-mode-banner", pnlHud: "paper-pnl-hud", buyHud: "paper-buyhud-root" };
+
+        function px(n) { return n + 'px'; }
+        function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+
+        // --- HUD LOGIC (PASTED FROM SOURCE) ---
+        const HUD = {
+            buyHudTab: 'buy',
+            buyHudEdit: false,
+
+            init() {
+                this.renderAll();
+                window.addEventListener('resize', () => {
+                    console.log('Resize detected!');
+                    this.updateBuyHud();
+                });
+            },
+
+            renderAll() {
+                this.mountBuyHud();
+                this.updateAll();
+            },
+
+            updateAll() {
+                const container = OverlayManager.getContainer();
+                if (Store.state.settings.tradingMode === 'shadow') {
+                    container.classList.add('shadow-mode');
+                } else {
+                    container.classList.remove('shadow-mode');
+                }
+                this.updateBuyHud();
+            },
+
+            mountBuyHud() {
+                const container = OverlayManager.getContainer();
+                const rootId = IDS.buyHud;
+                let root = container.querySelector('#' + rootId);
+
+                if (!root) {
+                    root = document.createElement('div');
+                    root.id = rootId;
+                    root.className = Store.state.settings.buyHudDocked ? 'docked' : 'floating';
+                    container.appendChild(root);
+                    this.renderBuyHudContent(root);
+                    this.setupBuyHudInteractions(root);
+                }
+                this.updateBuyHud(); // Initial pos check
+            },
+
+            renderBuyHudContent(root) {
+                const isBuy = this.buyHudTab === 'buy';
+                root.innerHTML = `
+                    <div class="panel">
+                        <div class="panelHeader" style="background:red;"> <!-- VISUAL MARKER -->
+                            <div class="panelTitle">ZERØ TRADE</div>
+                            <div class="panelBtns">
+                                <button class="btn" data-act="dock">${Store.state.settings.buyHudDocked ? 'Float' : 'Dock'}</button>
+                            </div>
+                        </div>
+                        <div class="body">Body content</div>
+                    </div>
+                `;
+            },
+
+            updateBuyHud() {
+                const root = OverlayManager.getContainer().querySelector('#' + IDS.buyHud);
+                if (!root) return;
+
+                root.className = Store.state.settings.buyHudDocked ? "docked" : "floating";
+                if (!Store.state.settings.buyHudDocked) {
+                    const p = Store.state.settings.buyHudPos;
+                    if (p) {
+                        const maxX = window.innerWidth - 300;
+                        const safeX = clamp(p.x, 0, maxX > 0 ? maxX : 0);
+                        root.style.left = px(safeX);
+                        root.style.top = px(p.y);
+                        root.style.right = 'auto';
+                    } else {
+                        // DEFAULT LOGIC
+                        const safeX = window.innerWidth - 340;
+                        console.log('Using default logic. WindowWidth:', window.innerWidth, 'SafeX:', safeX);
+                        root.style.left = px(safeX > 0 ? safeX : 20);
+                        root.style.top = '100px';
+                        root.style.right = 'auto';
+                    }
+                } else {
+                    root.style.left = "";
+                    root.style.top = "";
+                    root.style.right = "";
+                }
+            },
+
+            setupBuyHudInteractions(root) {
+                const header = root.querySelector('.panelHeader');
+                this.makeDraggable(header, (dx, dy) => {
+                    if (Store.state.settings.buyHudDocked) return;
+
+                    // INIT POS IF NULL
+                    if (!Store.state.settings.buyHudPos) {
+                        const rect = root.getBoundingClientRect();
+                        Store.state.settings.buyHudPos = { x: rect.left, y: rect.top };
+                    }
+
+                    const s = Store.state.settings;
+                    s.buyHudPos.x = clamp(s.buyHudPos.x + dx, 0, window.innerWidth - 300);
+                    s.buyHudPos.y = clamp(s.buyHudPos.y + dy, 34, window.innerHeight - 300);
+                    root.style.left = px(s.buyHudPos.x);
+                    root.style.top = px(s.buyHudPos.y);
+                    root.style.right = 'auto';
+                });
+
+                root.addEventListener('click', (e) => {
+                    if (e.target.closest('[data-act="dock"]')) {
+                        Store.state.settings.buyHudDocked = !Store.state.settings.buyHudDocked;
+                        this.updateBuyHud();
+                        this.renderBuyHudContent(root); // Update button text
+                    }
+                });
+            },
+
+            makeDraggable(handle, onMove) {
+                let dragging = false;
+                let startX = 0, startY = 0;
+                handle.addEventListener('mousedown', (e) => {
+                    dragging = true;
+                    startX = e.clientX;
+                    startY = e.clientY;
+                    e.preventDefault();
+                    window.addEventListener('mousemove', move);
+                    window.addEventListener('mouseup', up);
+                });
+                const move = (e) => {
+                    if (!dragging) return;
+                    onMove(e.clientX - startX, e.clientY - startY);
+                    startX = e.clientX;
+                    startY = e.clientY;
+                };
+                const up = () => {
+                    dragging = false;
+                    window.removeEventListener('mousemove', move);
+                    window.removeEventListener('mouseup', up);
+                };
+            }
+        };
+
+        // Initialize
+        HUD.init();
+
+    </script>
+</body>
+
+</html>

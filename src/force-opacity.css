@@ -1,0 +1,31 @@
+/* Force HUD Opacity - Critical CSS Override */
+/* This file forces the Buy/Sell HUD to have a solid black background */
+
+/* Target the HUD root */
+#paper-buyhud-root,
+#paper-buyhud-root *,
+div[id*="buyhud"],
+div[id*="buyHud"],
+div[class*="panel"] {
+  background: #0a0f19 !important;
+  background-color: #0a0f19 !important;
+  opacity: 1 !important;
+}
+
+/* Specifically target the panel class */
+.panel,
+[class*="panel"],
+[class^="panel"],
+[class$="panel"] {
+  background: #0a0f19 !important;
+  background-color: #0a0f19 !important;
+  opacity: 1 !important;
+}
+
+/* Nuclear option - force ALL divs with "Paper" text to be solid */
+div:has(*:contains("Paper Trader")),
+div:has(*:contains("Paper Buy")),
+div:has(*:contains("Paper Sell")) {
+  background: #0a0f19 !important;
+  background-color: #0a0f19 !important;
+}
