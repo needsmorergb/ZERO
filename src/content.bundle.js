@@ -41,7 +41,8 @@
     behavior: {
       tiltFrequency: 0
     },
-    schemaVersion: 2
+    schemaVersion: 2,
+    version: "1.8.0"
   };
   function deepMerge(base, patch) {
     if (!patch || typeof patch !== "object")
@@ -63,7 +64,7 @@
       return false;
     }
   }
-  var Store2 = {
+  var Store = {
     state: null,
     async load() {
       let timeoutId;
@@ -172,38 +173,125 @@
     }
   };
 
-  // src/modules/ui/styles.js
+  // src/modules/ui/ids.js
   var IDS = {
     banner: "paper-mode-banner",
     pnlHud: "paper-pnl-hud",
     buyHud: "paper-buyhud-root",
     style: "paper-overlay-style"
   };
-  var CSS = `
-.zero-inline-icon { height:14px; width:14px; vertical-align:-2px; margin:0 1px; display:inline-block; }
-#${IDS.banner}{
-  position:fixed; top:12px; left:50%; transform:translateX(-50%); bottom:auto; right:auto;
-  height:36px;
+
+  // src/modules/ui/common-styles.js
+  var COMMON_CSS = `
+.zero-inline-icon {
+  height: 14px;
+  width: 14px;
+  vertical-align: -2px;
+  margin: 0 1px;
+  display: inline-block;
+}
+
+/* Global Animations */
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(0.9); }
+}
+
+@keyframes streakPulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+@keyframes fadeIn {
+  to { opacity: 1; }
+}
+
+@keyframes scaleIn {
+  to { transform: scale(1); }
+}
+
+@keyframes professorFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes professorSlideIn {
+  from { transform: translateY(30px) scale(0.9); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
+}
+`;
+
+  // src/modules/ui/banner-styles.js
+  var BANNER_CSS = `
+#${IDS.banner} {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: auto;
+  right: auto;
+  height: 36px;
   padding: 0 20px;
   border-radius: 99px;
-  z-index:2147483646;
-  display:flex; align-items:center; justify-content:center;
-  user-select:none;
-  pointer-events:auto;
+  z-index: 2147483646;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  pointer-events: auto;
   background: #0d1117;
   border: 1px solid rgba(20,184,166,0.3);
   box-shadow: 0 4px 12px rgba(0,0,0,0.6);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
-#${IDS.banner} .inner{ display:flex; align-items:center; gap:24px; font-size:12px; letter-spacing:0.3px; }
-#${IDS.banner} .dot{ width:8px;height:8px;border-radius:999px; background: #14b8a6; box-shadow: 0 0 8px rgba(20,184,166,0.5); }
-#${IDS.banner}.disabled .dot{ background: #475569; box-shadow: none; }
-#${IDS.banner} .label{ color: #14b8a6; font-weight:700; text-transform: uppercase; letter-spacing: 1px; }
-#${IDS.banner} .state{ color: #f8fafc; font-weight:600; }
-#${IDS.banner}.disabled .state{ color: #64748b; }
-#${IDS.banner} .hint{ color: #64748b; font-weight:500; }
 
-#${IDS.pnlHud}{
+#${IDS.banner} .inner {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  font-size: 12px;
+  letter-spacing: 0.3px;
+}
+
+#${IDS.banner} .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #14b8a6;
+  box-shadow: 0 0 8px rgba(20,184,166,0.5);
+}
+
+#${IDS.banner}.disabled .dot {
+  background: #475569;
+  box-shadow: none;
+}
+
+#${IDS.banner} .label {
+  color: #14b8a6;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+#${IDS.banner} .state {
+  color: #f8fafc;
+  font-weight: 600;
+}
+
+#${IDS.banner}.disabled .state {
+  color: #64748b;
+}
+
+#${IDS.banner} .hint {
+  color: #64748b;
+  font-weight: 500;
+}
+`;
+
+  // src/modules/ui/pnl-hud-styles.js
+  var PNL_HUD_CSS = `
+#${IDS.pnlHud} {
   position: fixed;
   z-index: 2147483645;
   width: 720px;
@@ -211,42 +299,69 @@
   pointer-events: auto;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
-#${IDS.pnlHud}.docked{ left: 50%; transform: translateX(-50%); top: 50px; }
-#${IDS.pnlHud}.floating{ left: 20px; top: 60px; transform: none; }
-#${IDS.pnlHud} .card{
+
+#${IDS.pnlHud}.docked {
+  left: 50%;
+  transform: translateX(-50%);
+  top: 50px;
+}
+
+#${IDS.pnlHud}.floating {
+  left: 20px;
+  top: 60px;
+  transform: none;
+}
+
+#${IDS.pnlHud} .card {
   background: #0d1117;
   border: 1px solid rgba(20,184,166,0.15);
   border-radius: 12px;
   overflow: hidden;
 }
-#${IDS.pnlHud} .header{
-  display:flex; align-items:center; justify-content:space-between;
+
+#${IDS.pnlHud} .header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 14px 20px;
   background: #0d1117;
   border-bottom: 1px solid rgba(20,184,166,0.1);
   cursor: grab;
 }
-#${IDS.pnlHud} .header:active{ cursor: grabbing; }
-#${IDS.pnlHud} .title{
-  display:flex; align-items:center; gap:10px;
-  font-size: 13px; font-weight: 700;
+
+#${IDS.pnlHud} .header:active {
+  cursor: grabbing;
+}
+
+#${IDS.pnlHud} .title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 700;
   color: #14b8a6;
   letter-spacing: 0.5px;
   text-transform: uppercase;
 }
-#${IDS.pnlHud} .title .dot{ 
-  width:10px;height:10px;border-radius:999px; 
+
+#${IDS.pnlHud} .title .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
   background: #14b8a6;
   box-shadow: 0 0 10px rgba(20,184,166,0.5);
   animation: pulse 2s infinite;
 }
-@keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.6;transform:scale(0.9)} }
-#${IDS.pnlHud} .controls{ display:flex; align-items:center; gap:12px; font-size: 11px; color: #64748b; }
-#${IDS.pnlHud} .stat.streak .v { font-size:20px; font-weight:800; color: #14b8a6; }
-#${IDS.pnlHud} .stat.streak.loss .v { color:#ef4444; }
-#${IDS.pnlHud} .stat.streak.win .v { color:#14b8a6; animation: streakPulse 1s infinite; }
-@keyframes streakPulse { 0%{transform:scale(1);} 50%{transform:scale(1.05);} 100%{transform:scale(1);} }
-#${IDS.pnlHud} .pillBtn{
+
+#${IDS.pnlHud} .controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 11px;
+  color: #64748b;
+}
+
+#${IDS.pnlHud} .pillBtn {
   border: 1px solid rgba(20,184,166,0.2);
   background: transparent;
   color: #94a3b8;
@@ -259,13 +374,20 @@
   text-transform: uppercase;
   letter-spacing: 0.3px;
 }
-#${IDS.pnlHud} .pillBtn:hover{ 
+
+#${IDS.pnlHud} .pillBtn:hover {
   background: rgba(20,184,166,0.1);
   border-color: rgba(20,184,166,0.4);
   color: #14b8a6;
 }
-#${IDS.pnlHud} .startSol{ display:flex; align-items:center; gap:8px; }
-#${IDS.pnlHud} input.startSolInput{
+
+#${IDS.pnlHud} .startSol {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#${IDS.pnlHud} input.startSolInput {
   width: 70px;
   border: 1px solid rgba(20,184,166,0.2);
   background: #161b22;
@@ -278,12 +400,20 @@
   cursor: text;
   transition: all 0.2s;
 }
-#${IDS.pnlHud} input.startSolInput:focus{
+
+#${IDS.pnlHud} input.startSolInput:focus {
   border-color: #14b8a6;
 }
-#${IDS.pnlHud} .stats{ display:flex; gap:0; padding: 0; border-top: 1px solid rgba(20,184,166,0.1); }
-#${IDS.pnlHud} .stat{
-  flex:1;
+
+#${IDS.pnlHud} .stats {
+  display: flex;
+  gap: 0;
+  padding: 0;
+  border-top: 1px solid rgba(20,184,166,0.1);
+}
+
+#${IDS.pnlHud} .stat {
+  flex: 1;
   background: transparent;
   border: none;
   border-right: 1px solid rgba(20,184,166,0.1);
@@ -292,24 +422,53 @@
   text-align: left;
   transition: background 0.2s;
 }
-#${IDS.pnlHud} .stat:last-child{ border-right: none; }
-#${IDS.pnlHud} .stat:hover{ background: rgba(20,184,166,0.05); }
-#${IDS.pnlHud} .stat .k{ 
-  font-size: 10px; 
-  color: #64748b; 
-  margin-bottom: 4px; 
-  font-weight: 600; 
-  text-transform: uppercase; 
+
+#${IDS.pnlHud} .stat:last-child {
+  border-right: none;
+}
+
+#${IDS.pnlHud} .stat:hover {
+  background: rgba(20,184,166,0.05);
+}
+
+#${IDS.pnlHud} .stat .k {
+  font-size: 10px;
+  color: #64748b;
+  margin-bottom: 4px;
+  font-weight: 600;
+  text-transform: uppercase;
   letter-spacing: 0.5px;
 }
-#${IDS.pnlHud} .stat .v{ 
-  font-size: 16px; 
-  font-weight: 700; 
+
+#${IDS.pnlHud} .stat .v {
+  font-size: 16px;
+  font-weight: 700;
   color: #f8fafc;
 }
-#${IDS.pnlHud} .tradeList{ max-height: 200px; overflow: auto; border-top: 1px solid rgba(20,184,166,0.1); }
-#${IDS.pnlHud} .tradeRow{
-  display:grid;
+
+#${IDS.pnlHud} .stat.streak .v {
+  font-size: 20px;
+  font-weight: 800;
+  color: #14b8a6;
+}
+
+#${IDS.pnlHud} .stat.streak.loss .v {
+  color: #ef4444;
+}
+
+#${IDS.pnlHud} .stat.streak.win .v {
+  color: #14b8a6;
+  animation: streakPulse 1s infinite;
+}
+
+#${IDS.pnlHud} .tradeList {
+  max-height: 200px;
+  overflow: auto;
+  border-top: 1px solid rgba(20,184,166,0.1);
+}
+
+#${IDS.pnlHud} .tradeRow {
+  display: grid;
   grid-template-columns: 70px 70px 50px 100px 80px 70px;
   gap: 8px;
   padding: 10px 16px;
@@ -318,21 +477,32 @@
   color: #e2e8f0;
   align-items: center;
 }
-#${IDS.pnlHud} .tradeRow:hover{ background: rgba(20,184,166,0.03); }
-#${IDS.pnlHud} .tradeRow .muted{ color: #64748b; }
-#${IDS.pnlHud} .tag{
-  display:inline-flex; align-items:center; justify-content:center;
+
+#${IDS.pnlHud} .tradeRow:hover {
+  background: rgba(20,184,166,0.03);
+}
+
+#${IDS.pnlHud} .tradeRow .muted {
+  color: #64748b;
+}
+
+#${IDS.pnlHud} .tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 3px 8px;
   border-radius: 4px;
   font-weight: 700;
   font-size: 10px;
   text-transform: uppercase;
 }
-#${IDS.pnlHud} .tag.buy{ 
+
+#${IDS.pnlHud} .tag.buy {
   background: rgba(20,184,166,0.15);
   color: #14b8a6;
 }
-#${IDS.pnlHud} .tag.sell{ 
+
+#${IDS.pnlHud} .tag.sell {
   background: rgba(239,68,68,0.15);
   color: #ef4444;
 }
@@ -350,16 +520,19 @@
   transform: translateX(-50%);
   white-space: nowrap;
 }
+
 .paper-trade-marker.buy {
   background: rgba(34, 197, 94, 0.9);
   color: white;
   border-bottom: 2px solid #22c55e;
 }
+
 .paper-trade-marker.sell {
   background: rgba(239, 68, 68, 0.9);
   color: white;
   border-top: 2px solid #ef4444;
 }
+
 .paper-trade-marker::after {
   content: '';
   position: absolute;
@@ -367,110 +540,94 @@
   transform: translateX(-50%);
   border: 5px solid transparent;
 }
+
 .paper-trade-marker.buy::after {
   bottom: -12px;
   border-top-color: #22c55e;
 }
+
 .paper-trade-marker.sell::after {
   top: -12px;
   border-bottom-color: #ef4444;
 }
+`;
 
-/* Custom confirm modal */
-.confirm-modal-overlay {
-  position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(0,0,0,0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 2147483647;
+  // src/modules/ui/buy-hud-styles.js
+  var BUY_HUD_CSS = `
+#${IDS.buyHud} {
+  z-index: 2147483644;
   pointer-events: auto;
-}
-.confirm-modal {
-  background: linear-gradient(145deg, rgba(15,23,42,0.98) 0%, rgba(10,15,30,0.99) 100%);
-  border: 1px solid rgba(99,102,241,0.35);
-  border-radius: 16px;
-  padding: 24px;
-  min-width: 320px;
-  max-width: 400px;
-  box-shadow: 0 20px 50px rgba(0,0,0,0.6);
-  font-family: 'Inter', sans-serif;
-}
-.confirm-modal h3 {
-  margin: 0 0 12px 0;
-  color: #f1f5f9;
-  font-size: 16px;
-  font-weight: 700;
-}
-.confirm-modal p {
-  margin: 0 0 20px 0;
-  color: #94a3b8;
-  font-size: 14px;
-  line-height: 1.5;
-}
-.confirm-modal-buttons {
-  display: flex;
-  gap: 12px;
-  justify-content: flex-end;
-}
-.confirm-modal-btn {
-  padding: 10px 20px;
-  border-radius: 8px;
-  font-weight: 600;
-  font-size: 13px;
-  cursor: pointer;
-  border: none;
-  transition: all 0.2s;
-}
-.confirm-modal-btn.cancel {
-  background: rgba(100,116,139,0.3);
-  color: #94a3b8;
-}
-.confirm-modal-btn.cancel:hover {
-  background: rgba(100,116,139,0.5);
-}
-.confirm-modal-btn.confirm {
-  background: rgba(239,68,68,0.8);
-  color: white;
-}
-.confirm-modal-btn.confirm:hover {
-  background: rgba(239,68,68,1);
+  font-size: 12px;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
-#${IDS.buyHud}{ z-index: 2147483644; pointer-events: auto; font-size: 12px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-#${IDS.buyHud}.floating{ position: fixed; left: auto; top: 100px; width: 300px; max-width: calc(100vw - 24px); }
-#${IDS.buyHud}.docked{ position: fixed; right: 16px; top: 320px; width: 300px; z-index: 2147483645; }
-#${IDS.buyHud} .panel{
+#${IDS.buyHud}.floating {
+  position: fixed;
+  left: auto;
+  top: 100px;
+  width: 300px;
+  max-width: calc(100vw - 24px);
+}
+
+#${IDS.buyHud}.docked {
+  position: fixed;
+  right: 16px;
+  top: 320px;
+  width: 300px;
+  z-index: 2147483645;
+}
+
+#${IDS.buyHud} .panel {
   background: #0d1117;
   border: 1px solid rgba(20,184,166,0.15);
   border-radius: 12px;
   overflow: hidden;
 }
-#${IDS.buyHud}.docked .panel{ border-radius: 10px; }
-#${IDS.buyHud} .panelHeader{
-  display:flex; align-items:center; justify-content:space-between;
+
+#${IDS.buyHud}.docked .panel {
+  border-radius: 10px;
+}
+
+#${IDS.buyHud} .panelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 12px 16px;
   background: #0d1117;
   border-bottom: 1px solid rgba(20,184,166,0.1);
   cursor: grab;
 }
-#${IDS.buyHud} .panelHeader:active{ cursor: grabbing; }
-#${IDS.buyHud} .panelTitle{ 
-  display:flex; align-items:center; gap:10px; 
-  font-weight: 700; 
-  color: #14b8a6; 
+
+#${IDS.buyHud} .panelHeader:active {
+  cursor: grabbing;
+}
+
+#${IDS.buyHud} .panelTitle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  color: #14b8a6;
   font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
-#${IDS.buyHud} .panelTitle .dot{ 
-  width:10px;height:10px;border-radius:999px; 
+
+#${IDS.buyHud} .panelTitle .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
   background: #14b8a6;
   box-shadow: 0 0 10px rgba(20,184,166,0.5);
 }
-#${IDS.buyHud} .panelBtns{ display:flex; align-items:center; gap:8px; }
-#${IDS.buyHud} .btn{
+
+#${IDS.buyHud} .panelBtns {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#${IDS.buyHud} .btn {
   border: 1px solid rgba(20,184,166,0.2);
   background: transparent;
   color: #94a3b8;
@@ -482,14 +639,21 @@
   transition: all 0.2s;
   text-transform: uppercase;
 }
-#${IDS.buyHud} .btn:hover{ 
+
+#${IDS.buyHud} .btn:hover {
   background: rgba(20,184,166,0.1);
   border-color: rgba(20,184,166,0.4);
   color: #14b8a6;
 }
-#${IDS.buyHud} .tabs{ display:flex; gap:8px; padding: 12px 16px 0; }
-#${IDS.buyHud} .tab{
-  flex:1;
+
+#${IDS.buyHud} .tabs {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px 0;
+}
+
+#${IDS.buyHud} .tab {
+  flex: 1;
   border: 1px solid rgba(20,184,166,0.15);
   background: #161b22;
   color: #94a3b8;
@@ -502,26 +666,33 @@
   transition: all 0.2s;
   text-transform: uppercase;
 }
-#${IDS.buyHud} .tab.active{ 
-  background: rgba(20,184,166,0.15); 
-  border-color: #14b8a6; 
+
+#${IDS.buyHud} .tab.active {
+  background: rgba(20,184,166,0.15);
+  border-color: #14b8a6;
   color: #14b8a6;
 }
-#${IDS.buyHud} .tab:hover:not(.active){ 
+
+#${IDS.buyHud} .tab:hover:not(.active) {
   background: #1c2128;
   border-color: rgba(20,184,166,0.25);
 }
-#${IDS.buyHud} .body{ padding: 14px 16px; }
-#${IDS.buyHud} .fieldLabel{ 
-  color: #64748b; 
-  font-weight: 600; 
-  margin-bottom: 8px; 
-  font-size: 10px; 
-  text-transform: uppercase; 
+
+#${IDS.buyHud} .body {
+  padding: 14px 16px;
+}
+
+#${IDS.buyHud} .fieldLabel {
+  color: #64748b;
+  font-weight: 600;
+  margin-bottom: 8px;
+  font-size: 10px;
+  text-transform: uppercase;
   letter-spacing: 0.5px;
 }
-#${IDS.buyHud} input.field{
-  width:100%;
+
+#${IDS.buyHud} input.field {
+  width: 100%;
   border: 1px solid rgba(20,184,166,0.2);
   background: #161b22;
   color: #f8fafc;
@@ -532,11 +703,19 @@
   font-weight: 600;
   transition: all 0.2s;
 }
-#${IDS.buyHud} input.field:focus{ 
+
+#${IDS.buyHud} input.field:focus {
   border-color: #14b8a6;
 }
-#${IDS.buyHud} .quickRow{ display:flex; flex-wrap:wrap; gap:8px; margin-top: 12px; }
-#${IDS.buyHud} .qbtn{
+
+#${IDS.buyHud} .quickRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+#${IDS.buyHud} .qbtn {
   border: 1px solid rgba(20,184,166,0.15);
   background: #161b22;
   color: #94a3b8;
@@ -547,52 +726,18 @@
   font-size: 11px;
   transition: all 0.2s;
 }
-#${IDS.buyHud} .qbtn:hover{ 
+
+#${IDS.buyHud} .qbtn:hover {
   background: rgba(20,184,166,0.1);
   border-color: rgba(20,184,166,0.3);
   color: #14b8a6;
 }
-#${IDS.buyHud} .action{
-  margin-top: 14px;
-  width:100%;
-  border: none;
-  background: #14b8a6;
-  color: #0d1117;
-  padding: 12px 14px;
-  border-radius: 8px;
-  cursor: pointer;
-  font-weight: 800;
-  font-size: 13px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  transition: all 0.2s;
-}
-#${IDS.buyHud} .action:hover{ 
-  background: #2dd4bf;
-}
-#${IDS.buyHud} .action.sell{ 
-  background: #ef4444;
-  color: white;
-}
-#${IDS.buyHud} .action.sell:hover{ 
-  background: #f87171;
-}
-#${IDS.buyHud} .status{
-  margin-top: 10px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: #161b22;
-  border: 1px solid rgba(20,184,166,0.1);
-  color: #64748b;
-  font-weight: 600;
-  min-height: 40px;
-  font-size: 11px;
-}
 
-#${IDS.buyHud} .strategyRow{
+#${IDS.buyHud} .strategyRow {
   margin-top: 12px;
 }
-#${IDS.buyHud} .strategySelect{
+
+#${IDS.buyHud} .strategySelect {
   width: 100%;
   padding: 8px 10px;
   background: #161b22;
@@ -605,125 +750,131 @@
   cursor: pointer;
   transition: all 0.2s;
 }
-#${IDS.buyHud} .strategySelect:hover{
+
+#${IDS.buyHud} .strategySelect:hover {
   border-color: rgba(20,184,166,0.5);
 }
-#${IDS.buyHud} .strategySelect:focus{
+
+#${IDS.buyHud} .strategySelect:focus {
   border-color: #14b8a6;
 }
 
-/* Professor Trade Critique Popup */
-/* Professor Trade Critique Popup */
-.professor-overlay {
-  position: fixed;
-  z-index: 2147483647;
-  display: flex;
-  flex-direction: column;
-  pointer-events: auto;
-  animation: professorFadeIn 0.3s ease-out;
-  /* Removed fullscreen backdrop */
-}
-.professor-overlay * {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-@keyframes professorFadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-.professor-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  max-width: 500px;
-  animation: professorSlideIn 0.4s ease-out;
-}
-@keyframes professorSlideIn {
-  from { transform: translateY(30px) scale(0.9); opacity: 0; }
-  to { transform: translateY(0) scale(1); opacity: 1; }
-}
-.professor-image {
-  width: 180px;
-  height: 180px;
-  border-radius: 50%;
-  object-fit: cover;
-  border: 4px solid #6366f1;
-  box-shadow: 0 0 30px rgba(99,102,241,0.4);
-  margin-bottom: -20px;
-  z-index: 1;
-}
-.professor-bubble {
-  background: linear-gradient(145deg, #1e293b, #0f172a);
-  border: 2px solid rgba(99,102,241,0.4);
-  border-radius: 20px;
-  padding: 25px 30px;
-  color: #f1f5f9;
-  font-size: 15px;
-  line-height: 1.6;
-  box-shadow: 0 10px 40px rgba(0,0,0,0.5);
-  position: relative;
-  text-align: center;
-}
-.professor-bubble::before {
-  content: '';
-  position: absolute;
-  top: -15px;
-  left: 50%;
-  transform: translateX(-50%);
-  border: 12px solid transparent;
-  border-bottom-color: rgba(99,102,241,0.4);
-}
-.professor-bubble::after {
-  content: '';
-  position: absolute;
-  top: -11px;
-  left: 50%;
-  transform: translateX(-50%);
-  border: 10px solid transparent;
-  border-bottom-color: #1e293b;
-}
-.professor-title {
-  font-size: 18px;
-  font-weight: 900;
-  color: #a5b4fc;
-  margin-bottom: 12px;
-}
-.professor-message {
-  margin-bottom: 15px;
-  color: #e2e8f0;
-}
-.professor-stats {
-  background: rgba(15,23,42,0.5);
-  border-radius: 12px;
-  padding: 12px 16px;
-  margin: 15px 0;
-  font-size: 13px;
-  text-align: left;
-}
-.professor-stats div {
-  margin: 4px 0;
-  color: #94a3b8;
-}
-.professor-stats span {
-  color: #f1f5f9;
-  font-weight: 700;
-}
-.professor-dismiss {
-  margin-top: 15px;
-  background: linear-gradient(135deg, #6366f1, #4f46e5);
+#${IDS.buyHud} .action {
+  margin-top: 14px;
+  width: 100%;
   border: none;
-  color: white;
-  padding: 10px 30px;
-  border-radius: 10px;
+  background: #14b8a6;
+  color: #0d1117;
+  padding: 12px 14px;
+  border-radius: 8px;
   cursor: pointer;
-  font-weight: 700;
-  font-size: 14px;
+  font-weight: 800;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
   transition: all 0.2s;
 }
-.professor-dismiss:hover {
-  background: linear-gradient(135deg, #818cf8, #6366f1);
-  transform: scale(1.05);
+
+#${IDS.buyHud} .action:hover {
+  background: #2dd4bf;
 }
-/* Emotion Selector */
+
+#${IDS.buyHud} .action.sell {
+  background: #ef4444;
+  color: white;
+}
+
+#${IDS.buyHud} .action.sell:hover {
+  background: #f87171;
+}
+
+#${IDS.buyHud} .status {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #161b22;
+  border: 1px solid rgba(20,184,166,0.1);
+  color: #64748b;
+  font-weight: 600;
+  min-height: 40px;
+  font-size: 11px;
+}
+`;
+
+  // src/modules/ui/modals-styles.js
+  var MODALS_CSS = `
+/* Confirm Modal */
+.confirm-modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2147483647;
+  pointer-events: auto;
+}
+
+.confirm-modal {
+  background: linear-gradient(145deg, rgba(15,23,42,0.98) 0%, rgba(10,15,30,0.99) 100%);
+  border: 1px solid rgba(99,102,241,0.35);
+  border-radius: 16px;
+  padding: 24px;
+  min-width: 320px;
+  max-width: 400px;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+  font-family: 'Inter', sans-serif;
+}
+
+.confirm-modal h3 {
+  margin: 0 0 12px 0;
+  color: #f1f5f9;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.confirm-modal p {
+  margin: 0 0 20px 0;
+  color: #94a3b8;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.confirm-modal-buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.confirm-modal-btn {
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s;
+}
+
+.confirm-modal-btn.cancel {
+  background: rgba(100,116,139,0.3);
+  color: #94a3b8;
+}
+
+.confirm-modal-btn.cancel:hover {
+  background: rgba(100,116,139,0.5);
+}
+
+.confirm-modal-btn.confirm {
+  background: rgba(239,68,68,0.8);
+  color: white;
+}
+
+.confirm-modal-btn.confirm:hover {
+  background: rgba(239,68,68,1);
+}
+
+/* Emotion Selector Modal */
 .emotion-modal-overlay {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
@@ -736,7 +887,6 @@
   opacity: 0;
   animation: fadeIn 0.2s forwards;
 }
-@keyframes fadeIn { to { opacity: 1; } }
 
 .emotion-modal {
   background: #0d1117;
@@ -749,7 +899,6 @@
   transform: scale(0.9);
   animation: scaleIn 0.2s forwards;
 }
-@keyframes scaleIn { to { transform: scale(1); } }
 
 .emotion-title {
   color: #14b8a6;
@@ -759,6 +908,7 @@
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
+
 .emotion-subtitle {
   color: #94a3b8;
   font-size: 13px;
@@ -787,12 +937,14 @@
   justify-content: center;
   gap: 8px;
 }
+
 .emotion-btn:hover {
   background: rgba(20,184,166,0.05);
   border-color: rgba(20,184,166,0.3);
   color: #f8fafc;
   transform: translateY(-2px);
 }
+
 .emotion-btn.selected {
   background: rgba(20,184,166,0.15);
   border-color: #14b8a6;
@@ -807,7 +959,11 @@
   cursor: pointer;
   text-decoration: underline;
 }
-.emotion-skip:hover { color: #94a3b8; }
+
+.emotion-skip:hover {
+  color: #94a3b8;
+}
+
 /* Settings Modal */
 .settings-modal {
   background: #0d1117;
@@ -819,59 +975,278 @@
   font-family: 'Inter', sans-serif;
   animation: scaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
 .settings-header {
-  display: flex; justify-content: space-between; align-items: center;
-  margin-bottom: 20px; border-bottom: 1px solid rgba(20,184,166,0.1); padding-bottom: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  border-bottom: 1px solid rgba(20,184,166,0.1);
+  padding-bottom: 12px;
 }
-.settings-title { font-size: 16px; font-weight: 700; color: #f8fafc; display:flex; align-items:center; gap:8px; }
-.settings-close { background:none; border:none; color:#64748b; cursor:pointer; font-size:18px; transition:color 0.2s; }
-.settings-close:hover { color: #f8fafc; }
+
+.settings-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #f8fafc;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-close {
+  background: none;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 18px;
+  transition: color 0.2s;
+}
+
+.settings-close:hover {
+  color: #f8fafc;
+}
 
 .setting-row {
-  display: flex; justify-content: space-between; align-items: center;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   margin-bottom: 16px;
 }
-.setting-info { flex: 1; }
-.setting-name { font-size: 13px; font-weight: 600; color: #e2e8f0; margin-bottom: 2px; }
-.setting-desc { font-size: 11px; color: #94a3b8; line-height: 1.3; }
+
+.setting-info {
+  flex: 1;
+}
+
+.setting-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e2e8f0;
+  margin-bottom: 2px;
+}
+
+.setting-desc {
+  font-size: 11px;
+  color: #94a3b8;
+  line-height: 1.3;
+}
 
 /* Toggle Switch */
 .toggle-switch {
-  position: relative; display: inline-block; width: 40px; height: 22px; flex-shrink: 0;
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 22px;
+  flex-shrink: 0;
 }
-.toggle-switch input { opacity: 0; width: 0; height: 0; }
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
 .slider {
-  position: absolute; cursor: pointer;
+  position: absolute;
+  cursor: pointer;
   top: 0; left: 0; right: 0; bottom: 0;
   background-color: #1e293b;
   transition: .3s;
   border-radius: 22px;
   border: 1px solid rgba(255,255,255,0.1);
 }
+
 .slider:before {
-  position: absolute; content: "";
-  height: 16px; width: 16px;
-  left: 3px; bottom: 2px;
+  position: absolute;
+  content: "";
+  height: 16px;
+  width: 16px;
+  left: 3px;
+  bottom: 2px;
   background-color: white;
   transition: .3s;
   border-radius: 50%;
 }
-input:checked + .slider { background-color: #14b8a6; border-color: #14b8a6; }
-input:checked + .slider:before { transform: translateX(18px); }
 
-/* Shadow Mode Overrides (Gold/Orange) */
-.zero-shadow-mode .slider { background-color: #451a03; }
-.zero-shadow-mode input:checked + .slider { background-color: #f59e0b; border-color: #f59e0b; }
-.zero-shadow-mode #${IDS.pnlHud} .title .dot { background: #f59e0b; box-shadow: 0 0 10px rgba(245,158,11,0.5); }
-.zero-shadow-mode #${IDS.pnlHud} .title { color: #f59e0b; }
-.zero-shadow-mode #${IDS.buyHud} .panelTitle .dot { background: #f59e0b; box-shadow: 0 0 10px rgba(245,158,11,0.5); }
-.zero-shadow-mode #${IDS.buyHud} .panelTitle { color: #f59e0b; }
-.zero-shadow-mode #${IDS.buyHud} .action { background: #f59e0b; color: #000; }
-.zero-shadow-mode #${IDS.buyHud} .action:hover { background: #fbbf24; }
-/* Revert Banner for Shadow Mode */
-.zero-shadow-mode #${IDS.banner} .label { color: #f59e0b; }
-.zero-shadow-mode #${IDS.banner} .dot { background: #f59e0b; box-shadow: 0 0 8px rgba(245,158,11,0.5); }
+input:checked + .slider {
+  background-color: #14b8a6;
+  border-color: #14b8a6;
+}
+
+input:checked + .slider:before {
+  transform: translateX(18px);
+}
 `;
+
+  // src/modules/ui/professor-styles.js
+  var PROFESSOR_CSS = `
+/* Professor Trade Critique Popup */
+.professor-overlay {
+  position: fixed;
+  z-index: 2147483647;
+  display: flex;
+  flex-direction: column;
+  pointer-events: auto;
+  animation: professorFadeIn 0.3s ease-out;
+}
+
+.professor-overlay * {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.professor-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 500px;
+  animation: professorSlideIn 0.4s ease-out;
+}
+
+.professor-image {
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 4px solid #6366f1;
+  box-shadow: 0 0 30px rgba(99,102,241,0.4);
+  margin-bottom: -20px;
+  z-index: 1;
+}
+
+.professor-bubble {
+  background: linear-gradient(145deg, #1e293b, #0f172a);
+  border: 2px solid rgba(99,102,241,0.4);
+  border-radius: 20px;
+  padding: 25px 30px;
+  color: #f1f5f9;
+  font-size: 15px;
+  line-height: 1.6;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+  position: relative;
+  text-align: center;
+}
+
+.professor-bubble::before {
+  content: '';
+  position: absolute;
+  top: -15px;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 12px solid transparent;
+  border-bottom-color: rgba(99,102,241,0.4);
+}
+
+.professor-bubble::after {
+  content: '';
+  position: absolute;
+  top: -11px;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 10px solid transparent;
+  border-bottom-color: #1e293b;
+}
+
+.professor-title {
+  font-size: 18px;
+  font-weight: 900;
+  color: #a5b4fc;
+  margin-bottom: 12px;
+}
+
+.professor-message {
+  margin-bottom: 15px;
+  color: #e2e8f0;
+}
+
+.professor-stats {
+  background: rgba(15,23,42,0.5);
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin: 15px 0;
+  font-size: 13px;
+  text-align: left;
+}
+
+.professor-stats div {
+  margin: 4px 0;
+  color: #94a3b8;
+}
+
+.professor-stats span {
+  color: #f1f5f9;
+  font-weight: 700;
+}
+
+.professor-dismiss {
+  margin-top: 15px;
+  background: linear-gradient(135deg, #6366f1, #4f46e5);
+  border: none;
+  color: white;
+  padding: 10px 30px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.professor-dismiss:hover {
+  background: linear-gradient(135deg, #818cf8, #6366f1);
+  transform: scale(1.05);
+}
+`;
+
+  // src/modules/ui/theme-overrides.js
+  var THEME_OVERRIDES_CSS = `
+/* Shadow Mode Overrides (Gold/Orange Theme) */
+.zero-shadow-mode .slider {
+  background-color: #451a03;
+}
+
+.zero-shadow-mode input:checked + .slider {
+  background-color: #f59e0b;
+  border-color: #f59e0b;
+}
+
+.zero-shadow-mode #${IDS.pnlHud} .title .dot {
+  background: #f59e0b;
+  box-shadow: 0 0 10px rgba(245,158,11,0.5);
+}
+
+.zero-shadow-mode #${IDS.pnlHud} .title {
+  color: #f59e0b;
+}
+
+.zero-shadow-mode #${IDS.buyHud} .panelTitle .dot {
+  background: #f59e0b;
+  box-shadow: 0 0 10px rgba(245,158,11,0.5);
+}
+
+.zero-shadow-mode #${IDS.buyHud} .panelTitle {
+  color: #f59e0b;
+}
+
+.zero-shadow-mode #${IDS.buyHud} .action {
+  background: #f59e0b;
+  color: #000;
+}
+
+.zero-shadow-mode #${IDS.buyHud} .action:hover {
+  background: #fbbf24;
+}
+
+.zero-shadow-mode #${IDS.banner} .label {
+  color: #f59e0b;
+}
+
+.zero-shadow-mode #${IDS.banner} .dot {
+  background: #f59e0b;
+  box-shadow: 0 0 8px rgba(245,158,11,0.5);
+}
+`;
+
+  // src/modules/ui/styles.js
+  var CSS = COMMON_CSS + BANNER_CSS + PNL_HUD_CSS + BUY_HUD_CSS + MODALS_CSS + PROFESSOR_CSS + THEME_OVERRIDES_CSS;
 
   // src/modules/ui/overlay.js
   var OverlayManager = {
@@ -1028,29 +1403,116 @@ input:checked + .slider:before { transform: translateX(18px); }
     }
   };
 
-  // src/modules/core/trading.js
-  var Trading = {
-    // --- Utils ---
-    getSolPrice() {
-      return Market.price > 10 ? Market.price : 200;
+  // src/modules/ui/banner.js
+  var Banner = {
+    mountBanner() {
+      const root = OverlayManager.getShadowRoot();
+      if (!root)
+        return;
+      let bar = root.getElementById(IDS.banner);
+      if (bar)
+        return;
+      bar = document.createElement("div");
+      bar.id = IDS.banner;
+      bar.innerHTML = `
+            <div class="inner" style="cursor:pointer;" title="Click to toggle ZER\xD8 Mode">
+                <div class="dot"></div>
+                <div class="label">ZER\xD8 MODE</div>
+                <div class="state">ENABLED</div>
+                <div class="hint" style="margin-left:8px; opacity:0.5; font-size:11px;">(Paper Trading Overlay)</div>
+            </div>
+            <div style="position:absolute; right:20px; font-size:10px; color:#334155; pointer-events:none;">v${Store.state?.version || "0.9.1"}</div>
+        `;
+      bar.addEventListener("click", async () => {
+        if (!Store.state)
+          return;
+        Store.state.settings.enabled = !Store.state.settings.enabled;
+        await Store.save();
+        if (window.ZeroHUD && window.ZeroHUD.updateAll) {
+          window.ZeroHUD.updateAll();
+        }
+      });
+      root.insertBefore(bar, root.firstChild);
+    },
+    updateBanner() {
+      const root = OverlayManager.getShadowRoot();
+      const bar = root?.getElementById(IDS.banner);
+      if (!bar || !Store.state)
+        return;
+      const enabled = Store.state.settings.enabled;
+      const stateEl = bar.querySelector(".state");
+      if (stateEl)
+        stateEl.textContent = enabled ? "ENABLED" : "DISABLED";
+      bar.classList.toggle("disabled", !enabled);
+    }
+  };
+
+  // src/modules/core/pnl-calculator.js
+  var PnlCalculator = {
+    cachedSolPrice: null,
+    lastSolPriceFetch: 0,
+    priceUpdatePending: false,
+    lastPriceSave: 0,
+    async getSolPrice() {
+      const now = Date.now();
+      if (this.cachedSolPrice && now - this.lastSolPriceFetch < 3e4) {
+        return this.cachedSolPrice;
+      }
+      try {
+        const response = await fetch("https://price.jup.ag/v6/price?ids=So11111111111111111111111111111111111111112");
+        const data = await response.json();
+        const solPrice = data?.data?.So11111111111111111111111111111111111111112?.price;
+        if (solPrice && solPrice > 0) {
+          this.cachedSolPrice = solPrice;
+          this.lastSolPriceFetch = now;
+          return solPrice;
+        }
+      } catch (e) {
+        console.warn("[ZER\xD8] Failed to fetch SOL price:", e);
+      }
+      return this.cachedSolPrice || 200;
     },
     fmtSol(n) {
       if (!Number.isFinite(n))
         return "0.0000";
+      if (Math.abs(n) < 1 && n !== 0) {
+        return n.toFixed(6);
+      }
       return n.toFixed(4);
     },
-    getUnrealizedPnl(state) {
+    async getUnrealizedPnl(state, currentTokenMint = null) {
       let totalUnrealized = 0;
-      const solUsd = this.getSolPrice();
-      Object.values(state.positions || {}).forEach((pos) => {
-        const currentPrice = Market.price || pos.lastPriceUsd;
+      const solUsd = await this.getSolPrice();
+      let priceWasUpdated = false;
+      const positions = Object.values(state.positions || {});
+      positions.forEach((pos) => {
+        let currentPrice = pos.lastPriceUsd || pos.entryPriceUsd;
+        if (currentTokenMint && pos.mint === currentTokenMint && Market.price > 0) {
+          currentPrice = Market.price;
+          const oldPrice = pos.lastPriceUsd || pos.entryPriceUsd;
+          if (!pos.lastPriceUsd || Math.abs(oldPrice - Market.price) / oldPrice > 1e-3) {
+            pos.lastPriceUsd = Market.price;
+            priceWasUpdated = true;
+          }
+        }
+        if (!currentPrice || currentPrice <= 0)
+          return;
         const valueUsd = pos.tokenQty * currentPrice;
         const valueSol = valueUsd / solUsd;
         const pnl = valueSol - pos.totalSolSpent;
         totalUnrealized += pnl;
       });
+      const now = Date.now();
+      if (priceWasUpdated && now - this.lastPriceSave > 5e3) {
+        this.lastPriceSave = now;
+        Store.save();
+      }
       return totalUnrealized;
-    },
+    }
+  };
+
+  // src/modules/core/analytics.js
+  var Analytics = {
     analyzeRecentTrades(state) {
       const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
       if (trades.length === 0)
@@ -1100,9 +1562,54 @@ input:checked + .slider:before { transform: translateX(18px); }
         totalPnlSol
       };
     },
-    // --- Actions ---
+    calculateDiscipline(trade, state) {
+      const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+      const prevTrade = trades.length > 1 ? trades[trades.length - 2] : null;
+      let penalty = 0;
+      let reasons = [];
+      if (prevTrade && trade.ts - prevTrade.ts < 6e4) {
+        penalty += 10;
+        reasons.push("FOMO (Rapid logic)");
+      }
+      if (!trade.strategy || trade.strategy === "Unknown" || trade.strategy === "Other") {
+        penalty += 5;
+        reasons.push("No Strategy");
+      }
+      if (trade.side === "BUY") {
+        const currentBal = state.session.balance + trade.solSize;
+        if (trade.solSize > currentBal * 0.5) {
+          penalty += 20;
+          reasons.push("Oversizing (>50%)");
+        }
+      }
+      let score = state.session.disciplineScore !== void 0 ? state.session.disciplineScore : 100;
+      score = Math.max(0, score - penalty);
+      state.session.disciplineScore = score;
+      if (penalty > 0) {
+        console.log(`[DISCIPLINE] Score -${penalty} (${reasons.join(", ")})`);
+      }
+      return { score, penalty, reasons };
+    },
+    updateStreaks(trade, state) {
+      if (trade.side !== "SELL")
+        return;
+      const pnl = trade.realizedPnlSol || 0;
+      if (pnl > 0) {
+        state.session.winStreak = (state.session.winStreak || 0) + 1;
+        state.session.lossStreak = 0;
+        console.log(`[ZER\xD8] Win! +${pnl.toFixed(4)} SOL. Win streak: ${state.session.winStreak}`);
+      } else if (pnl < 0) {
+        state.session.lossStreak = (state.session.lossStreak || 0) + 1;
+        state.session.winStreak = 0;
+        console.log(`[ZER\xD8] Loss. ${pnl.toFixed(4)} SOL. Loss streak: ${state.session.lossStreak}`);
+      }
+    }
+  };
+
+  // src/modules/core/order-execution.js
+  var OrderExecution = {
     async buy(amountSol, strategy = "Trend", tokenInfo = null) {
-      const state = Store2.state;
+      const state = Store.state;
       if (!state.settings.enabled)
         return { success: false, error: "Paper trading disabled" };
       if (amountSol <= 0)
@@ -1111,7 +1618,7 @@ input:checked + .slider:before { transform: translateX(18px); }
         return { success: false, error: "Insufficient funds" };
       const price = Market.price || 1e-6;
       const marketCap = Market.marketCap || 0;
-      const solUsd = this.getSolPrice();
+      const solUsd = await PnlCalculator.getSolPrice();
       const usdAmount = amountSol * solUsd;
       const tokenQty = usdAmount / price;
       const symbol = tokenInfo?.symbol || "SOL";
@@ -1158,13 +1665,13 @@ input:checked + .slider:before { transform: translateX(18px); }
       if (!state.session.trades)
         state.session.trades = [];
       state.session.trades.push(tradeId);
-      this.calculateDiscipline(trade, state);
+      Analytics.calculateDiscipline(trade, state);
       window.postMessage({ __paper: true, type: "PAPER_DRAW_MARKER", trade }, "*");
-      await Store2.save();
+      await Store.save();
       return { success: true, trade, position: pos };
     },
     async sell(pct = 100, strategy = "Trend", tokenInfo = null) {
-      const state = Store2.state;
+      const state = Store.state;
       const currentPrice = Market.price || 0;
       if (currentPrice <= 0)
         return { success: false, error: "No price data" };
@@ -1178,7 +1685,7 @@ input:checked + .slider:before { transform: translateX(18px); }
       const qtyToSell = position.tokenQty * (pct / 100);
       if (qtyToSell <= 0)
         return { success: false, error: "Invalid qty" };
-      const solUsd = this.getSolPrice();
+      const solUsd = await PnlCalculator.getSolPrice();
       const proceedsUsd = qtyToSell * currentPrice;
       const solReceived = proceedsUsd / solUsd;
       const solSpentPortion = position.totalSolSpent * (qtyToSell / position.tokenQty);
@@ -1211,146 +1718,105 @@ input:checked + .slider:before { transform: translateX(18px); }
       if (!state.session.trades)
         state.session.trades = [];
       state.session.trades.push(tradeId);
-      this.calculateDiscipline(trade, state);
+      Analytics.calculateDiscipline(trade, state);
+      Analytics.updateStreaks(trade, state);
       window.postMessage({ __paper: true, type: "PAPER_DRAW_MARKER", trade }, "*");
-      await Store2.save();
+      await Store.save();
       return { success: true, trade };
     },
     async tagTrade(tradeId, updates) {
-      const state = Store2.state;
+      const state = Store.state;
       if (!state.trades || !state.trades[tradeId])
         return false;
       Object.assign(state.trades[tradeId], updates);
-      await Store2.save();
+      await Store.save();
       return true;
-    },
-    // --- Analysis ---
-    calculateDiscipline(trade, state) {
-      const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
-      const prevTrade = trades.length > 1 ? trades[trades.length - 2] : null;
-      let penalty = 0;
-      let reasons = [];
-      if (prevTrade && trade.ts - prevTrade.ts < 6e4) {
-        penalty += 10;
-        reasons.push("FOMO (Rapid logic)");
-      }
-      if (!trade.strategy || trade.strategy === "Unknown" || trade.strategy === "Other") {
-        penalty += 5;
-        reasons.push("No Strategy");
-      }
-      if (trade.side === "BUY") {
-        const currentBal = state.session.balance + trade.solSize;
-        if (trade.solSize > currentBal * 0.5) {
-          penalty += 20;
-          reasons.push("Oversizing (>50%)");
-        }
-      }
-      let score = state.session.disciplineScore !== void 0 ? state.session.disciplineScore : 100;
-      score = Math.max(0, score - penalty);
-      state.session.disciplineScore = score;
-      if (penalty > 0) {
-        console.log(`[DISCIPLINE] Score -${penalty} (${reasons.join(", ")})`);
-      }
-      return { score, penalty, reasons };
     }
   };
 
-  // src/modules/ui/hud.js
-  var HUD = {
-    renderScheduled: false,
-    lastRenderAt: 0,
-    // UI State
-    buyHudTab: "buy",
-    buyHudEdit: false,
-    async init() {
-      this.renderAll();
-      window.addEventListener("resize", () => this.scheduleRender());
-      if (Store2.state.trades) {
-        const trades = Object.values(Store2.state.trades);
-        setTimeout(() => {
-          window.postMessage({ __paper: true, type: "PAPER_DRAW_ALL", trades }, "*");
-        }, 2e3);
-      }
-      Market.subscribe(() => {
-        this.updatePnlHud();
-      });
-    },
-    scheduleRender() {
-      if (this.renderScheduled)
-        return;
-      this.renderScheduled = true;
-      requestAnimationFrame(() => {
-        this.renderAll();
-        this.renderScheduled = false;
-        this.lastRenderAt = Date.now();
-      });
-    },
-    renderAll() {
-      if (!Store2.state)
-        return;
-      this.mountBanner();
-      this.mountPnlHud();
-      this.mountBuyHud();
-      this.updateAll();
-    },
-    updateAll() {
-      if (Store2.state && Store2.state.settings) {
-        const container = OverlayManager.getContainer();
-        if (Store2.state.settings.tradingMode === "shadow") {
-          container.classList.add("zero-shadow-mode");
-        } else {
-          container.classList.remove("zero-shadow-mode");
+  // src/modules/core/trading.js
+  var Trading = {
+    // PnL Calculator methods
+    getSolPrice: () => PnlCalculator.getSolPrice(),
+    fmtSol: (n) => PnlCalculator.fmtSol(n),
+    getUnrealizedPnl: (state, currentTokenMint) => PnlCalculator.getUnrealizedPnl(state, currentTokenMint),
+    // Analytics methods
+    analyzeRecentTrades: (state) => Analytics.analyzeRecentTrades(state),
+    calculateDiscipline: (trade, state) => Analytics.calculateDiscipline(trade, state),
+    updateStreaks: (trade, state) => Analytics.updateStreaks(trade, state),
+    // Order Execution methods
+    buy: (amountSol, strategy, tokenInfo) => OrderExecution.buy(amountSol, strategy, tokenInfo),
+    sell: (pct, strategy, tokenInfo) => OrderExecution.sell(pct, strategy, tokenInfo),
+    tagTrade: (tradeId, updates) => OrderExecution.tagTrade(tradeId, updates)
+  };
+
+  // src/modules/ui/token-detector.js
+  var TokenDetector = {
+    getCurrentToken() {
+      let symbol = "SOL";
+      let mint = "So11111111111111111111111111111111111111112";
+      try {
+        const url = window.location.href;
+        const mintMatch = url.match(/[1-9A-HJ-NP-Za-km-z]{32,44}/g);
+        if (mintMatch) {
+          const candidate = mintMatch[mintMatch.length - 1];
+          if (candidate && candidate.length > 30) {
+            mint = candidate;
+          }
         }
+        const title = document.title;
+        const titleParts = title.trim().split(/[\s|/]+/);
+        if (titleParts.length > 0) {
+          let first = titleParts[0].toUpperCase();
+          const generics = ["PADRE", "TERMINAL", "AXIOM", "SOLANA", "TRADE", "DEX", "CHART"];
+          if (!generics.includes(first) && first.length < 15 && first.length > 1) {
+            symbol = first;
+          }
+        }
+        if (symbol === "SOL" || symbol === "TERMINAL" || symbol.includes("SEARCH")) {
+          const tickerSpans = document.querySelectorAll('span[class*="css-1oo1vsz"]');
+          for (const s of tickerSpans) {
+            const txt = s.textContent.trim().toUpperCase();
+            const bad = ["PADRE", "TERMINAL", "AXIOM", "SOLANA", "TRADE", "DEX", "CHART", "SEARCH BY NAME OR CA..."];
+            if (txt && !bad.includes(txt) && txt.length < 15 && txt.length > 1) {
+              symbol = txt;
+              break;
+            }
+          }
+          if (symbol === "SOL" || symbol.includes("SEARCH")) {
+            const spans = document.querySelectorAll("span, div");
+            for (const s of spans) {
+              const t = s.textContent.trim();
+              if (t.includes("/") && t.includes("SOL") && t.length < 20) {
+                const potential = t.split("/")[0].trim().toUpperCase();
+                if (potential.length > 1 && potential.length < 10) {
+                  symbol = potential;
+                  break;
+                }
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("[TokenDetector] Token scrape failed", e);
       }
-      this.updateBanner();
-      this.updatePnlHud();
-      this.updateBuyHud();
-    },
-    // --- BANNER ---
-    mountBanner() {
-      const root = OverlayManager.getShadowRoot();
-      if (!root)
-        return;
-      let bar = root.getElementById(IDS.banner);
-      if (bar)
-        return;
-      bar = document.createElement("div");
-      bar.id = IDS.banner;
-      bar.innerHTML = `
-            <div class="inner" style="cursor:pointer;" title="Click to toggle ZER\xD8 Mode">
-                <div class="dot"></div>
-                <div class="label">ZER\xD8 MODE</div>
-                <div class="state">ENABLED</div>
-                <div class="hint" style="margin-left:8px; opacity:0.5; font-size:11px;">(Paper Trading Overlay)</div>
-            </div>
-            <div style="position:absolute; right:20px; font-size:10px; color:#334155; pointer-events:none;">v${Store2.state?.version || "0.9.1"}</div>
-        `;
-      bar.addEventListener("click", async () => {
-        if (!Store2.state)
-          return;
-        Store2.state.settings.enabled = !Store2.state.settings.enabled;
-        await Store2.save();
-        this.updateAll();
-      });
-      root.insertBefore(bar, root.firstChild);
-    },
-    updateBanner() {
-      const root = OverlayManager.getShadowRoot();
-      const bar = root?.getElementById(IDS.banner);
-      if (!bar || !Store2.state)
-        return;
-      const enabled = Store2.state.settings.enabled;
-      const stateEl = bar.querySelector(".state");
-      if (stateEl)
-        stateEl.textContent = enabled ? "ENABLED" : "DISABLED";
-      bar.classList.toggle("disabled", !enabled);
-    },
-    // --- PNL HUD ---
-    mountPnlHud() {
+      return { symbol, mint };
+    }
+  };
+
+  // src/modules/ui/pnl-hud.js
+  function px(n) {
+    return n + "px";
+  }
+  function clamp(v, min, max) {
+    return Math.max(min, Math.min(max, v));
+  }
+  var PnlHud = {
+    mountPnlHud(makeDraggable) {
       const container = OverlayManager.getContainer();
       const rootId = IDS.pnlHud;
       let root = container.querySelector("#" + rootId);
-      if (!Store2.state.settings.enabled) {
+      if (!Store.state.settings.enabled) {
         if (root)
           root.style.display = "none";
         return;
@@ -1362,22 +1828,22 @@ input:checked + .slider:before { transform: translateX(18px); }
         isNew = true;
         root = document.createElement("div");
         root.id = rootId;
-        root.className = Store2.state.settings.pnlDocked ? "docked" : "floating";
-        if (!Store2.state.settings.pnlDocked) {
-          root.style.left = px(Store2.state.settings.pnlPos.x);
-          root.style.top = px(Store2.state.settings.pnlPos.y);
+        root.className = Store.state.settings.pnlDocked ? "docked" : "floating";
+        if (!Store.state.settings.pnlDocked) {
+          root.style.left = px(Store.state.settings.pnlPos.x);
+          root.style.top = px(Store.state.settings.pnlPos.y);
         }
         container.appendChild(root);
         this.bindPnlEvents(root);
       }
-      const CURRENT_UI_VERSION = "1.1.5";
+      const CURRENT_UI_VERSION = "1.8.0";
       const renderedVersion = root.dataset.uiVersion;
       if (isNew || renderedVersion !== CURRENT_UI_VERSION) {
-        this.renderPnlHudContent(root);
+        this.renderPnlHudContent(root, makeDraggable);
         root.dataset.uiVersion = CURRENT_UI_VERSION;
       }
     },
-    renderPnlHudContent(root) {
+    renderPnlHudContent(root, makeDraggable) {
       root.innerHTML = `
             <div class="card">
               <div class="header">
@@ -1418,38 +1884,38 @@ input:checked + .slider:before { transform: translateX(18px); }
               <div class="tradeList" style="display:none;"></div>
             </div>
          `;
-      this.bindPnlDrag(root);
+      this.bindPnlDrag(root, makeDraggable);
       const inp = root.querySelector(".startSolInput");
       if (inp) {
         inp.addEventListener("change", async () => {
           const v = parseFloat(inp.value);
           if (v > 0) {
-            if ((Store2.state.session.trades || []).length === 0) {
-              Store2.state.session.balance = v;
-              Store2.state.session.equity = v;
+            if ((Store.state.session.trades || []).length === 0) {
+              Store.state.session.balance = v;
+              Store.state.session.equity = v;
             }
-            Store2.state.settings.startSol = v;
-            await Store2.save();
+            Store.state.settings.startSol = v;
+            await Store.save();
             this.updatePnlHud();
           }
         });
       }
     },
-    bindPnlDrag(root) {
+    bindPnlDrag(root, makeDraggable) {
       const header = root.querySelector(".header");
-      if (!header)
+      if (!header || !makeDraggable)
         return;
-      this.makeDraggable(header, (dx, dy) => {
-        if (Store2.state.settings.pnlDocked)
+      makeDraggable(header, (dx, dy) => {
+        if (Store.state.settings.pnlDocked)
           return;
-        const s = Store2.state.settings;
+        const s = Store.state.settings;
         s.pnlPos.x = clamp(s.pnlPos.x + dx, 0, window.innerWidth - 40);
         s.pnlPos.y = clamp(s.pnlPos.y + dy, 34, window.innerHeight - 40);
         root.style.left = px(s.pnlPos.x);
         root.style.top = px(s.pnlPos.y);
       }, async () => {
-        if (!Store2.state.settings.pnlDocked)
-          await Store2.save();
+        if (!Store.state.settings.pnlDocked)
+          await Store.save();
       });
     },
     bindPnlEvents(root) {
@@ -1464,8 +1930,8 @@ input:checked + .slider:before { transform: translateX(18px); }
         e.preventDefault();
         e.stopPropagation();
         if (act === "dock") {
-          Store2.state.settings.pnlDocked = !Store2.state.settings.pnlDocked;
-          await Store2.save();
+          Store.state.settings.pnlDocked = !Store.state.settings.pnlDocked;
+          await Store.save();
           this.updatePnlHud();
         }
         if (act === "reset") {
@@ -1479,13 +1945,13 @@ input:checked + .slider:before { transform: translateX(18px); }
           }
         }
         if (act === "toggleTokenUnit") {
-          Store2.state.settings.tokenDisplayUsd = !Store2.state.settings.tokenDisplayUsd;
-          await Store2.save();
+          Store.state.settings.tokenDisplayUsd = !Store.state.settings.tokenDisplayUsd;
+          await Store.save();
           this.updatePnlHud();
         }
         if (act === "toggleSessionUnit") {
-          Store2.state.settings.sessionDisplayUsd = !Store2.state.settings.sessionDisplayUsd;
-          await Store2.save();
+          Store.state.settings.sessionDisplayUsd = !Store.state.settings.sessionDisplayUsd;
+          await Store.save();
           this.updatePnlHud();
         }
         if (act === "settings") {
@@ -1493,25 +1959,31 @@ input:checked + .slider:before { transform: translateX(18px); }
         }
       });
     },
-    updatePnlHud() {
+    async updatePnlHud() {
       const root = OverlayManager.getContainer().querySelector("#" + IDS.pnlHud);
-      if (!root || !Store2.state)
+      if (!root || !Store.state)
         return;
-      root.className = Store2.state.settings.pnlDocked ? "docked" : "floating";
-      if (!Store2.state.settings.pnlDocked) {
-        root.style.left = px(Store2.state.settings.pnlPos.x);
-        root.style.top = px(Store2.state.settings.pnlPos.y);
+      root.className = Store.state.settings.pnlDocked ? "docked" : "floating";
+      if (!Store.state.settings.pnlDocked) {
+        root.style.left = px(Store.state.settings.pnlPos.x);
+        root.style.top = px(Store.state.settings.pnlPos.y);
         root.style.transform = "none";
       } else {
         root.style.left = "";
         root.style.top = "";
       }
-      const s = Store2.state;
-      const unrealized = Trading.getUnrealizedPnl(s);
+      const s = Store.state;
+      const currentToken = TokenDetector.getCurrentToken();
+      const unrealized = await Trading.getUnrealizedPnl(s, currentToken.mint);
       const inp = root.querySelector(".startSolInput");
       if (document.activeElement !== inp)
         inp.value = s.settings.startSol;
       root.querySelector('[data-k="balance"]').textContent = `${Trading.fmtSol(s.session.balance)} SOL`;
+      const tokenValueEl = root.querySelector('[data-k="tokenValue"]');
+      if (tokenValueEl) {
+        tokenValueEl.textContent = (unrealized >= 0 ? "+" : "") + Trading.fmtSol(unrealized);
+        tokenValueEl.style.color = unrealized >= 0 ? "#10b981" : "#ef4444";
+      }
       const realized = s.session.realized || 0;
       const totalPnl = realized + unrealized;
       const pnlEl = root.querySelector('[data-k="pnl"]');
@@ -1541,12 +2013,145 @@ input:checked + .slider:before { transform: translateX(18px); }
         discEl.style.color = color;
       }
     },
-    // --- BUY HUD ---
-    mountBuyHud() {
+    showResetModal() {
+      const overlay = document.createElement("div");
+      overlay.className = "confirm-modal-overlay";
+      overlay.innerHTML = `
+            <div class="confirm-modal">
+                <h3>Reset Session?</h3>
+                <p>Clear all history and restore balance?</p>
+                <div class="confirm-modal-buttons">
+                    <button class="confirm-modal-btn cancel">Cancel</button>
+                    <button class="confirm-modal-btn confirm">Reset</button>
+                </div>
+            </div>
+        `;
+      OverlayManager.getContainer().appendChild(overlay);
+      overlay.querySelector(".cancel").onclick = () => overlay.remove();
+      overlay.querySelector(".confirm").onclick = async () => {
+        Store.state.session.balance = Store.state.settings.startSol;
+        Store.state.session.realized = 0;
+        Store.state.session.winStreak = 0;
+        Store.state.session.lossStreak = 0;
+        Store.state.session.trades = [];
+        Store.state.trades = {};
+        Store.state.positions = {};
+        await Store.save();
+        if (window.ZeroHUD && window.ZeroHUD.updateAll) {
+          window.ZeroHUD.updateAll();
+        }
+        overlay.remove();
+      };
+    },
+    showSettingsModal() {
+      const overlay = document.createElement("div");
+      overlay.className = "confirm-modal-overlay";
+      const isShadow = Store.state.settings.tradingMode === "shadow";
+      overlay.innerHTML = `
+            <div class="settings-modal">
+                <div class="settings-header">
+                    <div class="settings-title">
+                        <span>\u2699\uFE0F</span> Settings
+                    </div>
+                    <button class="settings-close">\xD7</button>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <div class="setting-name">Shadow Real Mode</div>
+                        <div class="setting-desc">Tag trades as "Real" for journaling. Changes UI theme.</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="toggle-shadow" ${isShadow ? "checked" : ""}>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <div class="setting-row" style="opacity:0.5; pointer-events:none;">
+                    <div class="setting-info">
+                        <div class="setting-name">Discipline Score</div>
+                        <div class="setting-desc">Track rule adherence (Coming Soon).</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <div style="margin-top:20px; text-align:center; font-size:11px; color:#64748b;">
+                    ZER\xD8 v${Store.state.version || "0.9.9"}
+                </div>
+            </div>
+        `;
+      OverlayManager.getContainer().appendChild(overlay);
+      const close = () => {
+        overlay.remove();
+        if (window.ZeroHUD && window.ZeroHUD.updateAll) {
+          window.ZeroHUD.updateAll();
+        }
+      };
+      overlay.querySelector(".settings-close").onclick = close;
+      const bg = overlay;
+      bg.addEventListener("click", (e) => {
+        if (e.target === bg)
+          close();
+      });
+      const shadowToggle = overlay.querySelector("#toggle-shadow");
+      shadowToggle.onchange = async (e) => {
+        const val = e.target.checked;
+        Store.state.settings.tradingMode = val ? "shadow" : "paper";
+        await Store.save();
+        const container = OverlayManager.getContainer();
+        if (val)
+          container.classList.add("zero-shadow-mode");
+        else
+          container.classList.remove("zero-shadow-mode");
+      };
+    },
+    updateTradeList(container) {
+      const trades = Store.state.session.trades || [];
+      const tradeObjs = trades.map((id) => Store.state.trades[id]).filter((t) => t).reverse();
+      let html = "";
+      tradeObjs.forEach((t) => {
+        const isBuy = t.side === "BUY";
+        let valStr = "";
+        let pnlClass = "muted";
+        if (isBuy) {
+          valStr = `${t.solAmount?.toFixed(3) || "0.1"} SOL`;
+        } else {
+          const isWin = (t.realizedPnlSol || 0) > 0;
+          pnlClass = isWin ? "buy" : t.realizedPnlSol < 0 ? "sell" : "muted";
+          valStr = (t.realizedPnlSol ? (t.realizedPnlSol > 0 ? "+" : "") + t.realizedPnlSol.toFixed(4) : "0.00") + " SOL";
+        }
+        html += `
+                <div class="tradeRow">
+                    <div class="muted" style="font-size:9px;">${new Date(t.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
+                    <div class="tag ${t.side.toLowerCase()}">${t.side}</div>
+                    <div style="flex:1;">${t.symbol}</div>
+                    <div class="${pnlClass}">${valStr}</div>
+                </div>
+            `;
+      });
+      container.innerHTML = html || '<div style="padding:10px;color:#64748b;text-align:center;">No trades yet</div>';
+    }
+  };
+
+  // src/modules/ui/buy-hud.js
+  function px2(n) {
+    return n + "px";
+  }
+  function clamp2(v, min, max) {
+    return Math.max(min, Math.min(max, v));
+  }
+  var BuyHud = {
+    // UI State
+    buyHudTab: "buy",
+    buyHudEdit: false,
+    mountBuyHud(makeDraggable) {
       const container = OverlayManager.getContainer();
       const rootId = IDS.buyHud;
       let root = container.querySelector("#" + rootId);
-      if (!Store2.state.settings.enabled) {
+      if (!Store.state.settings.enabled) {
         if (root)
           root.style.display = "none";
         return;
@@ -1556,20 +2161,20 @@ input:checked + .slider:before { transform: translateX(18px); }
       if (!root) {
         root = document.createElement("div");
         root.id = rootId;
-        root.className = Store2.state.settings.buyHudDocked ? "docked" : "floating";
-        if (!Store2.state.settings.buyHudDocked) {
+        root.className = Store.state.settings.buyHudDocked ? "docked" : "floating";
+        if (!Store.state.settings.buyHudDocked) {
           const safeX = window.innerWidth - 340;
-          root.style.left = px(safeX > 0 ? safeX : 20);
+          root.style.left = px2(safeX > 0 ? safeX : 20);
           root.style.top = "100px";
           root.style.right = "auto";
         }
         container.appendChild(root);
-        this.renderBuyHudContent(root);
+        this.renderBuyHudContent(root, makeDraggable);
         this.setupBuyHudInteractions(root);
       }
-      this.renderBuyHudContent(root);
+      this.renderBuyHudContent(root, makeDraggable);
     },
-    renderBuyHudContent(root) {
+    renderBuyHudContent(root, makeDraggable) {
       const isBuy = this.buyHudTab === "buy";
       const actionText = isBuy ? "ZER\xD8 BUY" : "ZER\xD8 SELL";
       const actionClass = isBuy ? "action" : "action sell";
@@ -1580,7 +2185,7 @@ input:checked + .slider:before { transform: translateX(18px); }
                     <div class="panelTitle"><span class="dot"></span> ZER\xD8 TRADE</div>
                     <div class="panelBtns">
                         <button class="btn" data-act="edit">${this.buyHudEdit ? "Done" : "Edit"}</button>
-                        <button class="btn" data-act="dock">${Store2.state.settings.buyHudDocked ? "Float" : "Dock"}</button>
+                        <button class="btn" data-act="dock">${Store.state.settings.buyHudDocked ? "Float" : "Dock"}</button>
                     </div>
                 </div>
                 <div class="tabs">
@@ -1590,7 +2195,7 @@ input:checked + .slider:before { transform: translateX(18px); }
                 <div class="body">
                     <div class="fieldLabel">${label}</div>
                     <input class="field" type="text" inputmode="decimal" data-k="field" placeholder="0.0">
-                    
+
                     <div class="quickRow">
                         ${this.renderQuickButtons(isBuy)}
                     </div>
@@ -1599,7 +2204,7 @@ input:checked + .slider:before { transform: translateX(18px); }
                     <div class="strategyRow">
                          <div class="fieldLabel">Context / Strategy</div>
                          <select class="strategySelect" data-k="strategy">
-                            ${(Store2.state.settings.strategies || ["Trend"]).map((s) => `<option value="${s}">${s}</option>`).join("")}
+                            ${(Store.state.settings.strategies || ["Trend"]).map((s) => `<option value="${s}">${s}</option>`).join("")}
                          </select>
                     </div>
                     ` : ""}
@@ -1609,34 +2214,34 @@ input:checked + .slider:before { transform: translateX(18px); }
                 </div>
             </div>
         `;
-      this.bindHeaderDrag(root);
+      this.bindHeaderDrag(root, makeDraggable);
     },
     renderQuickButtons(isBuy) {
-      const values = isBuy ? Store2.state.settings.quickBuySols : Store2.state.settings.quickSellPcts;
+      const values = isBuy ? Store.state.settings.quickBuySols : Store.state.settings.quickSellPcts;
       return values.map((v) => `
             <button class="qbtn" data-act="quick" data-val="${v}">${v}${isBuy ? " SOL" : "%"}</button>
         `).join("");
     },
-    bindHeaderDrag(root) {
+    bindHeaderDrag(root, makeDraggable) {
       const header = root.querySelector(".panelHeader");
-      if (!header)
+      if (!header || !makeDraggable)
         return;
-      this.makeDraggable(header, (dx, dy) => {
-        if (Store2.state.settings.buyHudDocked)
+      makeDraggable(header, (dx, dy) => {
+        if (Store.state.settings.buyHudDocked)
           return;
-        const s = Store2.state.settings;
+        const s = Store.state.settings;
         if (!s.buyHudPos) {
           const rect = root.getBoundingClientRect();
           s.buyHudPos = { x: rect.left, y: rect.top };
         }
-        s.buyHudPos.x = clamp(s.buyHudPos.x + dx, 0, window.innerWidth - 300);
-        s.buyHudPos.y = clamp(s.buyHudPos.y + dy, 34, window.innerHeight - 300);
-        root.style.setProperty("left", px(s.buyHudPos.x), "important");
-        root.style.setProperty("top", px(s.buyHudPos.y), "important");
+        s.buyHudPos.x = clamp2(s.buyHudPos.x + dx, 0, window.innerWidth - 300);
+        s.buyHudPos.y = clamp2(s.buyHudPos.y + dy, 34, window.innerHeight - 300);
+        root.style.setProperty("left", px2(s.buyHudPos.x), "important");
+        root.style.setProperty("top", px2(s.buyHudPos.y), "important");
         root.style.setProperty("right", "auto", "important");
       }, async () => {
-        if (!Store2.state.settings.buyHudDocked)
-          await Store2.save();
+        if (!Store.state.settings.buyHudDocked)
+          await Store.save();
       });
     },
     setupBuyHudInteractions(root) {
@@ -1650,8 +2255,8 @@ input:checked + .slider:before { transform: translateX(18px); }
         const act = actEl.getAttribute("data-act");
         e.preventDefault();
         if (act === "dock") {
-          Store2.state.settings.buyHudDocked = !Store2.state.settings.buyHudDocked;
-          await Store2.save();
+          Store.state.settings.buyHudDocked = !Store.state.settings.buyHudDocked;
+          await Store.save();
           this.updateBuyHud();
         }
         if (act === "tab-buy") {
@@ -1680,18 +2285,25 @@ input:checked + .slider:before { transform: translateX(18px); }
             return;
           }
           status.textContent = "Executing...";
-          const tokenInfo = this.getCurrentToken();
-          console.log(`[HUD] Action Clicked. Token: ${tokenInfo.symbol} (${tokenInfo.mint})`);
+          const tokenInfo = TokenDetector.getCurrentToken();
           let res;
-          if (this.buyHudTab === "buy") {
-            res = await Trading.buy(val, strategy, tokenInfo);
-          } else {
-            res = await Trading.sell(val, strategy, tokenInfo);
+          try {
+            if (this.buyHudTab === "buy") {
+              res = await Trading.buy(val, strategy, tokenInfo);
+            } else {
+              res = await Trading.sell(val, strategy, tokenInfo);
+            }
+          } catch (err) {
+            status.textContent = "Error: " + err.message;
+            status.style.color = "#ef4444";
+            return;
           }
-          if (res.success) {
+          if (res && res.success) {
             status.textContent = "Trade executed!";
             field.value = "";
-            this.updateAll();
+            if (window.ZeroHUD && window.ZeroHUD.updateAll) {
+              window.ZeroHUD.updateAll();
+            }
             setTimeout(() => {
               this.showEmotionSelector(res.trade.id);
             }, 500);
@@ -1707,7 +2319,7 @@ input:checked + .slider:before { transform: translateX(18px); }
       });
     },
     showEmotionSelector(tradeId) {
-      if (Store2.state.settings.showJournal === false)
+      if (Store.state.settings.showJournal === false)
         return;
       const container = OverlayManager.getContainer();
       const existing = container.querySelector(".emotion-modal-overlay");
@@ -1765,8 +2377,8 @@ input:checked + .slider:before { transform: translateX(18px); }
       container.appendChild(overlay);
       const close = async () => {
         if (overlay.querySelector(".journal-opt-out").checked) {
-          Store2.state.settings.showJournal = false;
-          await Store2.save();
+          Store.state.settings.showJournal = false;
+          await Store.save();
         }
         overlay.remove();
       };
@@ -1781,20 +2393,20 @@ input:checked + .slider:before { transform: translateX(18px); }
     },
     updateBuyHud() {
       const root = OverlayManager.getContainer().querySelector("#" + IDS.buyHud);
-      if (!root || !Store2.state)
+      if (!root || !Store.state)
         return;
-      root.className = Store2.state.settings.buyHudDocked ? "docked" : "floating";
-      if (!Store2.state.settings.buyHudDocked) {
-        const p = Store2.state.settings.buyHudPos;
+      root.className = Store.state.settings.buyHudDocked ? "docked" : "floating";
+      if (!Store.state.settings.buyHudDocked) {
+        const p = Store.state.settings.buyHudPos;
         if (p) {
           const maxX = window.innerWidth - 300;
-          const safeX = clamp(p.x, 0, maxX > 0 ? maxX : 0);
-          root.style.setProperty("left", px(safeX), "important");
-          root.style.setProperty("top", px(p.y), "important");
+          const safeX = clamp2(p.x, 0, maxX > 0 ? maxX : 0);
+          root.style.setProperty("left", px2(safeX), "important");
+          root.style.setProperty("top", px2(p.y), "important");
           root.style.setProperty("right", "auto", "important");
         } else {
           const safeX = window.innerWidth - 340;
-          root.style.setProperty("left", px(safeX > 0 ? safeX : 20), "important");
+          root.style.setProperty("left", px2(safeX > 0 ? safeX : 20), "important");
           root.style.setProperty("top", "100px", "important");
           root.style.setProperty("right", "auto", "important");
         }
@@ -1803,58 +2415,59 @@ input:checked + .slider:before { transform: translateX(18px); }
         root.style.top = "";
         root.style.right = "";
       }
-    },
-    getCurrentToken() {
-      let symbol = "SOL";
-      let mint = "So11111111111111111111111111111111111111112";
-      try {
-        const url = window.location.href;
-        const mintMatch = url.match(/[1-9A-HJ-NP-Za-km-z]{32,44}/g);
-        if (mintMatch) {
-          const candidate = mintMatch[mintMatch.length - 1];
-          if (candidate && candidate.length > 30) {
-            mint = candidate;
-          }
-        }
-        const title = document.title;
-        const titleParts = title.trim().split(/[\s|/]+/);
-        if (titleParts.length > 0) {
-          let first = titleParts[0].toUpperCase();
-          const generics = ["PADRE", "TERMINAL", "AXIOM", "SOLANA", "TRADE", "DEX", "CHART"];
-          if (!generics.includes(first) && first.length < 15 && first.length > 1) {
-            symbol = first;
-          }
-        }
-        if (symbol === "SOL" || symbol === "TERMINAL" || symbol.includes("SEARCH")) {
-          const tickerSpans = document.querySelectorAll('span[class*="css-1oo1vsz"]');
-          for (const s of tickerSpans) {
-            const txt = s.textContent.trim().toUpperCase();
-            const bad = ["PADRE", "TERMINAL", "AXIOM", "SOLANA", "TRADE", "DEX", "CHART", "SEARCH BY NAME OR CA..."];
-            if (txt && !bad.includes(txt) && txt.length < 15 && txt.length > 1) {
-              symbol = txt;
-              break;
-            }
-          }
-          if (symbol === "SOL" || symbol.includes("SEARCH")) {
-            const spans = document.querySelectorAll("span, div");
-            for (const s of spans) {
-              const t = s.textContent.trim();
-              if (t.includes("/") && t.includes("SOL") && t.length < 20) {
-                const potential = t.split("/")[0].trim().toUpperCase();
-                if (potential.length > 1 && potential.length < 10) {
-                  symbol = potential;
-                  break;
-                }
-              }
-            }
-          }
-        }
-      } catch (e) {
-        console.warn("[HUD] Token scrape failed", e);
+    }
+  };
+
+  // src/modules/ui/hud.js
+  var HUD = {
+    renderScheduled: false,
+    lastRenderAt: 0,
+    async init() {
+      window.ZeroHUD = this;
+      this.renderAll();
+      window.addEventListener("resize", () => this.scheduleRender());
+      if (Store.state.trades) {
+        const trades = Object.values(Store.state.trades);
+        setTimeout(() => {
+          window.postMessage({ __paper: true, type: "PAPER_DRAW_ALL", trades }, "*");
+        }, 2e3);
       }
-      return { symbol, mint };
+      Market.subscribe(async () => {
+        await PnlHud.updatePnlHud();
+      });
     },
-    // --- Utils ---
+    scheduleRender() {
+      if (this.renderScheduled)
+        return;
+      this.renderScheduled = true;
+      requestAnimationFrame(() => {
+        this.renderAll();
+        this.renderScheduled = false;
+        this.lastRenderAt = Date.now();
+      });
+    },
+    renderAll() {
+      if (!Store.state)
+        return;
+      Banner.mountBanner();
+      PnlHud.mountPnlHud(this.makeDraggable.bind(this));
+      BuyHud.mountBuyHud(this.makeDraggable.bind(this));
+      this.updateAll();
+    },
+    async updateAll() {
+      if (Store.state && Store.state.settings) {
+        const container = OverlayManager.getContainer();
+        if (Store.state.settings.tradingMode === "shadow") {
+          container.classList.add("zero-shadow-mode");
+        } else {
+          container.classList.remove("zero-shadow-mode");
+        }
+      }
+      Banner.updateBanner();
+      await PnlHud.updatePnlHud();
+      BuyHud.updateBuyHud();
+    },
+    // Shared utility for making elements draggable
     makeDraggable(handle, onMove, onStop) {
       if (!handle)
         return;
@@ -1888,131 +2501,8 @@ input:checked + .slider:before { transform: translateX(18px); }
           onStop();
       };
       handle.addEventListener("mousedown", down);
-    },
-    showResetModal() {
-      const overlay = document.createElement("div");
-      overlay.className = "confirm-modal-overlay";
-      overlay.innerHTML = `
-            <div class="confirm-modal">
-                <h3>Reset Session?</h3>
-                <p>Clear all history and restore balance?</p>
-                <div class="confirm-modal-buttons">
-                    <button class="confirm-modal-btn cancel">Cancel</button>
-                    <button class="confirm-modal-btn confirm">Reset</button>
-                </div>
-            </div>
-        `;
-      OverlayManager.getContainer().appendChild(overlay);
-      overlay.querySelector(".cancel").onclick = () => overlay.remove();
-      overlay.querySelector(".confirm").onclick = async () => {
-        Store2.state.session.balance = Store2.state.settings.startSol;
-        Store2.state.session.realized = 0;
-        Store2.state.session.winStreak = 0;
-        Store2.state.session.lossStreak = 0;
-        Store2.state.session.trades = [];
-        Store2.state.trades = {};
-        Store2.state.positions = {};
-        await Store2.save();
-        this.updateAll();
-        overlay.remove();
-      };
-    },
-    showSettingsModal() {
-      const overlay = document.createElement("div");
-      overlay.className = "confirm-modal-overlay";
-      const isShadow = Store2.state.settings.tradingMode === "shadow";
-      overlay.innerHTML = `
-            <div class="settings-modal">
-                <div class="settings-header">
-                    <div class="settings-title">
-                        <span>\u2699\uFE0F</span> Settings
-                    </div>
-                    <button class="settings-close">\xD7</button>
-                </div>
-                
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <div class="setting-name">Shadow Real Mode</div>
-                        <div class="setting-desc">Tag trades as "Real" for journaling. Changes UI theme.</div>
-                    </div>
-                    <label class="toggle-switch">
-                        <input type="checkbox" id="toggle-shadow" ${isShadow ? "checked" : ""}>
-                        <span class="slider"></span>
-                    </label>
-                </div>
-
-                <div class="setting-row" style="opacity:0.5; pointer-events:none;">
-                    <div class="setting-info">
-                        <div class="setting-name">Discipline Score</div>
-                        <div class="setting-desc">Track rule adherence (Coming Soon).</div>
-                    </div>
-                    <label class="toggle-switch">
-                        <input type="checkbox">
-                        <span class="slider"></span>
-                    </label>
-                </div>
-
-                <div style="margin-top:20px; text-align:center; font-size:11px; color:#64748b;">
-                    ZER\xD8 v${Store2.state.version || "0.9.9"}
-                </div>
-            </div>
-        `;
-      OverlayManager.getContainer().appendChild(overlay);
-      const close = () => {
-        overlay.remove();
-        this.updateAll();
-      };
-      overlay.querySelector(".settings-close").onclick = close;
-      const bg = overlay;
-      bg.addEventListener("click", (e) => {
-        if (e.target === bg)
-          close();
-      });
-      const shadowToggle = overlay.querySelector("#toggle-shadow");
-      shadowToggle.onchange = async (e) => {
-        const val = e.target.checked;
-        Store2.state.settings.tradingMode = val ? "shadow" : "paper";
-        await Store2.save();
-        const container = OverlayManager.getContainer();
-        if (val)
-          container.classList.add("zero-shadow-mode");
-        else
-          container.classList.remove("zero-shadow-mode");
-      };
-    },
-    updateTradeList(container) {
-      const trades = Store2.state.session.trades || [];
-      const tradeObjs = trades.map((id) => Store2.state.trades[id]).filter((t) => t).reverse();
-      let html = "";
-      tradeObjs.forEach((t) => {
-        const isBuy = t.side === "BUY";
-        let valStr = "";
-        let pnlClass = "muted";
-        if (isBuy) {
-          valStr = `${t.solAmount?.toFixed(3) || "0.1"} SOL`;
-        } else {
-          const isWin = (t.realizedPnlSol || 0) > 0;
-          pnlClass = isWin ? "buy" : t.realizedPnlSol < 0 ? "sell" : "muted";
-          valStr = (t.realizedPnlSol ? (t.realizedPnlSol > 0 ? "+" : "") + t.realizedPnlSol.toFixed(4) : "0.00") + " SOL";
-        }
-        html += `
-                <div class="tradeRow">
-                    <div class="muted" style="font-size:9px;">${new Date(t.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
-                    <div class="tag ${t.side.toLowerCase()}">${t.side}</div>
-                    <div style="flex:1;">${t.symbol}</div>
-                    <div class="${pnlClass}">${valStr}</div>
-                </div>
-            `;
-      });
-      container.innerHTML = html || '<div style="padding:10px;color:#64748b;text-align:center;">No trades yet</div>';
     }
   };
-  function px(n) {
-    return n + "px";
-  }
-  function clamp(v, min, max) {
-    return Math.max(min, Math.min(max, v));
-  }
 
   // src/content.boot.js
   (async () => {
@@ -2025,13 +2515,13 @@ input:checked + .slider:before { transform: translateX(18px); }
     };
     try {
       console.log("[ZER\xD8] Loading Store...");
-      const state = await Store2.load();
+      const state = await Store.load();
       if (!state)
         throw new Error("Store state is null");
       if (!state.settings.enabled) {
         console.log("[ZER\xD8] Force-enabling for Beta test...");
         state.settings.enabled = true;
-        await Store2.save();
+        await Store.save();
       }
       console.log("[ZER\xD8] Store loaded:", state.settings?.enabled ? "Enabled" : "Disabled");
     } catch (e) {

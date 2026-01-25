@@ -18,7 +18,7 @@
                 const side = (trade.side || "").toUpperCase();
                 const isBuy = side === "BUY";
 
-                const ts = Math.floor(trade.ts / 1000) - 5;
+                const ts = Math.floor(trade.ts / 1000);
                 // CRITICAL: charts on Padre often show Market Cap on Y-axis.
                 // We MUST use marketCap if it exists and is not zero.
                 const chartPrice = trade.marketCap || trade.priceUsd;
@@ -37,7 +37,6 @@
                         .setArrowHeight(22);
 
                     try { shape.setFont('bold 12px Inter'); } catch (e) { }
-                    console.log(`[ZERØ] Execution Shape created (${side}) @ ${chartPrice}`);
                 } else {
                     // Fallback to our best manual shape if createExecutionShape is missing
                     chart.createShape({ time: ts, location: isBuy ? "belowbar" : "abovebar" }, {
@@ -46,7 +45,6 @@
                         text: isBuy ? "\n\n\n\n↑\nB" : "S\n↓\n\n\n\n",
                         overrides: { color, fontsize: 16, bold: true }
                     });
-                    console.log(`[ZERØ] Manual Shape placed (${side})`);
                 }
             } catch (e) {
                 console.warn("[ZERØ] Marker failed:", e);

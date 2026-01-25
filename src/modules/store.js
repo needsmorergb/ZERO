@@ -35,7 +35,8 @@ const DEFAULTS = {
     behavior: {
         tiltFrequency: 0
     },
-    schemaVersion: 2
+    schemaVersion: 2,
+    version: '1.8.0'
 };
 
 // Helper utils

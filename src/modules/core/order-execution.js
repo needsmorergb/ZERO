@@ -1,0 +1,155 @@
+import { Store } from '../store.js';
+import { Market } from './market.js';
+import { PnlCalculator } from './pnl-calculator.js';
+import { Analytics } from './analytics.js';
+
+export const OrderExecution = {
+    async buy(amountSol, strategy = "Trend", tokenInfo = null) {
+        const state = Store.state;
+        if (!state.settings.enabled) return { success: false, error: "Paper trading disabled" };
+        if (amountSol <= 0) return { success: false, error: "Invalid amount" };
+        if (amountSol > state.session.balance) return { success: false, error: "Insufficient funds" };
+
+        const price = Market.price || 0.000001;
+        const marketCap = Market.marketCap || 0;
+        const solUsd = await PnlCalculator.getSolPrice();
+        const usdAmount = amountSol * solUsd;
+        const tokenQty = usdAmount / price;
+
+        // Use passed token info or fallback
+        const symbol = tokenInfo?.symbol || 'SOL';
+        const mint = tokenInfo?.mint || 'So111...';
+
+        console.log(`[Trading] Executing BUY ${amountSol} SOL of ${symbol} (${mint}) @ $${price} (MC: ${marketCap})`);
+
+        state.session.balance -= amountSol;
+
+        const posKey = mint;
+        if (!state.positions[posKey]) {
+            state.positions[posKey] = {
+                tokenQty: 0,
+                entryPriceUsd: price,
+                lastPriceUsd: price,
+                symbol: symbol,
+                mint: mint,
+                entryTs: Date.now(),
+                totalSolSpent: 0
+            };
+        }
+
+        const pos = state.positions[posKey];
+
+        const oldValue = pos.tokenQty * pos.entryPriceUsd;
+        const newValue = tokenQty * price;
+        const totalQty = pos.tokenQty + tokenQty;
+
+        pos.tokenQty = totalQty;
+        pos.entryPriceUsd = totalQty > 0 ? (oldValue + newValue) / totalQty : price;
+        pos.lastPriceUsd = price;
+        pos.totalSolSpent += amountSol;
+
+        const tradeId = `trade_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+        const trade = {
+            id: tradeId,
+            ts: Date.now(),
+            side: "BUY",
+            symbol,
+            mint,
+            solAmount: amountSol,
+            tokenQty,
+            priceUsd: price,
+            marketCap,
+            strategy: strategy || "Unknown",
+            mode: state.settings.tradingMode || 'paper'
+        };
+
+        if (!state.trades) state.trades = {};
+        state.trades[tradeId] = trade;
+
+        if (!state.session.trades) state.session.trades = [];
+        state.session.trades.push(tradeId);
+
+        // Run Discipline Check
+        Analytics.calculateDiscipline(trade, state);
+
+        // Draw Marker via Bridge
+        window.postMessage({ __paper: true, type: "PAPER_DRAW_MARKER", trade }, "*");
+
+        await Store.save();
+        return { success: true, trade, position: pos };
+    },
+
+    async sell(pct = 100, strategy = "Trend", tokenInfo = null) {
+        const state = Store.state;
+        const currentPrice = Market.price || 0;
+        if (currentPrice <= 0) return { success: false, error: "No price data" };
+
+        const symbol = tokenInfo?.symbol || 'SOL';
+        const mint = tokenInfo?.mint || 'So111...';
+        const posKey = mint;
+
+        console.log(`[Trading] Executing SELL ${pct}% of ${symbol} (${mint}) @ $${currentPrice}`);
+
+        const position = state.positions[posKey];
+        if (!position || position.tokenQty <= 0) return { success: false, error: "No position" };
+
+        const qtyToSell = position.tokenQty * (pct / 100);
+        if (qtyToSell <= 0) return { success: false, error: "Invalid qty" };
+
+        const solUsd = await PnlCalculator.getSolPrice();
+        const proceedsUsd = qtyToSell * currentPrice;
+        const solReceived = proceedsUsd / solUsd;
+
+        const solSpentPortion = position.totalSolSpent * (qtyToSell / position.tokenQty);
+        const realizedPnlSol = solReceived - solSpentPortion;
+
+        position.tokenQty -= qtyToSell;
+        position.totalSolSpent = Math.max(0, position.totalSolSpent - solSpentPortion);
+
+        state.session.balance += solReceived;
+        state.session.realized += realizedPnlSol;
+
+        if (position.tokenQty < 0.000001) delete state.positions[posKey];
+
+        const tradeId = `trade_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+        const trade = {
+            id: tradeId,
+            ts: Date.now(),
+            side: "SELL",
+            symbol,
+            mint,
+            pct,
+            solAmount: solReceived,
+            tokenQty: qtyToSell,
+            priceUsd: currentPrice,
+            marketCap: Market.marketCap || 0,
+            realizedPnlSol,
+            strategy: strategy || "Unknown",
+            mode: state.settings.tradingMode || 'paper'
+        };
+
+        if (!state.trades) state.trades = {};
+        state.trades[tradeId] = trade;
+
+        if (!state.session.trades) state.session.trades = [];
+        state.session.trades.push(tradeId);
+
+        Analytics.calculateDiscipline(trade, state);
+        Analytics.updateStreaks(trade, state);
+
+        // Draw Marker via Bridge
+        window.postMessage({ __paper: true, type: "PAPER_DRAW_MARKER", trade }, "*");
+
+        await Store.save();
+        return { success: true, trade };
+    },
+
+    async tagTrade(tradeId, updates) {
+        const state = Store.state;
+        if (!state.trades || !state.trades[tradeId]) return false;
+
+        Object.assign(state.trades[tradeId], updates);
+        await Store.save();
+        return true;
+    }
+};
