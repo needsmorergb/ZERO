@@ -2050,6 +2050,17 @@ input:checked + .slider:before {
         state.session.winStreak = 0;
         console.log(`[ZER\xD8] Loss. ${pnl.toFixed(4)} SOL. Loss streak: ${state.session.lossStreak}`);
       }
+      this.detectTilt(trade, state);
+    },
+    detectTilt(trade, state) {
+      const flags = FeatureManager2.resolveFlags(state, "TILT_DETECTION");
+      if (!flags.enabled)
+        return;
+      const lossStreak = state.session.lossStreak || 0;
+      if (lossStreak >= 3) {
+        console.log("[ZER\xD8 ELITE] \u26A0\uFE0F Tilt Pattern Detected Silently (Revenge trading risk)");
+        state.behavior.tiltFrequency = (state.behavior.tiltFrequency || 0) + 1;
+      }
     },
     getProfessorDebrief(state) {
       const score = state.session.disciplineScore !== void 0 ? state.session.disciplineScore : 100;

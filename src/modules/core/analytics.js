@@ -111,6 +111,20 @@ export const Analytics = {
             state.session.winStreak = 0;
             console.log(`[ZERØ] Loss. ${pnl.toFixed(4)} SOL. Loss streak: ${state.session.lossStreak}`);
         }
+
+        this.detectTilt(trade, state);
+    },
+
+    detectTilt(trade, state) {
+        const flags = FeatureManager.resolveFlags(state, 'TILT_DETECTION');
+        if (!flags.enabled) return;
+
+        // Elite: Silent data collection logic
+        const lossStreak = state.session.lossStreak || 0;
+        if (lossStreak >= 3) {
+            console.log("[ZERØ ELITE] ⚠️ Tilt Pattern Detected Silently (Revenge trading risk)");
+            state.behavior.tiltFrequency = (state.behavior.tiltFrequency || 0) + 1;
+        }
     },
 
     getProfessorDebrief(state) {
