@@ -2449,7 +2449,7 @@ input:checked + .slider:before {
         container.appendChild(root);
         this.bindPnlEvents(root);
       }
-      const CURRENT_UI_VERSION = "1.8.0";
+      const CURRENT_UI_VERSION = "1.9.0";
       const renderedVersion = root.dataset.uiVersion;
       if (isNew || renderedVersion !== CURRENT_UI_VERSION) {
         this.renderPnlHudContent(root, makeDraggable);
@@ -3180,7 +3180,7 @@ input:checked + .slider:before {
   // src/content.boot.js
   (async () => {
     "use strict";
-    console.log("%c ZER\xD8 v1.8.3 (Jupiter Removed, CoinGecko Primary)", "color: #ef4444; font-weight: bold; font-size: 14px;");
+    console.log("%c ZER\xD8 v1.9.0 (Pro Launch & Social Hub)", "color: #14b8a6; font-weight: bold; font-size: 14px;");
     const PLATFORM = {
       isAxiom: window.location.hostname.includes("axiom.trade"),
       isPadre: window.location.hostname.includes("padre.gg"),
