@@ -39,7 +39,7 @@ const DEFAULTS = {
         tiltFrequency: 0
     },
     schemaVersion: 2,
-    version: '1.10.0'
+    version: '1.10.1'
 };
 
 // Helper utils

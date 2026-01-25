@@ -40,7 +40,7 @@ export const PnlHud = {
         }
 
         // Check if we need to re-render
-        const CURRENT_UI_VERSION = "1.10.0";
+        const CURRENT_UI_VERSION = "1.10.1";
         const renderedVersion = root.dataset.uiVersion;
 
         if (isNew || renderedVersion !== CURRENT_UI_VERSION) {
