@@ -70,7 +70,7 @@ export const DASHBOARD_CSS = `
 
 .stat-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     gap: 20px;
     margin-bottom: 32px;
 }
@@ -120,4 +120,29 @@ export const DASHBOARD_CSS = `
     font-size: 13px;
 }
 .mini-row:last-child { border-bottom: none; }
+
+canvas#equity-canvas {
+    width: 100%;
+    height: 180px;
+    background: rgba(13, 17, 23, 0.4);
+    border-radius: 12px;
+    margin-top: 10px;
+}
+
+.locked-overlay {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(13, 17, 23, 0.85);
+    backdrop-filter: blur(6px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    cursor: pointer;
+    border-radius: 16px;
+}
+
+.locked-icon { font-size: 28px; margin-bottom: 12px; }
+.locked-text { font-size: 11px; font-weight: 900; color: #14b8a6; letter-spacing: 2px; }
 `;
