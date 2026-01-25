@@ -6,6 +6,7 @@ import { IDS } from './ids.js';
 import { TokenDetector } from './token-detector.js';
 import { Paywall } from './paywall.js';
 import { Analytics } from '../core/analytics.js';
+import { Dashboard } from './dashboard.js';
 
 function px(n) { return n + 'px'; }
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }

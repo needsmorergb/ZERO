@@ -2466,6 +2466,390 @@ input:checked + .slider:before {
     }
   };
 
+  // src/modules/ui/dashboard-styles.js
+  var DASHBOARD_CSS = `
+.paper-dashboard-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(13, 17, 23, 0.85);
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2147483647;
+    font-family: 'Inter', -apple-system, sans-serif;
+    color: #f8fafc;
+}
+
+.paper-dashboard-modal {
+    width: 900px;
+    max-width: 95vw;
+    height: 700px;
+    max-height: 90vh;
+    background: #0d1117;
+    border: 1px solid rgba(20, 184, 166, 0.3);
+    border-radius: 20px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
+.dashboard-header {
+    padding: 24px 32px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.dashboard-title {
+    font-size: 20px;
+    font-weight: 800;
+    color: #14b8a6;
+    letter-spacing: 0.5px;
+}
+
+.dashboard-close {
+    background: none;
+    border: none;
+    color: #64748b;
+    font-size: 28px;
+    cursor: pointer;
+    transition: color 0.2s;
+}
+
+.dashboard-close:hover { color: #f8fafc; }
+
+.dashboard-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 32px;
+    display: grid;
+    grid-template-columns: 2fr 1.2fr;
+    gap: 32px;
+}
+
+.dashboard-card {
+    background: #161b22;
+    border-radius: 16px;
+    padding: 24px;
+    border: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.stat-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+    margin-bottom: 32px;
+}
+
+.big-stat {
+    text-align: center;
+}
+
+.big-stat .k { font-size: 11px; color: #64748b; text-transform: uppercase; font-weight: 700; margin-bottom: 8px; }
+.big-stat .v { font-size: 24px; font-weight: 800; }
+
+.win { color: #10b981; }
+.loss { color: #ef4444; }
+
+.professor-critique-box {
+    background: linear-gradient(145deg, #1e293b, #0f172a);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    border-radius: 16px;
+    padding: 24px;
+}
+
+.professor-title { color: #a5b4fc; font-weight: 800; margin-bottom: 12px; font-size: 14px; text-transform: uppercase; }
+.professor-text { font-size: 15px; line-height: 1.6; color: #e2e8f0; font-style: italic; }
+
+.equity-chart-placeholder {
+    height: 200px;
+    background: rgba(20, 184, 166, 0.05);
+    border: 1px dashed rgba(20, 184, 166, 0.2);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #14b8a6;
+    font-size: 12px;
+    margin-top: 20px;
+}
+
+.trade-mini-list {
+    margin-top: 24px;
+}
+
+.mini-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+    font-size: 13px;
+}
+.mini-row:last-child { border-bottom: none; }
+
+canvas#equity-canvas {
+    width: 100%;
+    height: 180px;
+    background: rgba(13, 17, 23, 0.4);
+    border-radius: 12px;
+    margin-top: 10px;
+}
+
+.locked-overlay {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(13, 17, 23, 0.85);
+    backdrop-filter: blur(6px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    cursor: pointer;
+    border-radius: 16px;
+}
+
+.locked-icon { font-size: 28px; margin-bottom: 12px; }
+.locked-text { font-size: 11px; font-weight: 900; color: #14b8a6; letter-spacing: 2px; }
+`;
+
+  // src/modules/ui/dashboard.js
+  var Dashboard = {
+    isOpen: false,
+    toggle() {
+      if (this.isOpen)
+        this.close();
+      else
+        this.open();
+    },
+    open() {
+      this.isOpen = true;
+      this.render();
+    },
+    close() {
+      this.isOpen = false;
+      const overlay = OverlayManager.getShadowRoot().querySelector(".paper-dashboard-overlay");
+      if (overlay)
+        overlay.remove();
+    },
+    render() {
+      const root = OverlayManager.getShadowRoot();
+      let overlay = root.querySelector(".paper-dashboard-overlay");
+      if (!overlay) {
+        overlay = document.createElement("div");
+        overlay.className = "paper-dashboard-overlay";
+        if (!root.getElementById("paper-dashboard-styles")) {
+          const style = document.createElement("style");
+          style.id = "paper-dashboard-styles";
+          style.textContent = DASHBOARD_CSS;
+          root.appendChild(style);
+        }
+        root.appendChild(overlay);
+      }
+      const state = Store.state;
+      const stats = Analytics.analyzeRecentTrades(state) || { winRate: "0.0", totalTrades: 0, wins: 0, losses: 0, totalPnlSol: 0 };
+      const debrief = Analytics.getProfessorDebrief(state);
+      const chartFlags = FeatureManager.resolveFlags(state, "EQUITY_CHARTS");
+      const logFlags = FeatureManager.resolveFlags(state, "DETAILED_LOGS");
+      const aiFlags = FeatureManager.resolveFlags(state, "ADVANCED_ANALYTICS");
+      const shareFlags = FeatureManager.resolveFlags(state, "SHARE_TO_X");
+      const isFree = state.settings.tier === "free";
+      overlay.innerHTML = `
+            <div class="paper-dashboard-modal">
+                <div class="dashboard-header">
+                    <div class="dashboard-title">PRO PERFORMANCE DASHBOARD ${isFree ? '<span style="color:#64748b; font-size:10px; margin-left:10px;">(FREE TIER)</span>' : ""}</div>
+                    <div style="display:flex; align-items:center; gap:16px;">
+                        ${isFree ? '<button class="dashboard-upgrade-btn" style="background:#14b8a6; color:#0d1117; border:none; padding:6px 14px; border-radius:6px; font-weight:800; font-size:11px; cursor:pointer;">UPGRADE TO PRO</button>' : ""}
+                        <button class="dashboard-close">\xD7</button>
+                    </div>
+                </div>
+                <div class="dashboard-content">
+                    <div class="main-stats">
+                        <div class="stat-grid">
+                            <div class="dashboard-card big-stat">
+                                <div class="k">Win Rate</div>
+                                <div class="v win">${stats.winRate}%</div>
+                            </div>
+                            <div class="dashboard-card big-stat">
+                                <div class="k">Profit Factor</div>
+                                <div class="v" style="color:#6366f1;">${stats.profitFactor}</div>
+                            </div>
+                            <div class="dashboard-card big-stat">
+                                <div class="k">Max Drawdown</div>
+                                <div class="v" style="color:#ef4444;">${stats.maxDrawdown} SOL</div>
+                            </div>
+                            <div class="dashboard-card big-stat">
+                                <div class="k">Session P&L</div>
+                                <div class="v ${stats.totalPnlSol >= 0 ? "win" : "loss"}">${stats.totalPnlSol.toFixed(4)} SOL</div>
+                            </div>
+                        </div>
+
+                        <div class="dashboard-card" id="dashboard-equity-chart" style="min-height:220px;">
+                            <div class="dashboard-title" style="font-size:12px; margin-bottom:12px; opacity:0.6;">LIVE EQUITY CURVE</div>
+                            <canvas id="equity-canvas"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="side-panel">
+                        <div class="professor-critique-box" id="dashboard-professor-box">
+                            <div class="professor-title">Professor's Debrief</div>
+                            <div class="professor-text">"${debrief.critique}"</div>
+                            
+                            <div style="margin-top:20px; padding-top:16px; border-top:1px solid rgba(255,255,255,0.05);">
+                                <div style="display:flex; justify-content:space-between; align-items:center;">
+                                    <span style="font-size:12px; color:#64748b;">DISCIPLINE SCORE</span>
+                                    <span style="font-size:18px; font-weight:800; color:${debrief.score >= 90 ? "#10b981" : "#f59e0b"}">${debrief.score}</span>
+                                </div>
+                                <div style="height:6px; background:#1e293b; border-radius:3px; margin-top:8px; overflow:hidden;">
+                                    <div style="width:${debrief.score}%; height:100%; background:${debrief.score >= 90 ? "#10b981" : "#f59e0b"};"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="trade-mini-list" id="dashboard-recent-logs">
+                            <div class="dashboard-title" style="font-size:12px; margin-bottom:12px; opacity:0.6;">RECENT LOGS</div>
+                            ${this.renderRecentMiniRows(state)}
+                        </div>
+
+                        <div style="margin-top:20px;">
+                            <button id="dashboard-share-btn" style="width:100%; background:#1d9bf0; color:white; border:none; padding:10px; border-radius:8px; font-weight:700; font-size:12px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px;">
+                                <span>\u{1D54F}</span> Share Session
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+      overlay.querySelector(".dashboard-close").onclick = () => this.close();
+      const upgradeBtn = overlay.querySelector(".dashboard-upgrade-btn");
+      if (upgradeBtn)
+        upgradeBtn.onclick = () => Paywall.showUpgradeModal();
+      const shareBtn = overlay.querySelector("#dashboard-share-btn");
+      if (shareBtn) {
+        shareBtn.style.display = shareFlags.visible ? "" : "none";
+        if (shareFlags.gated) {
+          shareBtn.style.opacity = "0.5";
+          shareBtn.onclick = () => Paywall.showUpgradeModal("SHARE_TO_X");
+        } else {
+          shareBtn.onclick = () => {
+            const text = Analytics.generateXShareText(state);
+            const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
+            window.open(url, "_blank");
+          };
+        }
+      }
+      overlay.onclick = (e) => {
+        if (e.target === overlay)
+          this.close();
+      };
+      if (chartFlags.visible) {
+        const chartEl = overlay.querySelector("#dashboard-equity-chart");
+        if (chartFlags.gated)
+          this.lockSection(chartEl, "EQUITY_CHARTS");
+      } else {
+        overlay.querySelector("#dashboard-equity-chart").style.display = "none";
+      }
+      if (logFlags.visible) {
+        const logEl = overlay.querySelector("#dashboard-recent-logs");
+        if (logFlags.gated)
+          this.lockSection(logEl, "DETAILED_LOGS");
+      } else {
+        overlay.querySelector("#dashboard-recent-logs").style.display = "none";
+      }
+      if (aiFlags.visible) {
+        const aiEl = overlay.querySelector("#dashboard-professor-box");
+        if (aiFlags.gated)
+          this.lockSection(aiEl, "ADVANCED_ANALYTICS");
+      } else {
+        overlay.querySelector("#dashboard-professor-box").style.display = "none";
+      }
+      if (chartFlags.interactive) {
+        setTimeout(() => this.drawEquityCurve(overlay, state), 100);
+      }
+    },
+    drawEquityCurve(root, state) {
+      const canvas = root.querySelector("#equity-canvas");
+      if (!canvas)
+        return;
+      const ctx = canvas.getContext("2d");
+      const history = state.session.equityHistory || [];
+      if (history.length < 2) {
+        ctx.fillStyle = "#475569";
+        ctx.font = "10px Inter";
+        ctx.textAlign = "center";
+        ctx.fillText("Need more trades to visualize equity...", canvas.width / 4, canvas.height / 4);
+        return;
+      }
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = canvas.clientWidth * dpr;
+      canvas.height = canvas.clientHeight * dpr;
+      ctx.scale(dpr, dpr);
+      const w = canvas.clientWidth;
+      const h = canvas.clientHeight;
+      const padding = 20;
+      const points = history.map((h2) => h2.equity);
+      const min = Math.min(...points) * 0.99;
+      const max = Math.max(...points) * 1.01;
+      const range = max - min;
+      ctx.clearRect(0, 0, w, h);
+      ctx.beginPath();
+      ctx.strokeStyle = "#14b8a6";
+      ctx.lineWidth = 2;
+      ctx.lineJoin = "round";
+      history.forEach((entry, i) => {
+        const x = padding + i / (history.length - 1) * (w - padding * 2);
+        const y = h - padding - (entry.equity - min) / range * (h - padding * 2);
+        if (i === 0)
+          ctx.moveTo(x, y);
+        else
+          ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+      const grad = ctx.createLinearGradient(0, 0, 0, h);
+      grad.addColorStop(0, "rgba(20, 184, 166, 0.2)");
+      grad.addColorStop(1, "rgba(20, 184, 166, 0)");
+      ctx.lineTo(w - padding, h - padding);
+      ctx.lineTo(padding, h - padding);
+      ctx.fillStyle = grad;
+      ctx.fill();
+    },
+    lockSection(el, featureName) {
+      if (!el)
+        return;
+      el.style.position = "relative";
+      el.style.overflow = "hidden";
+      const overlay = document.createElement("div");
+      overlay.className = "locked-overlay";
+      overlay.innerHTML = `
+            <div class="locked-icon">\u{1F512}</div>
+            <div class="locked-text">PRO FEATURE</div>
+        `;
+      overlay.onclick = (e) => {
+        e.stopPropagation();
+        Paywall.showUpgradeModal(featureName);
+      };
+      el.appendChild(overlay);
+    },
+    renderRecentMiniRows(state) {
+      const trades = Object.values(state.trades || {}).sort((a, b) => b.ts - a.ts).slice(0, 5);
+      if (trades.length === 0)
+        return '<div style="color:#475569; font-size:12px;">No trade history.</div>';
+      return trades.map((t) => `
+            <div class="mini-row">
+                <span style="color:#64748b;">${new Date(t.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                <span style="font-weight:700; color:${t.side === "BUY" ? "#14b8a6" : "#ef4444"}">${t.side}</span>
+                <span>${t.symbol}</span>
+                <span class="${(t.realizedPnlSol || 0) >= 0 ? "win" : "loss"}" style="font-weight:600;">
+                    ${t.realizedPnlSol ? (t.realizedPnlSol > 0 ? "+" : "") + t.realizedPnlSol.toFixed(4) : t.solAmount.toFixed(2)}
+                </span>
+            </div>
+        `).join("");
+    }
+  };
+
   // src/modules/ui/pnl-hud.js
   function px(n) {
     return n + "px";
