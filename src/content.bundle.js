@@ -2590,6 +2590,11 @@ input:checked + .slider:before {
       const root = OverlayManager.getContainer().querySelector("#" + IDS.pnlHud);
       if (!root || !Store.state)
         return;
+      if (!Store.state.settings.enabled) {
+        root.style.display = "none";
+        return;
+      }
+      root.style.display = "";
       root.className = Store.state.settings.pnlDocked ? "docked" : "floating";
       if (!Store.state.settings.pnlDocked) {
         root.style.left = px(Store.state.settings.pnlPos.x);
@@ -3068,6 +3073,11 @@ input:checked + .slider:before {
       const root = OverlayManager.getContainer().querySelector("#" + IDS.buyHud);
       if (!root || !Store.state)
         return;
+      if (!Store.state.settings.enabled) {
+        root.style.display = "none";
+        return;
+      }
+      root.style.display = "";
       root.className = Store.state.settings.buyHudDocked ? "docked" : "floating";
       if (!Store.state.settings.buyHudDocked) {
         const p = Store.state.settings.buyHudPos;

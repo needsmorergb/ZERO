@@ -297,6 +297,13 @@ export const BuyHud = {
         const root = OverlayManager.getContainer().querySelector('#' + IDS.buyHud);
         if (!root || !Store.state) return;
 
+        // Visibility Toggle
+        if (!Store.state.settings.enabled) {
+            root.style.display = 'none';
+            return;
+        }
+        root.style.display = '';
+
         root.className = Store.state.settings.buyHudDocked ? "docked" : "floating";
         if (!Store.state.settings.buyHudDocked) {
             // If we have pos, use it
