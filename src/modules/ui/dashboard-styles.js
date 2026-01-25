@@ -10,6 +10,7 @@ export const DASHBOARD_CSS = `
     z-index: 2147483647;
     font-family: 'Inter', -apple-system, sans-serif;
     color: #f8fafc;
+    pointer-events: auto;
 }
 
 .paper-dashboard-modal {
