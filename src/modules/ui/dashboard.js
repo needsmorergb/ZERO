@@ -62,7 +62,7 @@ export const Dashboard = {
                     <div class="dashboard-title">PRO PERFORMANCE DASHBOARD ${isFree ? '<span style="color:#64748b; font-size:10px; margin-left:10px;">(FREE TIER)</span>' : ''}</div>
                     <div style="display:flex; align-items:center; gap:16px;">
                         ${isFree ? '<button class="dashboard-upgrade-btn" style="background:#14b8a6; color:#0d1117; border:none; padding:6px 14px; border-radius:6px; font-weight:800; font-size:11px; cursor:pointer;">UPGRADE TO PRO</button>' : ''}
-                        <button class="dashboard-close">×</button>
+                        <button class="dashboard-close" id="dashboard-close-btn" style="padding:10px; line-height:1; min-width:40px; min-height:40px; display:flex; align-items:center; justify-content:center;">X</button>
                     </div>
                 </div>
                 <div class="dashboard-content">
@@ -124,10 +124,26 @@ export const Dashboard = {
         `;
 
         // Bind events
-        overlay.querySelector('.dashboard-close').onclick = () => this.close();
+        const self = this;
+
+        const closeBtn = overlay.querySelector('#dashboard-close-btn');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('[Dashboard] Close button clicked');
+                self.close();
+            });
+        }
 
         const upgradeBtn = overlay.querySelector('.dashboard-upgrade-btn');
-        if (upgradeBtn) upgradeBtn.onclick = () => Paywall.showUpgradeModal();
+        if (upgradeBtn) {
+            upgradeBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                Paywall.showUpgradeModal();
+            });
+        }
 
         const shareBtn = overlay.querySelector('#dashboard-share-btn');
         if (shareBtn) {
@@ -136,7 +152,9 @@ export const Dashboard = {
                 shareBtn.style.opacity = '0.5';
                 shareBtn.onclick = () => Paywall.showUpgradeModal('SHARE_TO_X');
             } else {
-                shareBtn.onclick = () => {
+                shareBtn.onclick = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
                     const text = Analytics.generateXShareText(state);
                     const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
                     window.open(url, '_blank');
@@ -144,7 +162,12 @@ export const Dashboard = {
             }
         }
 
-        overlay.onclick = (e) => { if (e.target === overlay) this.close(); };
+        overlay.onclick = (e) => {
+            if (e.target === overlay) {
+                console.log('[Dashboard] Overlay background clicked');
+                self.close();
+            }
+        };
 
         // Apply Gating
         if (chartFlags.visible) {
