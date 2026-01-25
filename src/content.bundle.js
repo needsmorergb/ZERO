@@ -33,6 +33,8 @@
       realized: 0,
       trades: [],
       // IDs
+      equityHistory: [],
+      // [{ts, equity}]
       winStreak: 0,
       lossStreak: 0,
       startTime: 0,
@@ -1940,33 +1942,31 @@ input:checked + .slider:before {
         else if (pnl < 0)
           losses++;
         totalPnlSol += pnl;
-        if (trade.entryTs && trade.ts) {
-          const hold = trade.ts - trade.entryTs;
-          totalHoldTimeMs += hold;
-          if (hold < 6e4)
-            quickFlips++;
-          if (hold > 6e5)
-            longHolds++;
-        }
         if (trade.marketCap) {
           avgExitMc += trade.marketCap;
           exitMcCount++;
         }
       }
-      const avgHoldTimeSec = recentTrades.length > 0 ? totalHoldTimeMs / recentTrades.length / 1e3 : 0;
       const winRate = recentTrades.length > 0 ? wins / recentTrades.length * 100 : 0;
-      let style = "balanced";
-      if (quickFlips > recentTrades.length * 0.6)
-        style = "scalper";
-      else if (longHolds > recentTrades.length * 0.4)
-        style = "swing";
+      const grossProfits = recentTrades.reduce((sum, t) => sum + Math.max(0, t.realizedPnlSol || 0), 0);
+      const grossLosses = Math.abs(recentTrades.reduce((sum, t) => sum + Math.min(0, t.realizedPnlSol || 0), 0));
+      const profitFactor = grossLosses > 0 ? (grossProfits / grossLosses).toFixed(2) : grossProfits > 0 ? "MAX" : "0.00";
+      let peak = 0, maxDd = 0, currentBal = 0;
+      recentTrades.forEach((t) => {
+        currentBal += t.realizedPnlSol || 0;
+        if (currentBal > peak)
+          peak = currentBal;
+        const dd = peak - currentBal;
+        if (dd > maxDd)
+          maxDd = dd;
+      });
       return {
         totalTrades: recentTrades.length,
         wins,
         losses,
         winRate: winRate.toFixed(1),
-        avgHoldTimeSec,
-        style,
+        profitFactor,
+        maxDrawdown: maxDd.toFixed(4),
         totalPnlSol
       };
     },
@@ -2014,6 +2014,14 @@ input:checked + .slider:before {
         state.session.winStreak = 0;
         console.log(`[ZER\xD8] Loss. ${pnl.toFixed(4)} SOL. Loss streak: ${state.session.lossStreak}`);
       }
+      if (!state.session.equityHistory)
+        state.session.equityHistory = [];
+      state.session.equityHistory.push({
+        ts: Date.now(),
+        equity: state.session.balance + (state.session.realized || 0)
+      });
+      if (state.session.equityHistory.length > 50)
+        state.session.equityHistory.shift();
       this.detectTilt(trade, state);
     },
     detectTilt(trade, state) {

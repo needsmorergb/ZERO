@@ -73,20 +73,22 @@ export const Dashboard = {
                                 <div class="v win">${stats.winRate}%</div>
                             </div>
                             <div class="dashboard-card big-stat">
-                                <div class="k">Total Trades</div>
-                                <div class="v">${stats.totalTrades}</div>
+                                <div class="k">Profit Factor</div>
+                                <div class="v" style="color:#6366f1;">${stats.profitFactor}</div>
                             </div>
                             <div class="dashboard-card big-stat">
-                                <div class="k">Profits</div>
+                                <div class="k">Max Drawdown</div>
+                                <div class="v" style="color:#ef4444;">${stats.maxDrawdown} SOL</div>
+                            </div>
+                            <div class="dashboard-card big-stat">
+                                <div class="k">Session P&L</div>
                                 <div class="v ${stats.totalPnlSol >= 0 ? 'win' : 'loss'}">${stats.totalPnlSol.toFixed(4)} SOL</div>
                             </div>
                         </div>
 
-                        <div class="dashboard-card" id="dashboard-equity-chart">
-                            <div class="dashboard-title" style="font-size:14px; margin-bottom:16px;">EQUITY CURVE</div>
-                            <div class="equity-chart-placeholder">
-                                [ Chart visualization coming in ZERØ v2.0 ]
-                            </div>
+                        <div class="dashboard-card" id="dashboard-equity-chart" style="min-height:220px;">
+                            <div class="dashboard-title" style="font-size:12px; margin-bottom:12px; opacity:0.6;">LIVE EQUITY CURVE</div>
+                            <canvas id="equity-canvas"></canvas>
                         </div>
                     </div>
 
@@ -165,6 +167,66 @@ export const Dashboard = {
         } else {
             overlay.querySelector('#dashboard-professor-box').style.display = 'none';
         }
+
+        // Draw Chart if interactive
+        if (chartFlags.interactive) {
+            setTimeout(() => this.drawEquityCurve(overlay, state), 100);
+        }
+    },
+
+    drawEquityCurve(root, state) {
+        const canvas = root.querySelector('#equity-canvas');
+        if (!canvas) return;
+
+        const ctx = canvas.getContext('2d');
+        const history = state.session.equityHistory || [];
+        if (history.length < 2) {
+            ctx.fillStyle = "#475569";
+            ctx.font = "10px Inter";
+            ctx.textAlign = "center";
+            ctx.fillText("Need more trades to visualize equity...", canvas.width / 4, canvas.height / 4);
+            return;
+        }
+
+        // Resize for DPI
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = canvas.clientWidth * dpr;
+        canvas.height = canvas.clientHeight * dpr;
+        ctx.scale(dpr, dpr);
+
+        const w = canvas.clientWidth;
+        const h = canvas.clientHeight;
+        const padding = 20;
+
+        const points = history.map(h => h.equity);
+        const min = Math.min(...points) * 0.99;
+        const max = Math.max(...points) * 1.01;
+        const range = max - min;
+
+        ctx.clearRect(0, 0, w, h);
+
+        // Draw Line
+        ctx.beginPath();
+        ctx.strokeStyle = "#14b8a6";
+        ctx.lineWidth = 2;
+        ctx.lineJoin = "round";
+
+        history.forEach((entry, i) => {
+            const x = padding + (i / (history.length - 1)) * (w - padding * 2);
+            const y = h - padding - ((entry.equity - min) / range) * (h - padding * 2);
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+
+        // Fill Gradient
+        const grad = ctx.createLinearGradient(0, 0, 0, h);
+        grad.addColorStop(0, "rgba(20, 184, 166, 0.2)");
+        grad.addColorStop(1, "rgba(20, 184, 166, 0)");
+        ctx.lineTo(w - padding, h - padding);
+        ctx.lineTo(padding, h - padding);
+        ctx.fillStyle = grad;
+        ctx.fill();
     },
 
     lockSection(el, featureName) {

@@ -26,6 +26,7 @@ const DEFAULTS = {
         equity: 10,
         realized: 0,
         trades: [], // IDs
+        equityHistory: [], // [{ts, equity}]
         winStreak: 0,
         lossStreak: 0,
         startTime: 0,
