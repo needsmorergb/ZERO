@@ -186,7 +186,7 @@ export const PnlHud = {
 
         // Detect current token to update its position price in real-time
         const currentToken = TokenDetector.getCurrentToken();
-        const unrealized = await Trading.getUnrealizedPnl(s, currentToken.mint);
+        const unrealized = Trading.getUnrealizedPnl(s, currentToken.mint);
 
         const inp = root.querySelector('.startSolInput');
         if (document.activeElement !== inp) inp.value = s.settings.startSol;

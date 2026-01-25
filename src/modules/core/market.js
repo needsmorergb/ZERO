@@ -45,14 +45,16 @@ export const Market = {
             const raw = el.textContent.trim();
             const val = this.parsePriceStr(raw);
 
-            // Logic: 
-            // 1. If it looks like a high-precision price (0.00... or < 1000 without unit), it's Price.
-            // 2. If it has K/M/B or is a huge number, it's Market Cap.
+            // STRICT RULES:
+            // - Price: < $10,000 AND no K/M/B suffix
+            // - Market Cap: > $10,000 OR has K/M/B suffix
             const hasUnit = /[KMB]/.test(raw.toUpperCase());
 
-            if (hasUnit || val > 100000) {
+            if (hasUnit || val > 10000) {
+                // This is market cap
                 if (val > 0) this.marketCap = val;
-            } else if (val > 0) {
+            } else if (val > 0 && val < 10000) {
+                // This is price (most tokens are < $10k per token)
                 this.updatePrice(val);
             }
         }
@@ -87,6 +89,7 @@ export const Market = {
     updatePrice(val) {
         if (!val || val <= 0.000000000001) return;
         if (val !== this.price) {
+            console.log(`[Market] Price updated: $${val.toFixed(8)} (MC: $${this.marketCap.toFixed(0)})`);
             this.price = val;
             this.lastPriceTs = Date.now();
             this.listeners.forEach(cb => cb(val));

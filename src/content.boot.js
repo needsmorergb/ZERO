@@ -3,10 +3,11 @@ import { FeatureManager } from './modules/featureManager.js';
 import { OverlayManager } from './modules/ui/overlay.js';
 import { Market } from './modules/core/market.js';
 import { HUD } from './modules/ui/hud.js';
+import { PnlCalculator } from './modules/core/pnl-calculator.js';
 
 (async () => {
     "use strict";
-    console.log('%c ZERØ v1.7.1 (Final Polish: Marker Stack Fix)', 'color: #ef4444; font-weight: bold; font-size: 14px;');
+    console.log('%c ZERØ v1.8.2 (PNL Accuracy & Performance Fix)', 'color: #ef4444; font-weight: bold; font-size: 14px;');
 
     const PLATFORM = {
         isAxiom: window.location.hostname.includes('axiom.trade'),
@@ -46,6 +47,14 @@ import { HUD } from './modules/ui/hud.js';
         Market.init();
     } catch (e) {
         console.error('[ZERØ] Market Init Failed:', e);
+    }
+
+    // Initialize PNL Calculator (Background SOL price fetching)
+    try {
+        console.log('[ZERØ] Init PNL Calculator...');
+        PnlCalculator.init();
+    } catch (e) {
+        console.error('[ZERØ] PNL Calculator Init Failed:', e);
     }
 
     // Initialize HUD (Render)

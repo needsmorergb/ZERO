@@ -10,9 +10,23 @@ export const OrderExecution = {
         if (amountSol <= 0) return { success: false, error: "Invalid amount" };
         if (amountSol > state.session.balance) return { success: false, error: "Insufficient funds" };
 
-        const price = Market.price || 0.000001;
-        const marketCap = Market.marketCap || 0;
-        const solUsd = await PnlCalculator.getSolPrice();
+        let price = Market.price || 0.000001;
+        let marketCap = Market.marketCap || 0;
+
+        // CRITICAL SANITY CHECK: Detect if price/marketCap are swapped
+        // Token prices are usually < $10,000, market caps are usually > $10,000
+        if (price > 10000 && marketCap > 0 && marketCap < 10000) {
+            console.warn(`[Trading] SWAP DETECTED! Price=${price} MarketCap=${marketCap}. Swapping...`);
+            [price, marketCap] = [marketCap, price];
+        }
+
+        // FINAL VALIDATION: Reject trade if price is still invalid after swap attempt
+        if (price > 10000) {
+            console.error(`[Trading] INVALID PRICE: $${price} - refusing to execute trade`);
+            return { success: false, error: `Price data invalid ($${price.toFixed(2)}). Wait for chart to load.` };
+        }
+
+        const solUsd = PnlCalculator.getSolPrice();
         const usdAmount = amountSol * solUsd;
         const tokenQty = usdAmount / price;
 
@@ -20,7 +34,7 @@ export const OrderExecution = {
         const symbol = tokenInfo?.symbol || 'SOL';
         const mint = tokenInfo?.mint || 'So111...';
 
-        console.log(`[Trading] Executing BUY ${amountSol} SOL of ${symbol} (${mint}) @ $${price} (MC: ${marketCap})`);
+        console.log(`[Trading] BUY: ${amountSol} SOL → ${tokenQty.toFixed(2)} ${symbol} @ $${price} | SOL=$${solUsd} | MC=$${marketCap}`);
 
         state.session.balance -= amountSol;
 
@@ -81,8 +95,16 @@ export const OrderExecution = {
 
     async sell(pct = 100, strategy = "Trend", tokenInfo = null) {
         const state = Store.state;
-        const currentPrice = Market.price || 0;
+        if (!state.settings.enabled) return { success: false, error: "Paper trading disabled" };
+
+        let currentPrice = Market.price || 0;
         if (currentPrice <= 0) return { success: false, error: "No price data" };
+
+        // VALIDATION: Reject if price is clearly wrong (market cap value)
+        if (currentPrice > 10000) {
+            console.error(`[Trading] INVALID PRICE for SELL: $${currentPrice}`);
+            return { success: false, error: `Price data invalid ($${currentPrice.toFixed(2)}). Wait for chart to load.` };
+        }
 
         const symbol = tokenInfo?.symbol || 'SOL';
         const mint = tokenInfo?.mint || 'So111...';
@@ -96,7 +118,7 @@ export const OrderExecution = {
         const qtyToSell = position.tokenQty * (pct / 100);
         if (qtyToSell <= 0) return { success: false, error: "Invalid qty" };
 
-        const solUsd = await PnlCalculator.getSolPrice();
+        const solUsd = PnlCalculator.getSolPrice();
         const proceedsUsd = qtyToSell * currentPrice;
         const solReceived = proceedsUsd / solUsd;
 

@@ -42,7 +42,7 @@
       tiltFrequency: 0
     },
     schemaVersion: 2,
-    version: "1.8.0"
+    version: "1.8.2"
   };
   function deepMerge(base, patch) {
     if (!patch || typeof patch !== "object")
@@ -1351,10 +1351,10 @@ input:checked + .slider:before {
         const raw = el.textContent.trim();
         const val = this.parsePriceStr(raw);
         const hasUnit = /[KMB]/.test(raw.toUpperCase());
-        if (hasUnit || val > 1e5) {
+        if (hasUnit || val > 1e4) {
           if (val > 0)
             this.marketCap = val;
-        } else if (val > 0) {
+        } else if (val > 0 && val < 1e4) {
           this.updatePrice(val);
         }
       }
@@ -1396,6 +1396,7 @@ input:checked + .slider:before {
       if (!val || val <= 1e-12)
         return;
       if (val !== this.price) {
+        console.log(`[Market] Price updated: $${val.toFixed(8)} (MC: $${this.marketCap.toFixed(0)})`);
         this.price = val;
         this.lastPriceTs = Date.now();
         this.listeners.forEach((cb) => cb(val));
@@ -1449,28 +1450,61 @@ input:checked + .slider:before {
 
   // src/modules/core/pnl-calculator.js
   var PnlCalculator = {
-    cachedSolPrice: null,
+    cachedSolPrice: 200,
+    // Default fallback
     lastSolPriceFetch: 0,
-    priceUpdatePending: false,
+    priceUpdateInterval: null,
     lastPriceSave: 0,
-    async getSolPrice() {
-      const now = Date.now();
-      if (this.cachedSolPrice && now - this.lastSolPriceFetch < 3e4) {
-        return this.cachedSolPrice;
+    // Initialize price fetching on load
+    init() {
+      this.fetchSolPriceBackground();
+      if (!this.priceUpdateInterval) {
+        this.priceUpdateInterval = setInterval(() => {
+          this.fetchSolPriceBackground();
+        }, 6e4);
       }
+    },
+    // Background fetch - never blocks, updates cache silently
+    async fetchSolPriceBackground() {
+      console.log("[PNL] Fetching SOL price...");
       try {
-        const response = await fetch("https://price.jup.ag/v6/price?ids=So11111111111111111111111111111111111111112");
+        const response = await fetch("https://price.jup.ag/v6/price?ids=So11111111111111111111111111111111111111112", {
+          signal: AbortSignal.timeout(3e3)
+        });
         const data = await response.json();
         const solPrice = data?.data?.So11111111111111111111111111111111111111112?.price;
         if (solPrice && solPrice > 0) {
           this.cachedSolPrice = solPrice;
-          this.lastSolPriceFetch = now;
-          return solPrice;
+          this.lastSolPriceFetch = Date.now();
+          console.log(`[PNL] \u2713 SOL price from Jupiter: $${solPrice.toFixed(2)}`);
+          return;
         }
       } catch (e) {
-        console.warn("[ZER\xD8] Failed to fetch SOL price:", e);
+        console.warn(`[PNL] Jupiter failed (${e.message}), trying CoinGecko...`);
       }
-      return this.cachedSolPrice || 200;
+      try {
+        const response = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd", {
+          signal: AbortSignal.timeout(3e3)
+        });
+        const data = await response.json();
+        const solPrice = data?.solana?.usd;
+        if (solPrice && solPrice > 50 && solPrice < 500) {
+          this.cachedSolPrice = solPrice;
+          this.lastSolPriceFetch = Date.now();
+          console.log(`[PNL] \u2713 SOL price from CoinGecko: $${solPrice.toFixed(2)}`);
+          return;
+        } else if (solPrice) {
+          console.error(`[PNL] CoinGecko returned invalid SOL price: $${solPrice} (expected $50-$500)`);
+        }
+      } catch (e) {
+        console.error(`[PNL] \u2717 CoinGecko failed: ${e.message}`);
+      }
+      console.error(`[PNL] \u2717 All APIs failed. Using safe default $140`);
+      this.cachedSolPrice = 140;
+    },
+    // Always returns immediately - never blocks on fetch
+    getSolPrice() {
+      return this.cachedSolPrice;
     },
     fmtSol(n) {
       if (!Number.isFinite(n))
@@ -1480,14 +1514,30 @@ input:checked + .slider:before {
       }
       return n.toFixed(4);
     },
-    async getUnrealizedPnl(state, currentTokenMint = null) {
+    getUnrealizedPnl(state, currentTokenMint = null) {
       let totalUnrealized = 0;
-      const solUsd = await this.getSolPrice();
+      const solUsd = this.getSolPrice();
       let priceWasUpdated = false;
       const positions = Object.values(state.positions || {});
+      console.log(`[PNL] Calculating for ${positions.length} position(s), SOL=$${solUsd.toFixed(2)}`);
       positions.forEach((pos) => {
+        const reasons = [];
+        if (pos.entryPriceUsd > 1e4)
+          reasons.push(`entryPrice=$${pos.entryPriceUsd.toFixed(0)}`);
+        if (pos.lastPriceUsd > 1e4)
+          reasons.push(`lastPrice=$${pos.lastPriceUsd.toFixed(0)}`);
+        if (pos.tokenQty > 1e5)
+          reasons.push(`qty=${pos.tokenQty.toFixed(0)}`);
+        if (pos.totalSolSpent < 1e-5)
+          reasons.push(`spent=${pos.totalSolSpent.toFixed(6)}`);
+        if (reasons.length > 0) {
+          console.error(`[PNL] \u2717 DELETING CORRUPTED ${pos.symbol}: ${reasons.join(", ")}`);
+          delete state.positions[pos.mint];
+          priceWasUpdated = true;
+          return;
+        }
         let currentPrice = pos.lastPriceUsd || pos.entryPriceUsd;
-        if (currentTokenMint && pos.mint === currentTokenMint && Market.price > 0) {
+        if (currentTokenMint && pos.mint === currentTokenMint && Market.price > 0 && Market.price < 1e4) {
           currentPrice = Market.price;
           const oldPrice = pos.lastPriceUsd || pos.entryPriceUsd;
           if (!pos.lastPriceUsd || Math.abs(oldPrice - Market.price) / oldPrice > 1e-3) {
@@ -1500,6 +1550,7 @@ input:checked + .slider:before {
         const valueUsd = pos.tokenQty * currentPrice;
         const valueSol = valueUsd / solUsd;
         const pnl = valueSol - pos.totalSolSpent;
+        console.log(`[PNL] ${pos.symbol}: qty=${pos.tokenQty.toFixed(2)}, price=$${currentPrice.toFixed(6)}, value=${valueSol.toFixed(4)} SOL, spent=${pos.totalSolSpent.toFixed(4)} SOL, pnl=${pnl.toFixed(4)} SOL`);
         totalUnrealized += pnl;
       });
       const now = Date.now();
@@ -1616,14 +1667,22 @@ input:checked + .slider:before {
         return { success: false, error: "Invalid amount" };
       if (amountSol > state.session.balance)
         return { success: false, error: "Insufficient funds" };
-      const price = Market.price || 1e-6;
-      const marketCap = Market.marketCap || 0;
-      const solUsd = await PnlCalculator.getSolPrice();
+      let price = Market.price || 1e-6;
+      let marketCap = Market.marketCap || 0;
+      if (price > 1e4 && marketCap > 0 && marketCap < 1e4) {
+        console.warn(`[Trading] SWAP DETECTED! Price=${price} MarketCap=${marketCap}. Swapping...`);
+        [price, marketCap] = [marketCap, price];
+      }
+      if (price > 1e4) {
+        console.error(`[Trading] INVALID PRICE: $${price} - refusing to execute trade`);
+        return { success: false, error: `Price data invalid ($${price.toFixed(2)}). Wait for chart to load.` };
+      }
+      const solUsd = PnlCalculator.getSolPrice();
       const usdAmount = amountSol * solUsd;
       const tokenQty = usdAmount / price;
       const symbol = tokenInfo?.symbol || "SOL";
       const mint = tokenInfo?.mint || "So111...";
-      console.log(`[Trading] Executing BUY ${amountSol} SOL of ${symbol} (${mint}) @ $${price} (MC: ${marketCap})`);
+      console.log(`[Trading] BUY: ${amountSol} SOL \u2192 ${tokenQty.toFixed(2)} ${symbol} @ $${price} | SOL=$${solUsd} | MC=$${marketCap}`);
       state.session.balance -= amountSol;
       const posKey = mint;
       if (!state.positions[posKey]) {
@@ -1672,9 +1731,15 @@ input:checked + .slider:before {
     },
     async sell(pct = 100, strategy = "Trend", tokenInfo = null) {
       const state = Store.state;
-      const currentPrice = Market.price || 0;
+      if (!state.settings.enabled)
+        return { success: false, error: "Paper trading disabled" };
+      let currentPrice = Market.price || 0;
       if (currentPrice <= 0)
         return { success: false, error: "No price data" };
+      if (currentPrice > 1e4) {
+        console.error(`[Trading] INVALID PRICE for SELL: $${currentPrice}`);
+        return { success: false, error: `Price data invalid ($${currentPrice.toFixed(2)}). Wait for chart to load.` };
+      }
       const symbol = tokenInfo?.symbol || "SOL";
       const mint = tokenInfo?.mint || "So111...";
       const posKey = mint;
@@ -1685,7 +1750,7 @@ input:checked + .slider:before {
       const qtyToSell = position.tokenQty * (pct / 100);
       if (qtyToSell <= 0)
         return { success: false, error: "Invalid qty" };
-      const solUsd = await PnlCalculator.getSolPrice();
+      const solUsd = PnlCalculator.getSolPrice();
       const proceedsUsd = qtyToSell * currentPrice;
       const solReceived = proceedsUsd / solUsd;
       const solSpentPortion = position.totalSolSpent * (qtyToSell / position.tokenQty);
@@ -1745,9 +1810,9 @@ input:checked + .slider:before {
     calculateDiscipline: (trade, state) => Analytics.calculateDiscipline(trade, state),
     updateStreaks: (trade, state) => Analytics.updateStreaks(trade, state),
     // Order Execution methods
-    buy: (amountSol, strategy, tokenInfo) => OrderExecution.buy(amountSol, strategy, tokenInfo),
-    sell: (pct, strategy, tokenInfo) => OrderExecution.sell(pct, strategy, tokenInfo),
-    tagTrade: (tradeId, updates) => OrderExecution.tagTrade(tradeId, updates)
+    buy: async (amountSol, strategy, tokenInfo) => await OrderExecution.buy(amountSol, strategy, tokenInfo),
+    sell: async (pct, strategy, tokenInfo) => await OrderExecution.sell(pct, strategy, tokenInfo),
+    tagTrade: async (tradeId, updates) => await OrderExecution.tagTrade(tradeId, updates)
   };
 
   // src/modules/ui/token-detector.js
@@ -1974,7 +2039,7 @@ input:checked + .slider:before {
       }
       const s = Store.state;
       const currentToken = TokenDetector.getCurrentToken();
-      const unrealized = await Trading.getUnrealizedPnl(s, currentToken.mint);
+      const unrealized = Trading.getUnrealizedPnl(s, currentToken.mint);
       const inp = root.querySelector(".startSolInput");
       if (document.activeElement !== inp)
         inp.value = s.settings.startSol;
@@ -2507,7 +2572,7 @@ input:checked + .slider:before {
   // src/content.boot.js
   (async () => {
     "use strict";
-    console.log("%c ZER\xD8 v1.7.1 (Final Polish: Marker Stack Fix)", "color: #ef4444; font-weight: bold; font-size: 14px;");
+    console.log("%c ZER\xD8 v1.8.2 (PNL Accuracy & Performance Fix)", "color: #ef4444; font-weight: bold; font-size: 14px;");
     const PLATFORM = {
       isAxiom: window.location.hostname.includes("axiom.trade"),
       isPadre: window.location.hostname.includes("padre.gg"),
@@ -2538,6 +2603,12 @@ input:checked + .slider:before {
       Market.init();
     } catch (e) {
       console.error("[ZER\xD8] Market Init Failed:", e);
+    }
+    try {
+      console.log("[ZER\xD8] Init PNL Calculator...");
+      PnlCalculator.init();
+    } catch (e) {
+      console.error("[ZER\xD8] PNL Calculator Init Failed:", e);
     }
     try {
       console.log("[ZER\xD8] Init HUD...");
