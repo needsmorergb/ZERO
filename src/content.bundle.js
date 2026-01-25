@@ -1,4 +1,73 @@
 (() => {
+  var __defProp = Object.defineProperty;
+  var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+  var __getOwnPropNames = Object.getOwnPropertyNames;
+  var __hasOwnProp = Object.prototype.hasOwnProperty;
+  var __esm = (fn, res) => function __init() {
+    return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+  };
+  var __export = (target, all) => {
+    for (var name in all)
+      __defProp(target, name, { get: all[name], enumerable: true });
+  };
+  var __copyProps = (to, from, except, desc) => {
+    if (from && typeof from === "object" || typeof from === "function") {
+      for (let key of __getOwnPropNames(from))
+        if (!__hasOwnProp.call(to, key) && key !== except)
+          __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+    }
+    return to;
+  };
+  var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+
+  // src/modules/featureManager.js
+  var featureManager_exports = {};
+  __export(featureManager_exports, {
+    FEATURES: () => FEATURES,
+    FeatureManager: () => FeatureManager,
+    TIERS: () => TIERS
+  });
+  var TIERS, FEATURES, FeatureManager;
+  var init_featureManager = __esm({
+    "src/modules/featureManager.js"() {
+      TIERS = {
+        FREE: "free",
+        PRO: "pro",
+        ELITE: "elite"
+      };
+      FEATURES = {
+        BASIC_TRADING: "free",
+        REAL_TIME_PNL: "free",
+        REAL_TRADING_LOG: "pro",
+        DISCIPLINE_SCORING: "pro",
+        EMOTION_TRACKING: "pro",
+        AI_DEBRIEF: "pro",
+        EQUITY_CHARTS: "pro",
+        DETAILED_LOGS: "pro",
+        ADVANCED_ANALYTICS: "pro",
+        TILT_DETECTION: "elite",
+        SESSION_REPLAY: "elite",
+        ADVANCED_COACHING: "elite"
+      };
+      FeatureManager = {
+        TIERS,
+        FEATURES,
+        hasFeature: (userTier, featureName) => {
+          const required = FEATURES[featureName];
+          if (!required)
+            return false;
+          if (required === "free")
+            return true;
+          if (required === "pro")
+            return [TIERS.PRO, TIERS.ELITE].includes(userTier);
+          if (required === "elite")
+            return userTier === TIERS.ELITE;
+          return false;
+        }
+      };
+    }
+  });
+
   // src/modules/store.js
   var EXT_KEY = "sol_paper_trader_v1";
   var DEFAULTS = {
@@ -172,6 +241,9 @@
       }
     }
   };
+
+  // src/content.boot.js
+  init_featureManager();
 
   // src/modules/ui/ids.js
   var IDS = {
@@ -1076,6 +1148,266 @@ input:checked + .slider {
 input:checked + .slider:before {
   transform: translateX(18px);
 }
+
+/* Paywall Modal */
+.paywall-modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2147483647;
+  pointer-events: auto;
+  animation: fadeIn 0.2s ease;
+}
+
+.paywall-modal {
+  background: linear-gradient(145deg, #0f172a 0%, #1e293b 100%);
+  border: 1px solid rgba(99,102,241,0.3);
+  border-radius: 20px;
+  padding: 0;
+  width: 460px;
+  max-width: 90vw;
+  box-shadow: 0 25px 60px rgba(0,0,0,0.7), 0 0 0 1px rgba(99,102,241,0.1);
+  font-family: 'Inter', sans-serif;
+  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+}
+
+.paywall-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  background: linear-gradient(135deg, rgba(99,102,241,0.1) 0%, rgba(139,92,246,0.05) 100%);
+  border-bottom: 1px solid rgba(99,102,241,0.15);
+}
+
+.paywall-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  color: white;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  box-shadow: 0 4px 12px rgba(99,102,241,0.3);
+}
+
+.badge-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.paywall-close {
+  background: none;
+  border: none;
+  color: #64748b;
+  font-size: 24px;
+  cursor: pointer;
+  transition: color 0.2s;
+  padding: 4px 8px;
+  line-height: 1;
+}
+
+.paywall-close:hover {
+  color: #f8fafc;
+}
+
+.paywall-hero {
+  padding: 28px 24px 24px;
+  text-align: center;
+}
+
+.paywall-title {
+  font-size: 24px;
+  font-weight: 800;
+  color: #f8fafc;
+  margin: 0 0 8px 0;
+  line-height: 1.2;
+}
+
+.paywall-subtitle {
+  font-size: 14px;
+  color: #94a3b8;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.paywall-features {
+  padding: 0 24px 24px;
+  display: grid;
+  gap: 12px;
+}
+
+.feature-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
+  background: rgba(15,23,42,0.6);
+  border: 1px solid rgba(99,102,241,0.1);
+  border-radius: 12px;
+  transition: all 0.2s;
+}
+
+.feature-item:hover {
+  background: rgba(99,102,241,0.05);
+  border-color: rgba(99,102,241,0.2);
+  transform: translateX(4px);
+}
+
+.feature-icon {
+  font-size: 20px;
+  line-height: 1;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+}
+
+.feature-text {
+  flex: 1;
+}
+
+.feature-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #e2e8f0;
+  margin-bottom: 2px;
+}
+
+.feature-desc {
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+.paywall-pricing {
+  padding: 20px 24px;
+  text-align: center;
+  background: rgba(99,102,241,0.05);
+  border-top: 1px solid rgba(99,102,241,0.1);
+  border-bottom: 1px solid rgba(99,102,241,0.1);
+}
+
+.price-tag {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.price-amount {
+  font-size: 36px;
+  font-weight: 800;
+  color: #6366f1;
+  line-height: 1;
+}
+
+.price-period {
+  font-size: 16px;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.price-subtext {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.paywall-actions {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.paywall-btn {
+  padding: 14px 24px;
+  border-radius: 12px;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.paywall-btn.primary {
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  color: white;
+  box-shadow: 0 4px 16px rgba(99,102,241,0.4);
+}
+
+.paywall-btn.primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(99,102,241,0.5);
+}
+
+.paywall-btn.secondary {
+  background: rgba(99,102,241,0.1);
+  color: #818cf8;
+  border: 1px solid rgba(99,102,241,0.2);
+}
+
+.paywall-btn.secondary:hover {
+  background: rgba(99,102,241,0.15);
+  border-color: rgba(99,102,241,0.3);
+}
+
+.btn-icon {
+  font-size: 16px;
+}
+
+.paywall-footer {
+  padding: 16px 24px 24px;
+  text-align: center;
+}
+
+.paywall-footer p {
+  font-size: 11px;
+  color: #64748b;
+  margin: 0;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* PRO Tag */
+.pro-tag {
+  display: inline-block;
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  color: white;
+  font-size: 8px;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+  letter-spacing: 0.5px;
+  vertical-align: middle;
+  box-shadow: 0 2px 6px rgba(99,102,241,0.3);
+}
 `;
 
   // src/modules/ui/professor-styles.js
@@ -1659,6 +1991,51 @@ input:checked + .slider:before {
         state.session.winStreak = 0;
         console.log(`[ZER\xD8] Loss. ${pnl.toFixed(4)} SOL. Loss streak: ${state.session.lossStreak}`);
       }
+    },
+    generateXShareText(state) {
+      const trades = Object.values(state.trades || {});
+      const sellTrades = trades.filter((t) => t.side === "SELL");
+      const wins = sellTrades.filter((t) => (t.realizedPnlSol || 0) > 0).length;
+      const losses = sellTrades.filter((t) => (t.realizedPnlSol || 0) < 0).length;
+      const totalPnl = state.session.realized || 0;
+      const winRate = sellTrades.length > 0 ? (wins / sellTrades.length * 100).toFixed(0) : 0;
+      const disciplineScore = state.session.disciplineScore || 100;
+      const winStreak = state.session.winStreak || 0;
+      const lossStreak = state.session.lossStreak || 0;
+      const currentStreak = winStreak > 0 ? `${winStreak}W` : lossStreak > 0 ? `${lossStreak}L` : "0";
+      const pnlFormatted = totalPnl >= 0 ? `+${totalPnl.toFixed(3)}` : totalPnl.toFixed(3);
+      const pnlEmoji = totalPnl >= 0 ? "\u{1F4C8}" : "\u{1F4C9}";
+      let text = `\u{1F3AF} ZER\xD8 Trading Session Complete
+
+`;
+      text += `${pnlEmoji} P&L: ${pnlFormatted} SOL
+`;
+      text += `\u{1F4CA} Win Rate: ${winRate}%
+`;
+      text += `\u{1F3B2} Trades: ${wins}W / ${losses}L
+`;
+      text += `\u{1F525} Streak: ${currentStreak}
+`;
+      text += `\u{1F9E0} Discipline: ${disciplineScore}/100
+
+`;
+      if (winRate >= 70) {
+        text += `Crushing it today! \u{1F4AA}
+
+`;
+      } else if (winRate >= 50) {
+        text += `Staying profitable \u{1F4CA}
+
+`;
+      } else if (sellTrades.length >= 3) {
+        text += `Learning and improving \u{1F4DA}
+
+`;
+      }
+      text += `Paper trading with ZER\xD8 on Solana
+`;
+      text += `#Solana #PaperTrading #Crypto`;
+      return text;
     }
   };
 
@@ -1874,6 +2251,172 @@ input:checked + .slider:before {
     }
   };
 
+  // src/modules/ui/paywall.js
+  var Paywall = {
+    showUpgradeModal(lockedFeature = null) {
+      const root = OverlayManager.getShadowRoot();
+      const existing = root.getElementById("paywall-modal-overlay");
+      if (existing)
+        existing.remove();
+      const overlay = document.createElement("div");
+      overlay.id = "paywall-modal-overlay";
+      overlay.className = "paywall-modal-overlay";
+      let featureTitle = "Upgrade to PRO";
+      let featureDesc = "Unlock advanced trading features";
+      if (lockedFeature === "EQUITY_CHARTS") {
+        featureTitle = "Equity Chart - PRO Feature";
+        featureDesc = "Track your equity curve over time with advanced charting";
+      } else if (lockedFeature === "DETAILED_LOGS") {
+        featureTitle = "Detailed Logs - PRO Feature";
+        featureDesc = "Export comprehensive trade logs for analysis";
+      } else if (lockedFeature === "AI_DEBRIEF") {
+        featureTitle = "AI Debrief - PRO Feature";
+        featureDesc = "Get AI-powered insights on your trading patterns";
+      }
+      overlay.innerHTML = `
+            <div class="paywall-modal">
+                <div class="paywall-header">
+                    <div class="paywall-badge">
+                        <svg class="badge-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                        <span>ZER\xD8 PRO</span>
+                    </div>
+                    <button class="paywall-close" data-act="close">\u2715</button>
+                </div>
+
+                <div class="paywall-hero">
+                    <h2 class="paywall-title">${featureTitle}</h2>
+                    <p class="paywall-subtitle">${featureDesc}</p>
+                </div>
+
+                <div class="paywall-features">
+                    <div class="feature-item">
+                        <svg class="feature-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"></line><line x1="18" y1="20" x2="18" y2="4"></line><line x1="6" y1="20" x2="6" y2="16"></line></svg>
+                        <div class="feature-text">
+                            <div class="feature-name">Equity Charts</div>
+                            <div class="feature-desc">Visualize your performance over time</div>
+                        </div>
+                    </div>
+                    <div class="feature-item">
+                        <svg class="feature-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                        <div class="feature-text">
+                            <div class="feature-name">Advanced AI Debrief</div>
+                            <div class="feature-desc">Deep analysis of your trading psychology</div>
+                        </div>
+                    </div>
+                    <div class="feature-item">
+                        <svg class="feature-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
+                        <div class="feature-text">
+                            <div class="feature-name">Multi-Token P&L</div>
+                            <div class="feature-desc">Track multiple positions simultaneously</div>
+                        </div>
+                    </div>
+                    <div class="feature-item">
+                        <svg class="feature-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#14b8a6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                        <div class="feature-text">
+                            <div class="feature-name">Detailed Trade Logs</div>
+                            <div class="feature-desc">Export comprehensive trade history</div>
+                        </div>
+                    </div>
+                    <div class="feature-item">
+                        <svg class="feature-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                        <div class="feature-text">
+                            <div class="feature-name">Real Trading Mode</div>
+                            <div class="feature-desc">Log and track your real trades</div>
+                        </div>
+                    </div>
+                    <div class="feature-item">
+                        <svg class="feature-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"></path><path d="m9 12 2 2 4-4"></path></svg>
+                        <div class="feature-text">
+                            <div class="feature-name">Discipline Tracking</div>
+                            <div class="feature-desc">Stay accountable with real-time scoring</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="paywall-pricing">
+                    <div class="price-tag">
+                        <span class="price-amount">$19</span>
+                        <span class="price-period">/month</span>
+                    </div>
+                    <div class="price-subtext">Cancel anytime \u2022 7-day money back guarantee</div>
+                </div>
+
+                <div class="paywall-actions">
+                    <button class="paywall-btn primary" data-act="upgrade">
+                        <span>Upgrade to PRO</span>
+                        <span class="btn-icon">\u2192</span>
+                    </button>
+                    <button class="paywall-btn secondary" data-act="demo">
+                        <span>Unlock Demo (Dev Mode)</span>
+                    </button>
+                </div>
+
+                <div class="paywall-footer">
+                    <p>Join hundreds of traders improving their discipline</p>
+                </div>
+            </div>
+        `;
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay || e.target.closest('[data-act="close"]')) {
+          overlay.remove();
+        }
+        if (e.target.closest('[data-act="upgrade"]')) {
+          this.handleUpgrade();
+        }
+        if (e.target.closest('[data-act="demo"]')) {
+          this.unlockDemo();
+          overlay.remove();
+        }
+      });
+      root.appendChild(overlay);
+    },
+    handleUpgrade() {
+      const upgradeUrl = "https://zero-trading.com/pro";
+      window.open(upgradeUrl, "_blank");
+      console.log("[Paywall] Redirecting to upgrade page");
+    },
+    unlockDemo() {
+      Store.state.settings.tier = "pro";
+      Store.save();
+      console.log("[Paywall] Demo mode unlocked - PRO tier activated");
+      const root = OverlayManager.getShadowRoot();
+      const toast = document.createElement("div");
+      toast.className = "paywall-toast";
+      toast.textContent = "\u2713 PRO Demo Unlocked";
+      toast.style.cssText = `
+            position: fixed;
+            top: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(16,185,129,0.9);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 14px;
+            z-index: 2147483647;
+            pointer-events: none;
+            animation: slideDown 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        `;
+      root.appendChild(toast);
+      setTimeout(() => toast.remove(), 2e3);
+    },
+    isFeatureLocked(featureName) {
+      const userTier = Store.state?.settings?.tier || "free";
+      const { FEATURES: FEATURES2 } = (init_featureManager(), __toCommonJS(featureManager_exports)).FeatureManager || {};
+      if (!FEATURES2 || !FEATURES2[featureName])
+        return false;
+      const requiredTier = FEATURES2[featureName];
+      if (requiredTier === "free")
+        return false;
+      if (requiredTier === "pro" && ["pro", "elite"].includes(userTier))
+        return false;
+      if (requiredTier === "elite" && userTier === "elite")
+        return false;
+      return true;
+    }
+  };
+
   // src/modules/ui/pnl-hud.js
   function px(n) {
     return n + "px";
@@ -1917,12 +2460,14 @@ input:checked + .slider:before {
       root.innerHTML = `
             <div class="card">
               <div class="header">
-                <div class="title"><span class="dot"></span> ZER\xD8 PNL <span class="muted" data-k="tokenSymbol" style="font-weight:700;color:rgba(148,163,184,0.85);">TOKEN</span></div>
+                <div class="title" style="display:flex;align-items:center;justify-content:space-between;flex:1;"><div><span class="dot"></span> ZER\xD8 PNL</div><span class="muted" data-k="tokenSymbol" style="font-weight:700;color:rgba(148,163,184,0.85);">TOKEN</span></div>
                 <div class="controls">
                   <div class="startSol">
                     <span style="font-weight:700;color:rgba(203,213,225,0.92);">Start SOL</span>
                     <input class="startSolInput" type="text" inputmode="decimal" />
                   </div>
+                  <button class="pillBtn" data-act="shareX" style="background:rgba(29,155,240,0.15);color:#1d9bf0;border:1px solid rgba(29,155,240,0.3);font-family:'Arial',sans-serif;font-weight:600;">Share \u{1D54F}</button>
+                  <button class="pillBtn" data-act="getPro" style="background:rgba(99,102,241,0.15);color:#6366f1;border:1px solid rgba(99,102,241,0.3);font-weight:700;display:flex;align-items:center;gap:4px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>PRO</button>
                   <button class="pillBtn" data-act="trades">Trades</button>
                   <button class="pillBtn" data-act="reset" style="color:#ef4444;">Reset</button>
                   <button class="pillBtn" data-act="settings" style="padding:6px 10px;font-size:16px;">\u2699</button>
@@ -1947,7 +2492,7 @@ input:checked + .slider:before {
                     <div class="v" data-k="streak">0</div>
                 </div>
                 <div class="stat discipline">
-                    <div class="k">DISCIPLINE</div>
+                    <div class="k">DISCIPLINE <span class="pro-tag">PRO</span></div>
                     <div class="v" data-k="discipline">100</div>
                 </div>
               </div>
@@ -2027,7 +2572,19 @@ input:checked + .slider:before {
         if (act === "settings") {
           this.showSettingsModal();
         }
+        if (act === "shareX") {
+          this.shareToX();
+        }
+        if (act === "getPro") {
+          Paywall.showUpgradeModal();
+        }
       });
+    },
+    shareToX() {
+      const shareText = Analytics.generateXShareText(Store.state);
+      const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}`;
+      window.open(url, "_blank", "width=550,height=420");
+      console.log("[PNL HUD] Sharing session to X");
     },
     async updatePnlHud() {
       const root = OverlayManager.getContainer().querySelector("#" + IDS.pnlHud);
@@ -2107,6 +2664,11 @@ input:checked + .slider:before {
         else if (score < 90)
           color = "#f59e0b";
         discEl.style.color = color;
+      }
+      const tokenSymbolEl = root.querySelector('[data-k="tokenSymbol"]');
+      if (tokenSymbolEl) {
+        const symbol = currentToken?.symbol || "TOKEN";
+        tokenSymbolEl.textContent = symbol;
       }
     },
     showResetModal() {

@@ -107,5 +107,48 @@ export const Analytics = {
             state.session.winStreak = 0;
             console.log(`[ZERØ] Loss. ${pnl.toFixed(4)} SOL. Loss streak: ${state.session.lossStreak}`);
         }
+    },
+
+    generateXShareText(state) {
+        const trades = Object.values(state.trades || {});
+        const sellTrades = trades.filter(t => t.side === 'SELL');
+
+        // Calculate stats
+        const wins = sellTrades.filter(t => (t.realizedPnlSol || 0) > 0).length;
+        const losses = sellTrades.filter(t => (t.realizedPnlSol || 0) < 0).length;
+        const totalPnl = state.session.realized || 0;
+        const winRate = sellTrades.length > 0 ? ((wins / sellTrades.length) * 100).toFixed(0) : 0;
+        const disciplineScore = state.session.disciplineScore || 100;
+
+        // Get streak info
+        const winStreak = state.session.winStreak || 0;
+        const lossStreak = state.session.lossStreak || 0;
+        const currentStreak = winStreak > 0 ? `${winStreak}W` : (lossStreak > 0 ? `${lossStreak}L` : '0');
+
+        // Format PNL
+        const pnlFormatted = totalPnl >= 0 ? `+${totalPnl.toFixed(3)}` : totalPnl.toFixed(3);
+        const pnlEmoji = totalPnl >= 0 ? '📈' : '📉';
+
+        // Generate viral-style post
+        let text = `🎯 ZERØ Trading Session Complete\n\n`;
+        text += `${pnlEmoji} P&L: ${pnlFormatted} SOL\n`;
+        text += `📊 Win Rate: ${winRate}%\n`;
+        text += `🎲 Trades: ${wins}W / ${losses}L\n`;
+        text += `🔥 Streak: ${currentStreak}\n`;
+        text += `🧠 Discipline: ${disciplineScore}/100\n\n`;
+
+        // Add context based on performance
+        if (winRate >= 70) {
+            text += `Crushing it today! 💪\n\n`;
+        } else if (winRate >= 50) {
+            text += `Staying profitable 📊\n\n`;
+        } else if (sellTrades.length >= 3) {
+            text += `Learning and improving 📚\n\n`;
+        }
+
+        text += `Paper trading with ZERØ on Solana\n`;
+        text += `#Solana #PaperTrading #Crypto`;
+
+        return text;
     }
 };

@@ -5,11 +5,15 @@ export const TIERS = {
 };
 
 export const FEATURES = {
-    PAPER_TRADING: 'free',
+    BASIC_TRADING: 'free',
+    REAL_TIME_PNL: 'free',
     REAL_TRADING_LOG: 'pro',
-    DISCIPLINE_SCORE: 'pro',
+    DISCIPLINE_SCORING: 'pro',
     EMOTION_TRACKING: 'pro',
     AI_DEBRIEF: 'pro',
+    EQUITY_CHARTS: 'pro',
+    DETAILED_LOGS: 'pro',
+    ADVANCED_ANALYTICS: 'pro',
     TILT_DETECTION: 'elite',
     SESSION_REPLAY: 'elite',
     ADVANCED_COACHING: 'elite'

@@ -3,6 +3,8 @@ import { OverlayManager } from './overlay.js';
 import { Trading } from '../core/trading.js';
 import { IDS } from './ids.js';
 import { TokenDetector } from './token-detector.js';
+import { Paywall } from './paywall.js';
+import { Analytics } from '../core/analytics.js';
 
 function px(n) { return n + 'px'; }
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
@@ -49,12 +51,14 @@ export const PnlHud = {
         root.innerHTML = `
             <div class="card">
               <div class="header">
-                <div class="title"><span class="dot"></span> ZERØ PNL <span class="muted" data-k="tokenSymbol" style="font-weight:700;color:rgba(148,163,184,0.85);">TOKEN</span></div>
+                <div class="title" style="display:flex;align-items:center;justify-content:space-between;flex:1;"><div><span class="dot"></span> ZERØ PNL</div><span class="muted" data-k="tokenSymbol" style="font-weight:700;color:rgba(148,163,184,0.85);">TOKEN</span></div>
                 <div class="controls">
                   <div class="startSol">
                     <span style="font-weight:700;color:rgba(203,213,225,0.92);">Start SOL</span>
                     <input class="startSolInput" type="text" inputmode="decimal" />
                   </div>
+                  <button class="pillBtn" data-act="shareX" style="background:rgba(29,155,240,0.15);color:#1d9bf0;border:1px solid rgba(29,155,240,0.3);font-family:'Arial',sans-serif;font-weight:600;">Share 𝕏</button>
+                  <button class="pillBtn" data-act="getPro" style="background:rgba(99,102,241,0.15);color:#6366f1;border:1px solid rgba(99,102,241,0.3);font-weight:700;display:flex;align-items:center;gap:4px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>PRO</button>
                   <button class="pillBtn" data-act="trades">Trades</button>
                   <button class="pillBtn" data-act="reset" style="color:#ef4444;">Reset</button>
                   <button class="pillBtn" data-act="settings" style="padding:6px 10px;font-size:16px;">⚙</button>
@@ -79,7 +83,7 @@ export const PnlHud = {
                     <div class="v" data-k="streak">0</div>
                 </div>
                 <div class="stat discipline">
-                    <div class="k">DISCIPLINE</div>
+                    <div class="k">DISCIPLINE <span class="pro-tag">PRO</span></div>
                     <div class="v" data-k="discipline">100</div>
                 </div>
               </div>
@@ -165,7 +169,20 @@ export const PnlHud = {
             if (act === 'settings') {
                 this.showSettingsModal();
             }
+            if (act === 'shareX') {
+                this.shareToX();
+            }
+            if (act === 'getPro') {
+                Paywall.showUpgradeModal();
+            }
         });
+    },
+
+    shareToX() {
+        const shareText = Analytics.generateXShareText(Store.state);
+        const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}`;
+        window.open(url, '_blank', 'width=550,height=420');
+        console.log('[PNL HUD] Sharing session to X');
     },
 
     async updatePnlHud() {
@@ -259,6 +276,13 @@ export const PnlHud = {
             else if (score < 90) color = '#f59e0b'; // Orange
 
             discEl.style.color = color;
+        }
+
+        // Update token symbol in title
+        const tokenSymbolEl = root.querySelector('[data-k="tokenSymbol"]');
+        if (tokenSymbolEl) {
+            const symbol = currentToken?.symbol || 'TOKEN';
+            tokenSymbolEl.textContent = symbol;
         }
     },
 
