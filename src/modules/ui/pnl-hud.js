@@ -57,7 +57,7 @@ export const PnlHud = {
                   </div>
                   <button class="pillBtn" data-act="trades">Trades</button>
                   <button class="pillBtn" data-act="reset" style="color:#ef4444;">Reset</button>
-                  <button class="pillBtn" data-act="settings" style="padding:6px 8px;">⚙</button>
+                  <button class="pillBtn" data-act="settings" style="padding:6px 10px;font-size:16px;">⚙</button>
                   <button class="pillBtn" data-act="dock">Dock</button>
                 </div>
               </div>
@@ -183,6 +183,7 @@ export const PnlHud = {
         }
 
         const s = Store.state;
+        const solUsd = Trading.getSolPrice();
 
         // Detect current token to update its position price in real-time
         const currentToken = TokenDetector.getCurrentToken();
@@ -193,19 +194,46 @@ export const PnlHud = {
 
         root.querySelector('[data-k="balance"]').textContent = `${Trading.fmtSol(s.session.balance)} SOL`;
 
-        // Update unrealized PNL display
+        // Calculate total invested for percentage
+        const positions = Object.values(s.positions || {});
+        const totalInvested = positions.reduce((sum, pos) => sum + (pos.totalSolSpent || 0), 0);
+        const unrealizedPct = totalInvested > 0 ? (unrealized / totalInvested) * 100 : 0;
+
+        // Update unrealized PNL display with percentage
         const tokenValueEl = root.querySelector('[data-k="tokenValue"]');
-        if (tokenValueEl) {
-            tokenValueEl.textContent = (unrealized >= 0 ? "+" : "") + Trading.fmtSol(unrealized);
+        const tokenUnitEl = root.querySelector('[data-k="tokenUnit"]');
+        if (tokenValueEl && tokenUnitEl) {
+            const showUsd = s.settings.tokenDisplayUsd;
+            if (showUsd) {
+                const unrealizedUsd = unrealized * solUsd;
+                tokenValueEl.textContent = (unrealizedUsd >= 0 ? "+" : "") + "$" + Trading.fmtSol(Math.abs(unrealizedUsd));
+                tokenUnitEl.textContent = "USD";
+            } else {
+                tokenValueEl.textContent = (unrealized >= 0 ? "+" : "") + Trading.fmtSol(unrealized) + ` (${unrealizedPct >= 0 ? "+" : ""}${unrealizedPct.toFixed(1)}%)`;
+                tokenUnitEl.textContent = "SOL";
+            }
             tokenValueEl.style.color = unrealized >= 0 ? "#10b981" : "#ef4444";
         }
 
         const realized = s.session.realized || 0;
         const totalPnl = realized + unrealized;
+        const startBalance = s.settings.startSol || 10;
+        const sessionPct = ((totalPnl / startBalance) * 100);
 
         const pnlEl = root.querySelector('[data-k="pnl"]');
-        pnlEl.textContent = (totalPnl >= 0 ? "+" : "") + Trading.fmtSol(totalPnl) + " SOL";
-        pnlEl.style.color = totalPnl >= 0 ? "#10b981" : "#ef4444";
+        const pnlUnitEl = root.querySelector('[data-k="pnlUnit"]');
+        if (pnlEl && pnlUnitEl) {
+            const showUsd = s.settings.sessionDisplayUsd;
+            if (showUsd) {
+                const totalPnlUsd = totalPnl * solUsd;
+                pnlEl.textContent = (totalPnlUsd >= 0 ? "+" : "") + "$" + Trading.fmtSol(Math.abs(totalPnlUsd));
+                pnlUnitEl.textContent = "USD";
+            } else {
+                pnlEl.textContent = (totalPnl >= 0 ? "+" : "") + Trading.fmtSol(totalPnl) + ` (${sessionPct >= 0 ? "+" : ""}${sessionPct.toFixed(1)}%)`;
+                pnlUnitEl.textContent = "SOL";
+            }
+            pnlEl.style.color = totalPnl >= 0 ? "#10b981" : "#ef4444";
+        }
 
         const streakEl = root.querySelector('[data-k="streak"]');
         const winStreak = s.session.winStreak || 0;
@@ -356,11 +384,28 @@ export const PnlHud = {
                 valStr = (t.realizedPnlSol ? (t.realizedPnlSol > 0 ? '+' : '') + t.realizedPnlSol.toFixed(4) : '0.00') + ' SOL';
             }
 
+            // Format market cap
+            let mcStr = '';
+            if (t.marketCap && t.marketCap > 0) {
+                if (t.marketCap >= 1000000000) {
+                    mcStr = `$${(t.marketCap / 1000000000).toFixed(2)}B`;
+                } else if (t.marketCap >= 1000000) {
+                    mcStr = `$${(t.marketCap / 1000000).toFixed(2)}M`;
+                } else if (t.marketCap >= 1000) {
+                    mcStr = `$${(t.marketCap / 1000).toFixed(1)}K`;
+                } else {
+                    mcStr = `$${t.marketCap.toFixed(0)}`;
+                }
+            }
+
             html += `
                 <div class="tradeRow">
                     <div class="muted" style="font-size:9px;">${new Date(t.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                     <div class="tag ${t.side.toLowerCase()}">${t.side}</div>
-                    <div style="flex:1;">${t.symbol}</div>
+                    <div style="flex:1;">
+                        <div>${t.symbol}</div>
+                        ${mcStr ? `<div class="muted" style="font-size:9px;">${mcStr} MC</div>` : ''}
+                    </div>
                     <div class="${pnlClass}">${valStr}</div>
                 </div>
             `;

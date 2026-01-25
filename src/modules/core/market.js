@@ -31,14 +31,20 @@ export const Market = {
         const isPadre = window.location.hostname.includes('padre.gg');
 
         if (isPadre) {
-            candidates = Array.from(document.querySelectorAll('h2, span[class*="MuiTypography"], div[class*="MuiTypography"]'))
+            // MUCH MORE SPECIFIC: Only look for h2 elements (main price display)
+            // Ignore all the MuiTypography noise (order book, volume, etc.)
+            candidates = Array.from(document.querySelectorAll('h2'))
                 .filter(el => {
                     const txt = el.textContent || '';
-                    return /\d/.test(txt) && !txt.includes('%') && !txt.includes('SOL') && txt.length < 30;
+                    // STRICT: Must contain '$' and a digit, no 'SOL', no '%'
+                    return txt.includes('$') && /\d/.test(txt) && !txt.includes('SOL') && !txt.includes('%') && txt.length < 30;
                 });
         } else {
             candidates = Array.from(document.querySelectorAll('h1, h2, .price'))
-                .filter(el => /\d/.test(el.textContent) && !el.textContent.includes('%') && el.textContent.length < 30);
+                .filter(el => {
+                    const txt = el.textContent || '';
+                    return txt.includes('$') && /\d/.test(txt) && !txt.includes('%') && txt.length < 30;
+                });
         }
 
         for (const el of candidates) {
@@ -46,7 +52,7 @@ export const Market = {
             const val = this.parsePriceStr(raw);
 
             // STRICT RULES:
-            // - Price: < $10,000 AND no K/M/B suffix
+            // - Price: < $10,000 AND no K/M/B suffix AND NOT $50-$500 (SOL price range)
             // - Market Cap: > $10,000 OR has K/M/B suffix
             const hasUnit = /[KMB]/.test(raw.toUpperCase());
 
@@ -54,6 +60,20 @@ export const Market = {
                 // This is market cap
                 if (val > 0) this.marketCap = val;
             } else if (val > 0 && val < 10000) {
+                // CRITICAL FIX: Reject $50-$500 range - those are SOL prices, not token prices!
+                if (val >= 50 && val <= 500) {
+                    continue;
+                }
+
+                // SPIKE DETECTION: If price changes >100x in one second, reject it
+                if (this.price > 0) {
+                    const ratio = val / this.price;
+                    if (ratio > 100 || ratio < 0.01) {
+                        console.warn(`[Market] SPIKE REJECTED: $${val} (${(ratio*100).toFixed(0)}x change from $${this.price})`);
+                        continue;
+                    }
+                }
+
                 // This is price (most tokens are < $10k per token)
                 this.updatePrice(val);
             }

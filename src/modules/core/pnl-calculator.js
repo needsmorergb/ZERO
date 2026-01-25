@@ -3,6 +3,7 @@ import { Store } from '../store.js';
 
 export const PnlCalculator = {
     cachedSolPrice: 200, // Default fallback
+    lastValidSolPrice: null, // Stores last successful API fetch
     lastSolPriceFetch: 0,
     priceUpdateInterval: null,
     lastPriceSave: 0,
@@ -22,30 +23,11 @@ export const PnlCalculator = {
 
     // Background fetch - never blocks, updates cache silently
     async fetchSolPriceBackground() {
-        console.log('[PNL] Fetching SOL price...');
+        console.log('[PNL] Fetching SOL price from CoinGecko...');
 
-        // Try Jupiter first
-        try {
-            const response = await fetch('https://price.jup.ag/v6/price?ids=So11111111111111111111111111111111111111112', {
-                signal: AbortSignal.timeout(3000)
-            });
-            const data = await response.json();
-            const solPrice = data?.data?.So11111111111111111111111111111111111111112?.price;
-
-            if (solPrice && solPrice > 0) {
-                this.cachedSolPrice = solPrice;
-                this.lastSolPriceFetch = Date.now();
-                console.log(`[PNL] ✓ SOL price from Jupiter: $${solPrice.toFixed(2)}`);
-                return;
-            }
-        } catch (e) {
-            console.warn(`[PNL] Jupiter failed (${e.message}), trying CoinGecko...`);
-        }
-
-        // Fallback to CoinGecko
         try {
             const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd', {
-                signal: AbortSignal.timeout(3000)
+                signal: AbortSignal.timeout(5000) // Increase timeout from 3s to 5s
             });
             const data = await response.json();
             const solPrice = data?.solana?.usd;
@@ -53,19 +35,25 @@ export const PnlCalculator = {
             // VALIDATION: SOL price should be between $50-$500 (reasonable range)
             if (solPrice && solPrice > 50 && solPrice < 500) {
                 this.cachedSolPrice = solPrice;
+                this.lastValidSolPrice = solPrice; // Store as valid fallback
                 this.lastSolPriceFetch = Date.now();
-                console.log(`[PNL] ✓ SOL price from CoinGecko: $${solPrice.toFixed(2)}`);
+                console.log(`[PNL] ✓ SOL price: $${solPrice.toFixed(2)} (CoinGecko)`);
                 return;
             } else if (solPrice) {
-                console.error(`[PNL] CoinGecko returned invalid SOL price: $${solPrice} (expected $50-$500)`);
+                console.error(`[PNL] ✗ Invalid SOL price from CoinGecko: $${solPrice} (expected $50-$500)`);
             }
         } catch (e) {
             console.error(`[PNL] ✗ CoinGecko failed: ${e.message}`);
         }
 
-        // Use hardcoded reasonable default if all APIs fail
-        console.error(`[PNL] ✗ All APIs failed. Using safe default $140`);
-        this.cachedSolPrice = 140;
+        // Fallback to last valid price if available, otherwise use $140
+        if (this.lastValidSolPrice) {
+            console.warn(`[PNL] Using last valid price: $${this.lastValidSolPrice.toFixed(2)}`);
+            this.cachedSolPrice = this.lastValidSolPrice;
+        } else {
+            console.error(`[PNL] ✗ No valid price available. Using safe default $140`);
+            this.cachedSolPrice = 140;
+        }
     },
 
     // Always returns immediately - never blocks on fetch
@@ -96,7 +84,6 @@ export const PnlCalculator = {
             const reasons = [];
             if (pos.entryPriceUsd > 10000) reasons.push(`entryPrice=$${pos.entryPriceUsd.toFixed(0)}`);
             if (pos.lastPriceUsd > 10000) reasons.push(`lastPrice=$${pos.lastPriceUsd.toFixed(0)}`);
-            if (pos.tokenQty > 100000) reasons.push(`qty=${pos.tokenQty.toFixed(0)}`);
             if (pos.totalSolSpent < 0.00001) reasons.push(`spent=${pos.totalSolSpent.toFixed(6)}`);
 
             if (reasons.length > 0) {

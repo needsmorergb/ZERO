@@ -42,7 +42,7 @@
       tiltFrequency: 0
     },
     schemaVersion: 2,
-    version: "1.8.2"
+    version: "1.8.3"
   };
   function deepMerge(base, patch) {
     if (!patch || typeof patch !== "object")
@@ -1340,12 +1340,15 @@ input:checked + .slider:before {
       let candidates = [];
       const isPadre = window.location.hostname.includes("padre.gg");
       if (isPadre) {
-        candidates = Array.from(document.querySelectorAll('h2, span[class*="MuiTypography"], div[class*="MuiTypography"]')).filter((el) => {
+        candidates = Array.from(document.querySelectorAll("h2")).filter((el) => {
           const txt = el.textContent || "";
-          return /\d/.test(txt) && !txt.includes("%") && !txt.includes("SOL") && txt.length < 30;
+          return txt.includes("$") && /\d/.test(txt) && !txt.includes("SOL") && !txt.includes("%") && txt.length < 30;
         });
       } else {
-        candidates = Array.from(document.querySelectorAll("h1, h2, .price")).filter((el) => /\d/.test(el.textContent) && !el.textContent.includes("%") && el.textContent.length < 30);
+        candidates = Array.from(document.querySelectorAll("h1, h2, .price")).filter((el) => {
+          const txt = el.textContent || "";
+          return txt.includes("$") && /\d/.test(txt) && !txt.includes("%") && txt.length < 30;
+        });
       }
       for (const el of candidates) {
         const raw = el.textContent.trim();
@@ -1355,6 +1358,16 @@ input:checked + .slider:before {
           if (val > 0)
             this.marketCap = val;
         } else if (val > 0 && val < 1e4) {
+          if (val >= 50 && val <= 500) {
+            continue;
+          }
+          if (this.price > 0) {
+            const ratio = val / this.price;
+            if (ratio > 100 || ratio < 0.01) {
+              console.warn(`[Market] SPIKE REJECTED: $${val} (${(ratio * 100).toFixed(0)}x change from $${this.price})`);
+              continue;
+            }
+          }
           this.updatePrice(val);
         }
       }
@@ -1452,6 +1465,8 @@ input:checked + .slider:before {
   var PnlCalculator = {
     cachedSolPrice: 200,
     // Default fallback
+    lastValidSolPrice: null,
+    // Stores last successful API fetch
     lastSolPriceFetch: 0,
     priceUpdateInterval: null,
     lastPriceSave: 0,
@@ -1466,41 +1481,33 @@ input:checked + .slider:before {
     },
     // Background fetch - never blocks, updates cache silently
     async fetchSolPriceBackground() {
-      console.log("[PNL] Fetching SOL price...");
-      try {
-        const response = await fetch("https://price.jup.ag/v6/price?ids=So11111111111111111111111111111111111111112", {
-          signal: AbortSignal.timeout(3e3)
-        });
-        const data = await response.json();
-        const solPrice = data?.data?.So11111111111111111111111111111111111111112?.price;
-        if (solPrice && solPrice > 0) {
-          this.cachedSolPrice = solPrice;
-          this.lastSolPriceFetch = Date.now();
-          console.log(`[PNL] \u2713 SOL price from Jupiter: $${solPrice.toFixed(2)}`);
-          return;
-        }
-      } catch (e) {
-        console.warn(`[PNL] Jupiter failed (${e.message}), trying CoinGecko...`);
-      }
+      console.log("[PNL] Fetching SOL price from CoinGecko...");
       try {
         const response = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd", {
-          signal: AbortSignal.timeout(3e3)
+          signal: AbortSignal.timeout(5e3)
+          // Increase timeout from 3s to 5s
         });
         const data = await response.json();
         const solPrice = data?.solana?.usd;
         if (solPrice && solPrice > 50 && solPrice < 500) {
           this.cachedSolPrice = solPrice;
+          this.lastValidSolPrice = solPrice;
           this.lastSolPriceFetch = Date.now();
-          console.log(`[PNL] \u2713 SOL price from CoinGecko: $${solPrice.toFixed(2)}`);
+          console.log(`[PNL] \u2713 SOL price: $${solPrice.toFixed(2)} (CoinGecko)`);
           return;
         } else if (solPrice) {
-          console.error(`[PNL] CoinGecko returned invalid SOL price: $${solPrice} (expected $50-$500)`);
+          console.error(`[PNL] \u2717 Invalid SOL price from CoinGecko: $${solPrice} (expected $50-$500)`);
         }
       } catch (e) {
         console.error(`[PNL] \u2717 CoinGecko failed: ${e.message}`);
       }
-      console.error(`[PNL] \u2717 All APIs failed. Using safe default $140`);
-      this.cachedSolPrice = 140;
+      if (this.lastValidSolPrice) {
+        console.warn(`[PNL] Using last valid price: $${this.lastValidSolPrice.toFixed(2)}`);
+        this.cachedSolPrice = this.lastValidSolPrice;
+      } else {
+        console.error(`[PNL] \u2717 No valid price available. Using safe default $140`);
+        this.cachedSolPrice = 140;
+      }
     },
     // Always returns immediately - never blocks on fetch
     getSolPrice() {
@@ -1526,8 +1533,6 @@ input:checked + .slider:before {
           reasons.push(`entryPrice=$${pos.entryPriceUsd.toFixed(0)}`);
         if (pos.lastPriceUsd > 1e4)
           reasons.push(`lastPrice=$${pos.lastPriceUsd.toFixed(0)}`);
-        if (pos.tokenQty > 1e5)
-          reasons.push(`qty=${pos.tokenQty.toFixed(0)}`);
         if (pos.totalSolSpent < 1e-5)
           reasons.push(`spent=${pos.totalSolSpent.toFixed(6)}`);
         if (reasons.length > 0) {
@@ -1920,7 +1925,7 @@ input:checked + .slider:before {
                   </div>
                   <button class="pillBtn" data-act="trades">Trades</button>
                   <button class="pillBtn" data-act="reset" style="color:#ef4444;">Reset</button>
-                  <button class="pillBtn" data-act="settings" style="padding:6px 8px;">\u2699</button>
+                  <button class="pillBtn" data-act="settings" style="padding:6px 10px;font-size:16px;">\u2699</button>
                   <button class="pillBtn" data-act="dock">Dock</button>
                 </div>
               </div>
@@ -2038,22 +2043,48 @@ input:checked + .slider:before {
         root.style.top = "";
       }
       const s = Store.state;
+      const solUsd = Trading.getSolPrice();
       const currentToken = TokenDetector.getCurrentToken();
       const unrealized = Trading.getUnrealizedPnl(s, currentToken.mint);
       const inp = root.querySelector(".startSolInput");
       if (document.activeElement !== inp)
         inp.value = s.settings.startSol;
       root.querySelector('[data-k="balance"]').textContent = `${Trading.fmtSol(s.session.balance)} SOL`;
+      const positions = Object.values(s.positions || {});
+      const totalInvested = positions.reduce((sum, pos) => sum + (pos.totalSolSpent || 0), 0);
+      const unrealizedPct = totalInvested > 0 ? unrealized / totalInvested * 100 : 0;
       const tokenValueEl = root.querySelector('[data-k="tokenValue"]');
-      if (tokenValueEl) {
-        tokenValueEl.textContent = (unrealized >= 0 ? "+" : "") + Trading.fmtSol(unrealized);
+      const tokenUnitEl = root.querySelector('[data-k="tokenUnit"]');
+      if (tokenValueEl && tokenUnitEl) {
+        const showUsd = s.settings.tokenDisplayUsd;
+        if (showUsd) {
+          const unrealizedUsd = unrealized * solUsd;
+          tokenValueEl.textContent = (unrealizedUsd >= 0 ? "+" : "") + "$" + Trading.fmtSol(Math.abs(unrealizedUsd));
+          tokenUnitEl.textContent = "USD";
+        } else {
+          tokenValueEl.textContent = (unrealized >= 0 ? "+" : "") + Trading.fmtSol(unrealized) + ` (${unrealizedPct >= 0 ? "+" : ""}${unrealizedPct.toFixed(1)}%)`;
+          tokenUnitEl.textContent = "SOL";
+        }
         tokenValueEl.style.color = unrealized >= 0 ? "#10b981" : "#ef4444";
       }
       const realized = s.session.realized || 0;
       const totalPnl = realized + unrealized;
+      const startBalance = s.settings.startSol || 10;
+      const sessionPct = totalPnl / startBalance * 100;
       const pnlEl = root.querySelector('[data-k="pnl"]');
-      pnlEl.textContent = (totalPnl >= 0 ? "+" : "") + Trading.fmtSol(totalPnl) + " SOL";
-      pnlEl.style.color = totalPnl >= 0 ? "#10b981" : "#ef4444";
+      const pnlUnitEl = root.querySelector('[data-k="pnlUnit"]');
+      if (pnlEl && pnlUnitEl) {
+        const showUsd = s.settings.sessionDisplayUsd;
+        if (showUsd) {
+          const totalPnlUsd = totalPnl * solUsd;
+          pnlEl.textContent = (totalPnlUsd >= 0 ? "+" : "") + "$" + Trading.fmtSol(Math.abs(totalPnlUsd));
+          pnlUnitEl.textContent = "USD";
+        } else {
+          pnlEl.textContent = (totalPnl >= 0 ? "+" : "") + Trading.fmtSol(totalPnl) + ` (${sessionPct >= 0 ? "+" : ""}${sessionPct.toFixed(1)}%)`;
+          pnlUnitEl.textContent = "SOL";
+        }
+        pnlEl.style.color = totalPnl >= 0 ? "#10b981" : "#ef4444";
+      }
       const streakEl = root.querySelector('[data-k="streak"]');
       const winStreak = s.session.winStreak || 0;
       const lossStreak = s.session.lossStreak || 0;
@@ -2188,11 +2219,26 @@ input:checked + .slider:before {
           pnlClass = isWin ? "buy" : t.realizedPnlSol < 0 ? "sell" : "muted";
           valStr = (t.realizedPnlSol ? (t.realizedPnlSol > 0 ? "+" : "") + t.realizedPnlSol.toFixed(4) : "0.00") + " SOL";
         }
+        let mcStr = "";
+        if (t.marketCap && t.marketCap > 0) {
+          if (t.marketCap >= 1e9) {
+            mcStr = `$${(t.marketCap / 1e9).toFixed(2)}B`;
+          } else if (t.marketCap >= 1e6) {
+            mcStr = `$${(t.marketCap / 1e6).toFixed(2)}M`;
+          } else if (t.marketCap >= 1e3) {
+            mcStr = `$${(t.marketCap / 1e3).toFixed(1)}K`;
+          } else {
+            mcStr = `$${t.marketCap.toFixed(0)}`;
+          }
+        }
         html += `
                 <div class="tradeRow">
                     <div class="muted" style="font-size:9px;">${new Date(t.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
                     <div class="tag ${t.side.toLowerCase()}">${t.side}</div>
-                    <div style="flex:1;">${t.symbol}</div>
+                    <div style="flex:1;">
+                        <div>${t.symbol}</div>
+                        ${mcStr ? `<div class="muted" style="font-size:9px;">${mcStr} MC</div>` : ""}
+                    </div>
                     <div class="${pnlClass}">${valStr}</div>
                 </div>
             `;
@@ -2572,7 +2618,7 @@ input:checked + .slider:before {
   // src/content.boot.js
   (async () => {
     "use strict";
-    console.log("%c ZER\xD8 v1.8.2 (PNL Accuracy & Performance Fix)", "color: #ef4444; font-weight: bold; font-size: 14px;");
+    console.log("%c ZER\xD8 v1.8.3 (Jupiter Removed, CoinGecko Primary)", "color: #ef4444; font-weight: bold; font-size: 14px;");
     const PLATFORM = {
       isAxiom: window.location.hostname.includes("axiom.trade"),
       isPadre: window.location.hostname.includes("padre.gg"),
