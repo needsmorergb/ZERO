@@ -48,7 +48,7 @@
       tiltFrequency: 0
     },
     schemaVersion: 2,
-    version: "1.10.2"
+    version: "1.10.3"
   };
   function deepMerge(base, patch) {
     if (!patch || typeof patch !== "object")
@@ -2901,7 +2901,7 @@ canvas#equity-canvas {
         container.appendChild(root);
         this.bindPnlEvents(root);
       }
-      const CURRENT_UI_VERSION = "1.10.1";
+      const CURRENT_UI_VERSION = "1.10.3";
       const renderedVersion = root.dataset.uiVersion;
       if (isNew || renderedVersion !== CURRENT_UI_VERSION) {
         this.renderPnlHudContent(root, makeDraggable);
@@ -3692,7 +3692,7 @@ canvas#equity-canvas {
   // src/content.boot.js
   (async () => {
     "use strict";
-    console.log("%c ZER\xD8 v1.10.2 (Dashboard Fix)", "color: #14b8a6; font-weight: bold; font-size: 14px;");
+    console.log("%c ZER\xD8 v1.10.3 (Click-Through Fix)", "color: #14b8a6; font-weight: bold; font-size: 14px;");
     const PLATFORM = {
       isAxiom: window.location.hostname.includes("axiom.trade"),
       isPadre: window.location.hostname.includes("padre.gg"),
