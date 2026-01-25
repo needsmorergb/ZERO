@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ZERØ - Solana Paper Trading",
-  "version": "1.8.3",
+  "version": "1.9.0",
   "description": "Zero risk paper trading overlay for Solana on Axiom and Terminal.",
   "permissions": [
     "storage",
