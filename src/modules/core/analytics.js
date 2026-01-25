@@ -1,3 +1,4 @@
+import { FeatureManager } from '../featureManager.js';
 export const Analytics = {
     analyzeRecentTrades(state) {
         const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
@@ -49,6 +50,9 @@ export const Analytics = {
     },
 
     calculateDiscipline(trade, state) {
+        const flags = FeatureManager.resolveFlags(state, 'DISCIPLINE_SCORING');
+        if (!flags.enabled) return { score: state.session.disciplineScore || 100, penalty: 0, reasons: [] };
+
         // Base score: 100
         // Penalties are cumulative
         const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
@@ -107,6 +111,25 @@ export const Analytics = {
             state.session.winStreak = 0;
             console.log(`[ZERØ] Loss. ${pnl.toFixed(4)} SOL. Loss streak: ${state.session.lossStreak}`);
         }
+    },
+
+    getProfessorDebrief(state) {
+        const score = state.session.disciplineScore !== undefined ? state.session.disciplineScore : 100;
+        const stats = this.analyzeRecentTrades(state) || { winRate: 0, style: 'balanced' };
+
+        let critique = "Keep your discipline score high to trade like a pro.";
+
+        if (score < 70) {
+            critique = "You're trading emotionally. Stop, breathe, and stick to your strategy.";
+        } else if (stats.winRate > 60 && score >= 90) {
+            critique = "Excellent execution. You're trading with professional-grade discipline.";
+        } else if (stats.style === 'scalper' && score < 90) {
+            critique = "Scalping requires perfect discipline. Watch your sizing.";
+        } else if (stats.totalTrades >= 3 && stats.winRate < 40) {
+            critique = "Market conditions are tough. Focus on high-conviction setups only.";
+        }
+
+        return { score, critique };
     },
 
     generateXShareText(state) {

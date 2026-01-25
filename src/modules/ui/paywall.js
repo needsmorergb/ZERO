@@ -170,20 +170,9 @@ export const Paywall = {
     },
 
     isFeatureLocked(featureName) {
-        const userTier = Store.state?.settings?.tier || 'free';
-        const { FEATURES } = require('../featureManager.js').FeatureManager || {};
-
-        if (!FEATURES || !FEATURES[featureName]) return false;
-
-        const requiredTier = FEATURES[featureName];
-
-        // Free features are always available
-        if (requiredTier === 'free') return false;
-
-        // Check if user has required tier
-        if (requiredTier === 'pro' && ['pro', 'elite'].includes(userTier)) return false;
-        if (requiredTier === 'elite' && userTier === 'elite') return false;
-
-        return true; // Feature is locked
+        const { FeatureManager } = require('../featureManager.js');
+        if (!FeatureManager) return false;
+        const flags = FeatureManager.resolveFlags(Store.state, featureName);
+        return flags.gated;
     }
 };

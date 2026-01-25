@@ -159,7 +159,8 @@ export const BuyHud = {
                 const val = parseFloat(field?.value || '0');
                 const status = root.querySelector('[data-k="status"]');
                 const strategyEl = root.querySelector('select[data-k="strategy"]');
-                const strategy = strategyEl ? strategyEl.value : "Trend";
+                const strategyFlags = FeatureManager.resolveFlags(Store.state, 'STRATEGY_TAGGING');
+                const strategy = strategyEl && strategyFlags.interactive ? strategyEl.value : "Trend";
 
                 if (val <= 0) {
                     if (status) status.textContent = "Invalid amount";
@@ -209,7 +210,8 @@ export const BuyHud = {
     },
 
     showEmotionSelector(tradeId) {
-        if (Store.state.settings.showJournal === false) return;
+        const emoFlags = FeatureManager.resolveFlags(Store.state, 'EMOTION_TRACKING');
+        if (!emoFlags.enabled || Store.state.settings.showJournal === false) return;
 
         const container = OverlayManager.getContainer();
         const existing = container.querySelector('.emotion-modal-overlay');
@@ -291,6 +293,20 @@ export const BuyHud = {
         });
 
         overlay.querySelector('.emotion-skip').onclick = close;
+
+        if (emoFlags.gated) {
+            const modalInner = overlay.querySelector('.emotion-modal');
+            modalInner.style.filter = 'grayscale(1) opacity(0.8)';
+            const lock = document.createElement('div');
+            lock.innerHTML = '<div style="background:rgba(13,17,23,0.8); color:#14b8a6; padding:10px; border-radius:8px; font-weight:800; cursor:pointer;">PRO FEATURE: EMOTION TRACKING</div>';
+            lock.style.position = 'absolute';
+            lock.style.top = '50%';
+            lock.style.left = '50%';
+            lock.style.transform = 'translate(-50%, -50%)';
+            lock.style.pointerEvents = 'auto';
+            lock.onclick = (e) => { e.stopPropagation(); Paywall.showUpgradeModal(); };
+            modalInner.appendChild(lock);
+        }
     },
 
     updateBuyHud() {

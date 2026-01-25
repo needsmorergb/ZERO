@@ -57,8 +57,8 @@ export const PnlHud = {
                     <span style="font-weight:700;color:rgba(203,213,225,0.92);">Start SOL</span>
                     <input class="startSolInput" type="text" inputmode="decimal" />
                   </div>
-                  <button class="pillBtn" data-act="shareX" style="background:rgba(29,155,240,0.15);color:#1d9bf0;border:1px solid rgba(29,155,240,0.3);font-family:'Arial',sans-serif;font-weight:600;">Share 𝕏</button>
-                  <button class="pillBtn" data-act="getPro" style="background:rgba(99,102,241,0.15);color:#6366f1;border:1px solid rgba(99,102,241,0.3);font-weight:700;display:flex;align-items:center;gap:4px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>PRO</button>
+                  <button class="pillBtn" data-act="shareX" style="background:rgba(29,155,240,0.15);color:#1d9bf0;border:1px solid rgba(29,155,240,0.3);font-family:'Arial',sans-serif;font-weight:600;display:none;" id="pnl-share-btn">Share 𝕏</button>
+                  <button class="pillBtn" data-act="getPro" style="background:rgba(99,102,241,0.15);color:#6366f1;border:1px solid rgba(99,102,241,0.3);font-weight:700;display:none;align-items:center;gap:4px;" id="pnl-pro-btn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>PRO</button>
                   <button class="pillBtn" data-act="trades">Trades</button>
                   <button class="pillBtn" data-act="reset" style="color:#ef4444;">Reset</button>
                   <button class="pillBtn" data-act="settings" style="padding:6px 10px;font-size:16px;">⚙</button>
@@ -83,7 +83,7 @@ export const PnlHud = {
                     <div class="v" data-k="streak">0</div>
                 </div>
                 <div class="stat discipline">
-                    <div class="k">DISCIPLINE <span class="pro-tag">PRO</span></div>
+                    <div class="k">DISCIPLINE <span class="pro-tag" style="display:none;" id="discipline-pro-tag">PRO</span></div>
                     <div class="v" data-k="discipline">100</div>
                 </div>
               </div>
@@ -189,6 +189,16 @@ export const PnlHud = {
         const root = OverlayManager.getContainer().querySelector('#' + IDS.pnlHud);
         if (!root || !Store.state) return;
 
+        const s = Store.state;
+        const shareFlags = FeatureManager.resolveFlags(s, 'SHARE_TO_X');
+        const proFlags = FeatureManager.resolveFlags(s, 'SHARE_TO_X'); // Combined check for now
+
+        const shareBtn = root.querySelector('#pnl-share-btn');
+        const proBtn = root.querySelector('#pnl-pro-btn');
+
+        if (shareBtn) shareBtn.style.display = shareFlags.visible && !shareFlags.gated ? '' : 'none';
+        if (proBtn) proBtn.style.display = (s.settings.tier === 'free') ? 'flex' : 'none';
+
         // Visibility Toggle
         if (!Store.state.settings.enabled) {
             root.style.display = 'none';
@@ -206,7 +216,6 @@ export const PnlHud = {
             root.style.top = "";
         }
 
-        const s = Store.state;
         const solUsd = Trading.getSolPrice();
 
         // Detect current token to update its position price in real-time
@@ -269,6 +278,26 @@ export const PnlHud = {
         } else {
             streakEl.textContent = winStreak;
             streakEl.parentElement.className = winStreak > 0 ? "stat streak win" : "stat streak";
+        }
+
+        // Update Discipline visibility and gating
+        const discFlags = FeatureManager.resolveFlags(s, 'DISCIPLINE_SCORING');
+        const discStatEl = root.querySelector('.stat.discipline');
+        const discProTag = root.querySelector('#discipline-pro-tag');
+
+        if (discStatEl) {
+            discStatEl.style.display = discFlags.visible ? '' : 'none';
+            if (discProTag) discProTag.style.display = discFlags.gated ? '' : 'none';
+
+            if (discFlags.gated) {
+                discStatEl.style.opacity = '0.5';
+                discStatEl.style.cursor = 'pointer';
+                discStatEl.onclick = (e) => { e.stopPropagation(); Paywall.showUpgradeModal(); };
+            } else {
+                discStatEl.style.opacity = '1';
+                discStatEl.style.cursor = 'default';
+                discStatEl.onclick = null;
+            }
         }
 
         const discEl = root.querySelector('[data-k="discipline"]');

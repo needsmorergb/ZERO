@@ -48,6 +48,12 @@ export const Dashboard = {
         const state = Store.state;
         const stats = Analytics.analyzeRecentTrades(state) || { winRate: "0.0", totalTrades: 0, wins: 0, losses: 0, totalPnlSol: 0 };
         const debrief = Analytics.getProfessorDebrief(state);
+
+        const chartFlags = FeatureManager.resolveFlags(state, 'EQUITY_CHARTS');
+        const logFlags = FeatureManager.resolveFlags(state, 'DETAILED_LOGS');
+        const aiFlags = FeatureManager.resolveFlags(state, 'ADVANCED_ANALYTICS');
+        const shareFlags = FeatureManager.resolveFlags(state, 'SHARE_TO_X');
+
         const isFree = state.settings.tier === 'free';
 
         overlay.innerHTML = `
@@ -123,21 +129,60 @@ export const Dashboard = {
 
         const shareBtn = overlay.querySelector('#dashboard-share-btn');
         if (shareBtn) {
-            shareBtn.onclick = () => {
-                const text = Analytics.generateXShareText(state);
-                const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
-                window.open(url, '_blank');
-            };
+            shareBtn.style.display = shareFlags.visible ? '' : 'none';
+            if (shareFlags.gated) {
+                shareBtn.style.opacity = '0.5';
+                shareBtn.onclick = () => Paywall.showUpgradeModal('SHARE_TO_X');
+            } else {
+                shareBtn.onclick = () => {
+                    const text = Analytics.generateXShareText(state);
+                    const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
+                    window.open(url, '_blank');
+                };
+            }
         }
 
         overlay.onclick = (e) => { if (e.target === overlay) this.close(); };
 
-        // Apply Locking
-        if (isFree) {
-            Paywall.lockFeature(overlay.querySelector('#dashboard-equity-chart'), FeatureManager.FEATURES.EQUITY_CHARTS);
-            Paywall.lockFeature(overlay.querySelector('#dashboard-recent-logs'), FeatureManager.FEATURES.DETAILED_LOGS);
-            Paywall.lockFeature(overlay.querySelector('#dashboard-professor-box'), FeatureManager.FEATURES.ADVANCED_ANALYTICS);
+        // Apply Gating
+        if (chartFlags.visible) {
+            const chartEl = overlay.querySelector('#dashboard-equity-chart');
+            if (chartFlags.gated) this.lockSection(chartEl, 'EQUITY_CHARTS');
+        } else {
+            overlay.querySelector('#dashboard-equity-chart').style.display = 'none';
         }
+
+        if (logFlags.visible) {
+            const logEl = overlay.querySelector('#dashboard-recent-logs');
+            if (logFlags.gated) this.lockSection(logEl, 'DETAILED_LOGS');
+        } else {
+            overlay.querySelector('#dashboard-recent-logs').style.display = 'none';
+        }
+
+        if (aiFlags.visible) {
+            const aiEl = overlay.querySelector('#dashboard-professor-box');
+            if (aiFlags.gated) this.lockSection(aiEl, 'ADVANCED_ANALYTICS');
+        } else {
+            overlay.querySelector('#dashboard-professor-box').style.display = 'none';
+        }
+    },
+
+    lockSection(el, featureName) {
+        if (!el) return;
+        el.style.position = 'relative';
+        el.style.overflow = 'hidden';
+
+        const overlay = document.createElement('div');
+        overlay.className = 'locked-overlay';
+        overlay.innerHTML = `
+            <div class="locked-icon">🔒</div>
+            <div class="locked-text">PRO FEATURE</div>
+        `;
+        overlay.onclick = (e) => {
+            e.stopPropagation();
+            Paywall.showUpgradeModal(featureName);
+        };
+        el.appendChild(overlay);
     },
 
     renderRecentMiniRows(state) {

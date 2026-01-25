@@ -2,6 +2,7 @@ import { Store } from '../store.js';
 import { Market } from './market.js';
 import { PnlCalculator } from './pnl-calculator.js';
 import { Analytics } from './analytics.js';
+import { FeatureManager } from '../featureManager.js';
 
 export const OrderExecution = {
     async buy(amountSol, strategy = "Trend", tokenInfo = null) {
@@ -73,7 +74,7 @@ export const OrderExecution = {
             tokenQty,
             priceUsd: price,
             marketCap,
-            strategy: strategy || "Unknown",
+            strategy: FeatureManager.resolveFlags(state, 'STRATEGY_TAGGING').interactive ? (strategy || "Trend") : "Trend",
             mode: state.settings.tradingMode || 'paper'
         };
 

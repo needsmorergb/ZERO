@@ -16,7 +16,9 @@ const DEFAULTS = {
         sessionDisplayUsd: false,
         tutorialCompleted: false,
         tradingMode: 'paper', // 'paper' | 'shadow'
-        showProfessor: true // Show trade analysis popup
+        showProfessor: true, // Show trade analysis popup
+        rolloutPhase: 'full', // 'beta' | 'preview' | 'full'
+        featureOverrides: {} // For remote kill-switches
     },
     // Runtime state (not always persisted fully, but structure is here)
     session: {
