@@ -1,5 +1,6 @@
 import { Store } from '../store.js';
 import { OverlayManager } from './overlay.js';
+import { FeatureManager } from '../featureManager.js';
 import { Trading } from '../core/trading.js';
 import { IDS } from './ids.js';
 import { TokenDetector } from './token-detector.js';

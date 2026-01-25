@@ -1,124 +1,4 @@
 (() => {
-  var __defProp = Object.defineProperty;
-  var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
-  var __getOwnPropNames = Object.getOwnPropertyNames;
-  var __hasOwnProp = Object.prototype.hasOwnProperty;
-  var __esm = (fn, res) => function __init() {
-    return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
-  };
-  var __export = (target, all) => {
-    for (var name in all)
-      __defProp(target, name, { get: all[name], enumerable: true });
-  };
-  var __copyProps = (to, from, except, desc) => {
-    if (from && typeof from === "object" || typeof from === "function") {
-      for (let key of __getOwnPropNames(from))
-        if (!__hasOwnProp.call(to, key) && key !== except)
-          __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
-    }
-    return to;
-  };
-  var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
-
-  // src/modules/featureManager.js
-  var featureManager_exports = {};
-  __export(featureManager_exports, {
-    FEATURES: () => FEATURES,
-    FeatureManager: () => FeatureManager2,
-    TIERS: () => TIERS
-  });
-  var TIERS, FEATURES, FeatureManager2;
-  var init_featureManager = __esm({
-    "src/modules/featureManager.js"() {
-      TIERS = {
-        FREE: "free",
-        PRO: "pro",
-        ELITE: "elite"
-      };
-      FEATURES = {
-        // Phase 1-2: Core
-        BASIC_TRADING: "free",
-        REAL_TIME_PNL: "free",
-        // Phase 2-4: Pro Foundations
-        STRATEGY_TAGGING: "pro",
-        EMOTION_TRACKING: "pro",
-        DISCIPLINE_SCORING: "pro",
-        AI_DEBRIEF: "pro",
-        // Phase 5-6: Advanced Pro
-        EQUITY_CHARTS: "pro",
-        DETAILED_LOGS: "pro",
-        ADVANCED_ANALYTICS: "pro",
-        RISK_ADJUSTED_METRICS: "pro",
-        SHARE_TO_X: "pro",
-        // Phase 6+: Elite
-        TILT_DETECTION: "elite",
-        SESSION_REPLAY: "elite",
-        ADVANCED_COACHING: "elite",
-        BEHAVIOR_BASELINE: "elite",
-        MARKET_CONTEXT: "elite"
-      };
-      FeatureManager2 = {
-        TIERS,
-        FEATURES,
-        resolveFlags(state, featureName) {
-          const userTier = state.settings?.tier || TIERS.FREE;
-          const requiredTier = FEATURES[featureName];
-          const flags = {
-            enabled: false,
-            visible: false,
-            interactive: false,
-            gated: false
-          };
-          if (!requiredTier)
-            return flags;
-          const hasEntitlement = this.hasTierAccess(userTier, requiredTier);
-          const phase = state.settings?.rolloutPhase || "full";
-          if (requiredTier === TIERS.FREE) {
-            flags.enabled = true;
-            flags.visible = true;
-            flags.interactive = true;
-            flags.gated = false;
-          } else {
-            flags.enabled = true;
-            if (hasEntitlement) {
-              flags.visible = true;
-              flags.interactive = true;
-              flags.gated = false;
-            } else {
-              if (phase === "preview") {
-                flags.visible = true;
-                flags.interactive = true;
-                flags.gated = false;
-              } else if (phase === "beta") {
-                flags.visible = false;
-                flags.interactive = false;
-              } else {
-                flags.visible = true;
-                flags.interactive = false;
-                flags.gated = true;
-              }
-            }
-          }
-          if (state.settings?.featureOverrides?.[featureName] === false) {
-            flags.enabled = false;
-            flags.visible = false;
-            flags.interactive = false;
-          }
-          return flags;
-        },
-        hasTierAccess(userTier, requiredTier) {
-          if (requiredTier === TIERS.FREE)
-            return true;
-          if (requiredTier === TIERS.PRO)
-            return [TIERS.PRO, TIERS.ELITE].includes(userTier);
-          if (requiredTier === TIERS.ELITE)
-            return userTier === TIERS.ELITE;
-          return false;
-        }
-      };
-    }
-  });
-
   // src/modules/store.js
   var EXT_KEY = "sol_paper_trader_v1";
   var DEFAULTS = {
@@ -297,8 +177,93 @@
     }
   };
 
-  // src/content.boot.js
-  init_featureManager();
+  // src/modules/featureManager.js
+  var TIERS = {
+    FREE: "free",
+    PRO: "pro",
+    ELITE: "elite"
+  };
+  var FEATURES = {
+    // Phase 1-2: Core
+    BASIC_TRADING: "free",
+    REAL_TIME_PNL: "free",
+    // Phase 2-4: Pro Foundations
+    STRATEGY_TAGGING: "pro",
+    EMOTION_TRACKING: "pro",
+    DISCIPLINE_SCORING: "pro",
+    AI_DEBRIEF: "pro",
+    // Phase 5-6: Advanced Pro
+    EQUITY_CHARTS: "pro",
+    DETAILED_LOGS: "pro",
+    ADVANCED_ANALYTICS: "pro",
+    RISK_ADJUSTED_METRICS: "pro",
+    SHARE_TO_X: "pro",
+    // Phase 6+: Elite
+    TILT_DETECTION: "elite",
+    SESSION_REPLAY: "elite",
+    ADVANCED_COACHING: "elite",
+    BEHAVIOR_BASELINE: "elite",
+    MARKET_CONTEXT: "elite"
+  };
+  var FeatureManager = {
+    TIERS,
+    FEATURES,
+    resolveFlags(state, featureName) {
+      const userTier = state.settings?.tier || TIERS.FREE;
+      const requiredTier = FEATURES[featureName];
+      const flags = {
+        enabled: false,
+        visible: false,
+        interactive: false,
+        gated: false
+      };
+      if (!requiredTier)
+        return flags;
+      const hasEntitlement = this.hasTierAccess(userTier, requiredTier);
+      const phase = state.settings?.rolloutPhase || "full";
+      if (requiredTier === TIERS.FREE) {
+        flags.enabled = true;
+        flags.visible = true;
+        flags.interactive = true;
+        flags.gated = false;
+      } else {
+        flags.enabled = true;
+        if (hasEntitlement) {
+          flags.visible = true;
+          flags.interactive = true;
+          flags.gated = false;
+        } else {
+          if (phase === "preview") {
+            flags.visible = true;
+            flags.interactive = true;
+            flags.gated = false;
+          } else if (phase === "beta") {
+            flags.visible = false;
+            flags.interactive = false;
+          } else {
+            flags.visible = true;
+            flags.interactive = false;
+            flags.gated = true;
+          }
+        }
+      }
+      if (state.settings?.featureOverrides?.[featureName] === false) {
+        flags.enabled = false;
+        flags.visible = false;
+        flags.interactive = false;
+      }
+      return flags;
+    },
+    hasTierAccess(userTier, requiredTier) {
+      if (requiredTier === TIERS.FREE)
+        return true;
+      if (requiredTier === TIERS.PRO)
+        return [TIERS.PRO, TIERS.ELITE].includes(userTier);
+      if (requiredTier === TIERS.ELITE)
+        return userTier === TIERS.ELITE;
+      return false;
+    }
+  };
 
   // src/modules/ui/ids.js
   var IDS = {
@@ -1955,7 +1920,6 @@ input:checked + .slider:before {
   };
 
   // src/modules/core/analytics.js
-  init_featureManager();
   var Analytics = {
     analyzeRecentTrades(state) {
       const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
@@ -2007,7 +1971,7 @@ input:checked + .slider:before {
       };
     },
     calculateDiscipline(trade, state) {
-      const flags = FeatureManager2.resolveFlags(state, "DISCIPLINE_SCORING");
+      const flags = FeatureManager.resolveFlags(state, "DISCIPLINE_SCORING");
       if (!flags.enabled)
         return { score: state.session.disciplineScore || 100, penalty: 0, reasons: [] };
       const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
@@ -2053,7 +2017,7 @@ input:checked + .slider:before {
       this.detectTilt(trade, state);
     },
     detectTilt(trade, state) {
-      const flags = FeatureManager2.resolveFlags(state, "TILT_DETECTION");
+      const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
       if (!flags.enabled)
         return;
       const lossStreak = state.session.lossStreak || 0;
@@ -2125,7 +2089,6 @@ input:checked + .slider:before {
   };
 
   // src/modules/core/order-execution.js
-  init_featureManager();
   var OrderExecution = {
     async buy(amountSol, strategy = "Trend", tokenInfo = null) {
       const state = Store.state;
@@ -2183,7 +2146,7 @@ input:checked + .slider:before {
         tokenQty,
         priceUsd: price,
         marketCap,
-        strategy: FeatureManager2.resolveFlags(state, "STRATEGY_TAGGING").interactive ? strategy || "Trend" : "Trend",
+        strategy: FeatureManager.resolveFlags(state, "STRATEGY_TAGGING").interactive ? strategy || "Trend" : "Trend",
         mode: state.settings.tradingMode || "paper"
       };
       if (!state.trades)
@@ -2338,7 +2301,7 @@ input:checked + .slider:before {
   };
 
   // src/modules/ui/paywall.js
-  var Paywall2 = {
+  var Paywall = {
     showUpgradeModal(lockedFeature = null) {
       const root = OverlayManager.getShadowRoot();
       const existing = root.getElementById("paywall-modal-overlay");
@@ -2488,10 +2451,9 @@ input:checked + .slider:before {
       setTimeout(() => toast.remove(), 2e3);
     },
     isFeatureLocked(featureName) {
-      const { FeatureManager: FeatureManager3 } = (init_featureManager(), __toCommonJS(featureManager_exports));
-      if (!FeatureManager3)
+      if (!FeatureManager)
         return false;
-      const flags = FeatureManager3.resolveFlags(Store.state, featureName);
+      const flags = FeatureManager.resolveFlags(Store.state, featureName);
       return flags.gated;
     }
   };
@@ -2655,7 +2617,7 @@ input:checked + .slider:before {
           this.shareToX();
         }
         if (act === "getPro") {
-          Paywall2.showUpgradeModal();
+          Paywall.showUpgradeModal();
         }
       });
     },
@@ -2756,7 +2718,7 @@ input:checked + .slider:before {
           discStatEl.style.cursor = "pointer";
           discStatEl.onclick = (e) => {
             e.stopPropagation();
-            Paywall2.showUpgradeModal();
+            Paywall.showUpgradeModal();
           };
         } else {
           discStatEl.style.opacity = "1";

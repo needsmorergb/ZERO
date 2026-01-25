@@ -3,6 +3,8 @@ import { OverlayManager } from './overlay.js';
 import { Trading } from '../core/trading.js';
 import { TokenDetector } from './token-detector.js';
 import { IDS } from './ids.js';
+import { FeatureManager } from '../featureManager.js';
+import { Paywall } from './paywall.js';
 
 function px(n) { return n + 'px'; }
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }

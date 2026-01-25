@@ -1,5 +1,6 @@
 import { Store } from '../store.js';
 import { OverlayManager } from './overlay.js';
+import { FeatureManager } from '../featureManager.js';
 
 export const Paywall = {
     showUpgradeModal(lockedFeature = null) {
@@ -170,7 +171,6 @@ export const Paywall = {
     },
 
     isFeatureLocked(featureName) {
-        const { FeatureManager } = require('../featureManager.js');
         if (!FeatureManager) return false;
         const flags = FeatureManager.resolveFlags(Store.state, featureName);
         return flags.gated;
