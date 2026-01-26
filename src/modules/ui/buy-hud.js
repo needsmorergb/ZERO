@@ -15,6 +15,7 @@ export const BuyHud = {
     // UI State
     buyHudTab: 'buy',
     buyHudEdit: false,
+    tradePlanExpanded: false,
 
     mountBuyHud(makeDraggable) {
         const container = OverlayManager.getContainer();
@@ -225,6 +226,10 @@ export const BuyHud = {
                 this.buyHudEdit = !this.buyHudEdit;
                 this.mountBuyHud();
             }
+            if (act === 'toggle-plan') {
+                this.tradePlanExpanded = !this.tradePlanExpanded;
+                this.mountBuyHud();
+            }
         });
     },
 
@@ -408,16 +413,34 @@ export const BuyHud = {
         if (!flags.visible) return '';
 
         const isGated = flags.gated;
+        const isExpanded = this.tradePlanExpanded;
         const plan = Store.state.pendingPlan || {};
+
+        if (!isExpanded) {
+            return `
+                <div class="plan-toggle" data-act="toggle-plan">
+                    <span style="display:flex; align-items:center; gap:6px;">
+                        ${ICONS.TARGET} ${isGated ? 'TRADE PLAN (PRO)' : 'ADD TRADE PLAN'}
+                    </span>
+                    ${ICONS.CHEVRON_DOWN}
+                </div>
+            `;
+        }
 
         if (isGated) {
             return `
-                <div class="trade-plan-section gated" data-act="upgrade-plan">
-                    <div class="plan-gated-badge">
-                        ${ICONS.LOCK}
-                        <span>TRADE PLAN (PRO)</span>
+                <div class="trade-plan-section gated">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <span class="plan-title">${ICONS.TARGET} Trade Plan</span>
+                        <div class="plan-collapse-arrow" data-act="toggle-plan">${ICONS.CHEVRON_UP}</div>
                     </div>
-                    <div class="plan-gated-hint">Define stop loss, targets & thesis</div>
+                    <div data-act="upgrade-plan">
+                        <div class="plan-gated-badge">
+                            ${ICONS.LOCK}
+                            <span>TRADE PLAN (PRO)</span>
+                        </div>
+                        <div class="plan-gated-hint">Define stop loss, targets & thesis</div>
+                    </div>
                 </div>
             `;
         }
@@ -426,7 +449,10 @@ export const BuyHud = {
             <div class="trade-plan-section">
                 <div class="plan-header">
                     <span class="plan-title">${ICONS.TARGET} Trade Plan</span>
-                    <span class="plan-tag">PRO</span>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span class="plan-tag">PRO</span>
+                        <div class="plan-collapse-arrow" data-act="toggle-plan">${ICONS.CHEVRON_UP}</div>
+                    </div>
                 </div>
                 <div class="plan-row">
                     <div class="plan-field">

@@ -264,12 +264,14 @@ export const BUY_HUD_CSS = `
 }
 
 .market-badge.gated {
-    background: linear-gradient(90deg, rgba(168, 85, 247, 0.1), rgba(139, 92, 246, 0.1));
-    border: 1px dashed rgba(168, 85, 247, 0.3);
-    color: #a855f7;
+    background: rgba(139, 92, 246, 0.05);
+    border: 1px solid rgba(139, 92, 246, 0.15);
+    color: #818cf8;
     justify-content: center;
-    gap: 8px;
-    font-weight: 700;
+    gap: 6px;
+    font-weight: 600;
+    font-size: 10px;
+    padding: 6px 10px;
 }
 
 .market-badge.loading {
@@ -450,5 +452,43 @@ export const BUY_HUD_CSS = `
 
 .plan-textarea:focus {
     border-color: #6366f1;
+}
+
+.plan-toggle {
+    margin-top: 12px;
+    padding: 8px 12px;
+    background: rgba(99, 102, 241, 0.05);
+    border: 1px solid rgba(99, 102, 241, 0.15);
+    border-radius: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    color: #94a3b8;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    transition: all 0.2s;
+}
+
+.plan-toggle:hover {
+    background: rgba(99, 102, 241, 0.1);
+    border-color: rgba(99, 102, 241, 0.3);
+    color: #6366f1;
+}
+
+.plan-collapse-arrow {
+    cursor: pointer;
+    color: #64748b;
+    padding: 2px 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+}
+
+.plan-collapse-arrow:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: #94a3b8;
 }
 `;

@@ -2233,12 +2233,14 @@
 }
 
 .market-badge.gated {
-    background: linear-gradient(90deg, rgba(168, 85, 247, 0.1), rgba(139, 92, 246, 0.1));
-    border: 1px dashed rgba(168, 85, 247, 0.3);
-    color: #a855f7;
+    background: rgba(139, 92, 246, 0.05);
+    border: 1px solid rgba(139, 92, 246, 0.15);
+    color: #818cf8;
     justify-content: center;
-    gap: 8px;
-    font-weight: 700;
+    gap: 6px;
+    font-weight: 600;
+    font-size: 10px;
+    padding: 6px 10px;
 }
 
 .market-badge.loading {
@@ -2419,6 +2421,44 @@
 
 .plan-textarea:focus {
     border-color: #6366f1;
+}
+
+.plan-toggle {
+    margin-top: 12px;
+    padding: 8px 12px;
+    background: rgba(99, 102, 241, 0.05);
+    border: 1px solid rgba(99, 102, 241, 0.15);
+    border-radius: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    color: #94a3b8;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    transition: all 0.2s;
+}
+
+.plan-toggle:hover {
+    background: rgba(99, 102, 241, 0.1);
+    border-color: rgba(99, 102, 241, 0.3);
+    color: #6366f1;
+}
+
+.plan-collapse-arrow {
+    cursor: pointer;
+    color: #64748b;
+    padding: 2px 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+}
+
+.plan-collapse-arrow:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: #94a3b8;
 }
 `;
 
@@ -3331,7 +3371,9 @@ input:checked + .slider:before {
     CHART_BAR: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>`,
     CLOCK: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`,
     ALERT_CIRCLE: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`,
-    TROPHY: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>`
+    TROPHY: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>`,
+    CHEVRON_DOWN: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>`,
+    CHEVRON_UP: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>`
   };
 
   // src/modules/ui/banner.js
@@ -6401,6 +6443,7 @@ canvas#equity-canvas {
     // UI State
     buyHudTab: "buy",
     buyHudEdit: false,
+    tradePlanExpanded: false,
     mountBuyHud(makeDraggable) {
       const container = OverlayManager.getContainer();
       const rootId = IDS.buyHud;
@@ -6581,6 +6624,10 @@ canvas#equity-canvas {
           this.buyHudEdit = !this.buyHudEdit;
           this.mountBuyHud();
         }
+        if (act === "toggle-plan") {
+          this.tradePlanExpanded = !this.tradePlanExpanded;
+          this.mountBuyHud();
+        }
       });
     },
     showEmotionSelector(tradeId) {
@@ -6746,15 +6793,32 @@ canvas#equity-canvas {
       if (!flags.visible)
         return "";
       const isGated = flags.gated;
+      const isExpanded = this.tradePlanExpanded;
       const plan = Store.state.pendingPlan || {};
+      if (!isExpanded) {
+        return `
+                <div class="plan-toggle" data-act="toggle-plan">
+                    <span style="display:flex; align-items:center; gap:6px;">
+                        ${ICONS.TARGET} ${isGated ? "TRADE PLAN (PRO)" : "ADD TRADE PLAN"}
+                    </span>
+                    ${ICONS.CHEVRON_DOWN}
+                </div>
+            `;
+      }
       if (isGated) {
         return `
-                <div class="trade-plan-section gated" data-act="upgrade-plan">
-                    <div class="plan-gated-badge">
-                        ${ICONS.LOCK}
-                        <span>TRADE PLAN (PRO)</span>
+                <div class="trade-plan-section gated">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <span class="plan-title">${ICONS.TARGET} Trade Plan</span>
+                        <div class="plan-collapse-arrow" data-act="toggle-plan">${ICONS.CHEVRON_UP}</div>
                     </div>
-                    <div class="plan-gated-hint">Define stop loss, targets & thesis</div>
+                    <div data-act="upgrade-plan">
+                        <div class="plan-gated-badge">
+                            ${ICONS.LOCK}
+                            <span>TRADE PLAN (PRO)</span>
+                        </div>
+                        <div class="plan-gated-hint">Define stop loss, targets & thesis</div>
+                    </div>
                 </div>
             `;
       }
@@ -6762,7 +6826,10 @@ canvas#equity-canvas {
             <div class="trade-plan-section">
                 <div class="plan-header">
                     <span class="plan-title">${ICONS.TARGET} Trade Plan</span>
-                    <span class="plan-tag">PRO</span>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span class="plan-tag">PRO</span>
+                        <div class="plan-collapse-arrow" data-act="toggle-plan">${ICONS.CHEVRON_UP}</div>
+                    </div>
                 </div>
                 <div class="plan-row">
                     <div class="plan-field">
