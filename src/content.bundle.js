@@ -103,7 +103,7 @@
           profile: "Disciplined"
         },
         schemaVersion: 2,
-        version: "1.10.5"
+        version: "1.10.7"
       };
       Store = {
         state: null,
@@ -310,10 +310,10 @@
   });
 
   // src/modules/core/market.js
-  var Market;
+  var Market2;
   var init_market = __esm({
     "src/modules/core/market.js"() {
-      Market = {
+      Market2 = {
         price: 0,
         marketCap: 0,
         lastPriceTs: 0,
@@ -574,7 +574,7 @@
           const flags = FeatureManager.resolveFlags(state, "ADVANCED_COACHING");
           if (!flags.enabled)
             return;
-          const ctx = Market.context;
+          const ctx = Market2.context;
           if (!ctx)
             return;
           const vol = ctx.vol24h;
@@ -2522,11 +2522,11 @@ input:checked + .slider:before {
           return;
         }
         let currentPrice = pos.lastPriceUsd || pos.entryPriceUsd;
-        if (currentTokenMint && pos.mint === currentTokenMint && Market.price > 0 && Market.price < 1e4) {
-          currentPrice = Market.price;
+        if (currentTokenMint && pos.mint === currentTokenMint && Market2.price > 0 && Market2.price < 1e4) {
+          currentPrice = Market2.price;
           const oldPrice = pos.lastPriceUsd || pos.entryPriceUsd;
-          if (!pos.lastPriceUsd || Math.abs(oldPrice - Market.price) / oldPrice > 1e-3) {
-            pos.lastPriceUsd = Market.price;
+          if (!pos.lastPriceUsd || Math.abs(oldPrice - Market2.price) / oldPrice > 1e-3) {
+            pos.lastPriceUsd = Market2.price;
             priceWasUpdated = true;
           }
         }
@@ -2572,8 +2572,8 @@ input:checked + .slider:before {
         return { success: false, error: "Invalid amount" };
       if (amountSol > state.session.balance)
         return { success: false, error: "Insufficient funds" };
-      let price = Market.price || 1e-6;
-      let marketCap = Market.marketCap || 0;
+      let price = Market2.price || 1e-6;
+      let marketCap = Market2.marketCap || 0;
       if (price > 1e4 && marketCap > 0 && marketCap < 1e4) {
         console.warn(`[Trading] SWAP DETECTED! Price=${price} MarketCap=${marketCap}. Swapping...`);
         [price, marketCap] = [marketCap, price];
@@ -2638,7 +2638,7 @@ input:checked + .slider:before {
       const state = Store.state;
       if (!state.settings.enabled)
         return { success: false, error: "Paper trading disabled" };
-      let currentPrice = Market.price || 0;
+      let currentPrice = Market2.price || 0;
       if (currentPrice <= 0)
         return { success: false, error: "No price data" };
       if (currentPrice > 1e4) {
@@ -2677,7 +2677,7 @@ input:checked + .slider:before {
         solAmount: solReceived,
         tokenQty: qtyToSell,
         priceUsd: currentPrice,
-        marketCap: Market.marketCap || 0,
+        marketCap: Market2.marketCap || 0,
         realizedPnlSol,
         strategy: strategy || "Unknown",
         mode: state.settings.tradingMode || "paper"
@@ -3232,6 +3232,24 @@ canvas#equity-canvas {
                                 <div class="behavior-stat-item">
                                     <div class="k">Neglect</div>
                                     <div class="v">${state.behavior.profitNeglectFrequency || 0}</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="behavior-profile-card" id="dashboard-market-session" style="background: linear-gradient(135deg, rgba(6, 182, 212, 0.1), rgba(59, 130, 246, 0.1)); border: 1px solid rgba(6, 182, 212, 0.2); margin-top:20px;">
+                            <div class="dashboard-title" style="font-size:12px; margin-bottom:12px; opacity:0.6;">MARKET SNAPSHOT</div>
+                            <div style="display:flex; justify-content:space-between; align-items:flex-end;">
+                                <div>
+                                    <div style="font-size:11px; color:#64748b; margin-bottom:4px; text-transform:uppercase;">Volume (24h)</div>
+                                    <div style="font-size:16px; font-weight:800; color:#f8fafc;">
+                                        $${Market.context ? (Market.context.vol24h / 1e6).toFixed(1) + "M" : "N/A"}
+                                    </div>
+                                </div>
+                                <div style="text-align:right;">
+                                    <div style="font-size:11px; color:#64748b; margin-bottom:4px; text-transform:uppercase;">Price Change</div>
+                                    <div style="font-size:16px; font-weight:800; color:${Market.context && Market.context.priceChange24h >= 0 ? "#10b981" : "#ef4444"}">
+                                        ${Market.context ? Market.context.priceChange24h.toFixed(1) + "%" : "N/A"}
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -4139,7 +4157,7 @@ canvas#equity-canvas {
       const flags = FeatureManager.resolveFlags(Store.state, "MARKET_CONTEXT");
       if (!flags.visible)
         return "";
-      const ctx = Market.context;
+      const ctx = Market2.context;
       const isGated = flags.gated;
       let content = "";
       if (isGated) {
@@ -4185,7 +4203,7 @@ canvas#equity-canvas {
           window.postMessage({ __paper: true, type: "PAPER_DRAW_ALL", trades }, "*");
         }, 2e3);
       }
-      Market.subscribe(async () => {
+      Market2.subscribe(async () => {
         await PnlHud.updatePnlHud();
       });
     },
@@ -4260,7 +4278,7 @@ canvas#equity-canvas {
   // src/content.boot.js
   (async () => {
     "use strict";
-    console.log("%c ZER\xD8 v1.10.5 (Deep Psychological Guardrails)", "color: #14b8a6; font-weight: bold; font-size: 14px;");
+    console.log("%c ZER\xD8 v1.10.7 (Market Context & Coaching)", "color: #14b8a6; font-weight: bold; font-size: 14px;");
     const PLATFORM = {
       isAxiom: window.location.hostname.includes("axiom.trade"),
       isPadre: window.location.hostname.includes("padre.gg"),
@@ -4288,7 +4306,7 @@ canvas#equity-canvas {
     }
     try {
       console.log("[ZER\xD8] Init Market...");
-      Market.init();
+      Market2.init();
     } catch (e) {
       console.error("[ZER\xD8] Market Init Failed:", e);
     }

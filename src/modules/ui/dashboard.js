@@ -149,6 +149,24 @@ export const Dashboard = {
                             </div>
                         </div>
 
+                        <div class="behavior-profile-card" id="dashboard-market-session" style="background: linear-gradient(135deg, rgba(6, 182, 212, 0.1), rgba(59, 130, 246, 0.1)); border: 1px solid rgba(6, 182, 212, 0.2); margin-top:20px;">
+                            <div class="dashboard-title" style="font-size:12px; margin-bottom:12px; opacity:0.6;">MARKET SNAPSHOT</div>
+                            <div style="display:flex; justify-content:space-between; align-items:flex-end;">
+                                <div>
+                                    <div style="font-size:11px; color:#64748b; margin-bottom:4px; text-transform:uppercase;">Volume (24h)</div>
+                                    <div style="font-size:16px; font-weight:800; color:#f8fafc;">
+                                        $${Market.context ? (Market.context.vol24h / 1000000).toFixed(1) + 'M' : 'N/A'}
+                                    </div>
+                                </div>
+                                <div style="text-align:right;">
+                                    <div style="font-size:11px; color:#64748b; margin-bottom:4px; text-transform:uppercase;">Price Change</div>
+                                    <div style="font-size:16px; font-weight:800; color:${Market.context && Market.context.priceChange24h >= 0 ? '#10b981' : '#ef4444'}">
+                                        ${Market.context ? Market.context.priceChange24h.toFixed(1) + '%' : 'N/A'}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <div style="margin-top:20px;">
                             <button id="dashboard-share-btn" style="width:100%; background:#1d9bf0; color:white; border:none; padding:10px; border-radius:8px; font-weight:700; font-size:12px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px;">
                                 <span>𝕏</span> Share Session
