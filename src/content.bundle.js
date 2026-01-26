@@ -6921,7 +6921,7 @@ canvas#equity-canvas {
   // src/content.boot.js
   (async () => {
     "use strict";
-    console.log("%c ZER\xD8 v1.10.7 (Market Context & Coaching)", "color: #14b8a6; font-weight: bold; font-size: 14px;");
+    console.log("%c ZER\xD8 v1.11.0 (Elite Analytics & Replay)", "color: #14b8a6; font-weight: bold; font-size: 14px;");
     const PLATFORM = {
       isAxiom: window.location.hostname.includes("axiom.trade"),
       isPadre: window.location.hostname.includes("padre.gg"),
