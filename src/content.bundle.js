@@ -72,26 +72,47 @@
           behavioralAlerts: true
           // Phase 9: Elite Guardrails
         },
-        // Runtime state (not always persisted fully, but structure is here)
+        // Session as first-class object
         session: {
+          id: null,
+          // Unique session ID
+          startTime: 0,
+          // Session start timestamp
+          endTime: null,
+          // Session end timestamp (null if active)
           balance: 10,
           equity: 10,
           realized: 0,
           trades: [],
-          // IDs
+          // Trade IDs in this session
           equityHistory: [],
           // [{ts, equity}]
           winStreak: 0,
           lossStreak: 0,
-          startTime: 0,
           tradeCount: 0,
           disciplineScore: 100,
-          activeAlerts: []
+          activeAlerts: [],
           // {type, message, ts}
+          status: "active"
+          // 'active' | 'completed' | 'abandoned'
         },
+        // Session history (archived sessions)
+        sessionHistory: [],
+        // Array of completed session objects
         trades: {},
-        // Map ID -> Trade Object { id, strategy, emotion, ... }
+        // Map ID -> Trade Object { id, strategy, emotion, plannedStop, plannedTarget, entryThesis, riskDefined, ... }
         positions: {},
+        // Pending trade plan (cleared after trade execution)
+        pendingPlan: {
+          stopLoss: null,
+          // Price in USD or % below entry
+          target: null,
+          // Price in USD or % above entry
+          thesis: "",
+          // Entry reasoning
+          maxRiskPct: null
+          // Max % of balance to risk
+        },
         behavior: {
           tiltFrequency: 0,
           panicSells: 0,
@@ -102,6 +123,10 @@
           strategyDriftFrequency: 0,
           profile: "Disciplined"
         },
+        // Persistent Event Log (up to 100 events)
+        eventLog: [],
+        // { ts, type, category, message, data }
+        // Categories: TRADE, ALERT, DISCIPLINE, SYSTEM, MILESTONE
         schemaVersion: 2,
         version: "1.10.7"
       };
@@ -210,7 +235,80 @@
         validateState() {
           if (this.state) {
             this.state.settings.startSol = parseFloat(this.state.settings.startSol) || 10;
+            if (!this.state.session.id) {
+              this.state.session.id = this.generateSessionId();
+              this.state.session.startTime = Date.now();
+            }
           }
+        },
+        generateSessionId() {
+          return `session_${Date.now()}_${Math.floor(Math.random() * 1e4)}`;
+        },
+        // Start a new session (archive current if it has trades)
+        async startNewSession() {
+          const currentSession = this.state.session;
+          if (currentSession.trades && currentSession.trades.length > 0) {
+            currentSession.endTime = Date.now();
+            currentSession.status = "completed";
+            if (!this.state.sessionHistory)
+              this.state.sessionHistory = [];
+            this.state.sessionHistory.push({ ...currentSession });
+            if (this.state.sessionHistory.length > 10) {
+              this.state.sessionHistory = this.state.sessionHistory.slice(-10);
+            }
+          }
+          const startSol = this.state.settings.startSol || 10;
+          this.state.session = {
+            id: this.generateSessionId(),
+            startTime: Date.now(),
+            endTime: null,
+            balance: startSol,
+            equity: startSol,
+            realized: 0,
+            trades: [],
+            equityHistory: [],
+            winStreak: 0,
+            lossStreak: 0,
+            tradeCount: 0,
+            disciplineScore: 100,
+            activeAlerts: [],
+            status: "active"
+          };
+          delete this.state._milestone_2x;
+          delete this.state._milestone_3x;
+          delete this.state._milestone_5x;
+          await this.save();
+          return this.state.session;
+        },
+        // Get current session duration in minutes
+        getSessionDuration() {
+          const session = this.state?.session;
+          if (!session || !session.startTime)
+            return 0;
+          const endTime = session.endTime || Date.now();
+          return Math.floor((endTime - session.startTime) / 6e4);
+        },
+        // Get session summary
+        getSessionSummary() {
+          const session = this.state?.session;
+          if (!session)
+            return null;
+          const trades = session.trades || [];
+          const sellTrades = trades.map((id) => this.state.trades[id]).filter((t) => t && t.side === "SELL");
+          const wins = sellTrades.filter((t) => (t.realizedPnlSol || 0) > 0).length;
+          const losses = sellTrades.filter((t) => (t.realizedPnlSol || 0) < 0).length;
+          const winRate = sellTrades.length > 0 ? (wins / sellTrades.length * 100).toFixed(1) : 0;
+          return {
+            id: session.id,
+            duration: this.getSessionDuration(),
+            tradeCount: trades.length,
+            wins,
+            losses,
+            winRate,
+            realized: session.realized,
+            disciplineScore: session.disciplineScore,
+            status: session.status
+          };
         }
       };
     }
@@ -234,6 +332,8 @@
         EMOTION_TRACKING: "pro",
         DISCIPLINE_SCORING: "pro",
         AI_DEBRIEF: "pro",
+        TRADE_PLAN: "pro",
+        // Stop loss, targets, thesis capture
         // Phase 5-6: Advanced Pro
         EQUITY_CHARTS: "pro",
         DETAILED_LOGS: "pro",
@@ -310,10 +410,10 @@
   });
 
   // src/modules/core/market.js
-  var Market2;
+  var Market;
   var init_market = __esm({
     "src/modules/core/market.js"() {
-      Market2 = {
+      Market = {
         price: 0,
         marketCap: 0,
         lastPriceTs: 0,
@@ -454,15 +554,93 @@
   // src/modules/core/analytics.js
   var analytics_exports = {};
   __export(analytics_exports, {
-    Analytics: () => Analytics
+    Analytics: () => Analytics,
+    EVENT_CATEGORIES: () => EVENT_CATEGORIES
   });
-  var Analytics;
+  var EVENT_CATEGORIES, Analytics;
   var init_analytics = __esm({
     "src/modules/core/analytics.js"() {
       init_store();
       init_featureManager();
       init_market();
+      EVENT_CATEGORIES = {
+        TRADE: "TRADE",
+        ALERT: "ALERT",
+        DISCIPLINE: "DISCIPLINE",
+        SYSTEM: "SYSTEM",
+        MILESTONE: "MILESTONE"
+      };
       Analytics = {
+        // ==========================================
+        // PERSISTENT EVENT LOGGING
+        // ==========================================
+        logEvent(state, type, category, message, data = {}) {
+          if (!state.eventLog)
+            state.eventLog = [];
+          const event = {
+            id: `evt_${Date.now()}_${Math.floor(Math.random() * 1e3)}`,
+            ts: Date.now(),
+            type,
+            category,
+            message,
+            data
+          };
+          state.eventLog.push(event);
+          if (state.eventLog.length > 100) {
+            state.eventLog = state.eventLog.slice(-100);
+          }
+          console.log(`[EVENT LOG] [${category}] ${type}: ${message}`);
+          return event;
+        },
+        logTradeEvent(state, trade) {
+          const pnlText = trade.realizedPnlSol ? `P&L: ${trade.realizedPnlSol > 0 ? "+" : ""}${trade.realizedPnlSol.toFixed(4)} SOL` : `Size: ${trade.solAmount.toFixed(4)} SOL`;
+          const message = `${trade.side} ${trade.symbol} @ $${trade.priceUsd?.toFixed(6) || "N/A"} | ${pnlText}`;
+          this.logEvent(state, trade.side, EVENT_CATEGORIES.TRADE, message, {
+            tradeId: trade.id,
+            symbol: trade.symbol,
+            priceUsd: trade.priceUsd,
+            solAmount: trade.solAmount,
+            realizedPnlSol: trade.realizedPnlSol,
+            strategy: trade.strategy,
+            riskDefined: trade.riskDefined
+          });
+        },
+        logDisciplineEvent(state, score, penalty, reasons) {
+          if (penalty <= 0)
+            return;
+          const message = `Discipline -${penalty} pts: ${reasons.join(", ")}`;
+          this.logEvent(state, "PENALTY", EVENT_CATEGORIES.DISCIPLINE, message, {
+            score,
+            penalty,
+            reasons
+          });
+        },
+        logAlertEvent(state, alertType, message) {
+          this.logEvent(state, alertType, EVENT_CATEGORIES.ALERT, message, { alertType });
+        },
+        logMilestone(state, type, message, data = {}) {
+          this.logEvent(state, type, EVENT_CATEGORIES.MILESTONE, message, data);
+        },
+        getEventLog(state, options = {}) {
+          const { category, limit = 50, offset = 0 } = options;
+          let events = state.eventLog || [];
+          if (category) {
+            events = events.filter((e) => e.category === category);
+          }
+          events = events.sort((a, b) => b.ts - a.ts);
+          return events.slice(offset, offset + limit);
+        },
+        getEventStats(state) {
+          const events = state.eventLog || [];
+          const stats = {
+            total: events.length,
+            trades: events.filter((e) => e.category === EVENT_CATEGORIES.TRADE).length,
+            alerts: events.filter((e) => e.category === EVENT_CATEGORIES.ALERT).length,
+            disciplineEvents: events.filter((e) => e.category === EVENT_CATEGORIES.DISCIPLINE).length,
+            milestones: events.filter((e) => e.category === EVENT_CATEGORIES.MILESTONE).length
+          };
+          return stats;
+        },
         analyzeRecentTrades(state) {
           const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
           if (trades.length === 0)
@@ -532,14 +710,89 @@
               penalty += 20;
               reasons.push("Oversizing (>50%)");
             }
+            const planFlags = FeatureManager.resolveFlags(state, "TRADE_PLAN");
+            if (planFlags.interactive && !trade.riskDefined) {
+              penalty += 5;
+              reasons.push("No Stop Loss Defined");
+            }
+          }
+          if (trade.side === "SELL") {
+            const result = this.checkPlanAdherence(trade, state);
+            if (result.penalty > 0) {
+              penalty += result.penalty;
+              reasons.push(...result.reasons);
+            }
           }
           let score = state.session.disciplineScore !== void 0 ? state.session.disciplineScore : 100;
           score = Math.max(0, score - penalty);
           state.session.disciplineScore = score;
           if (penalty > 0) {
             console.log(`[DISCIPLINE] Score -${penalty} (${reasons.join(", ")})`);
+            this.logDisciplineEvent(state, score, penalty, reasons);
           }
           return { score, penalty, reasons };
+        },
+        // Check if trade exit adhered to the original plan
+        checkPlanAdherence(sellTrade, state) {
+          let penalty = 0;
+          const reasons = [];
+          const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+          const buyTrade = trades.find(
+            (t) => t.side === "BUY" && t.mint === sellTrade.mint && t.ts < sellTrade.ts && t.riskDefined
+          );
+          if (!buyTrade || !buyTrade.plannedStop)
+            return { penalty: 0, reasons: [] };
+          const exitPrice = sellTrade.priceUsd;
+          const plannedStop = buyTrade.plannedStop;
+          const plannedTarget = buyTrade.plannedTarget;
+          const entryPrice = buyTrade.priceUsd;
+          if (exitPrice < plannedStop && sellTrade.realizedPnlSol < 0) {
+            const violationPct = ((plannedStop - exitPrice) / plannedStop * 100).toFixed(1);
+            penalty += 15;
+            reasons.push(`Stop Violated (-${violationPct}% below stop)`);
+          }
+          if (plannedTarget && exitPrice < plannedTarget && sellTrade.realizedPnlSol > 0) {
+            const targetDistance = (plannedTarget - exitPrice) / plannedTarget * 100;
+            if (targetDistance > 30) {
+              penalty += 5;
+              reasons.push("Early Exit (Left >30% gains)");
+            }
+          }
+          sellTrade.planAdherence = {
+            hadPlan: true,
+            plannedStop,
+            plannedTarget,
+            entryPrice,
+            exitPrice,
+            stopViolated: exitPrice < plannedStop && sellTrade.realizedPnlSol < 0,
+            hitTarget: plannedTarget && exitPrice >= plannedTarget
+          };
+          return { penalty, reasons };
+        },
+        // Calculate R-Multiple for a trade (requires defined risk)
+        calculateRMultiple(sellTrade, state) {
+          const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+          const buyTrade = trades.find(
+            (t) => t.side === "BUY" && t.mint === sellTrade.mint && t.ts < sellTrade.ts && t.riskDefined
+          );
+          if (!buyTrade || !buyTrade.plannedStop)
+            return null;
+          const entryPrice = buyTrade.priceUsd;
+          const exitPrice = sellTrade.priceUsd;
+          const stopPrice = buyTrade.plannedStop;
+          const riskPerUnit = entryPrice - stopPrice;
+          if (riskPerUnit <= 0)
+            return null;
+          const pnlPerUnit = exitPrice - entryPrice;
+          const rMultiple = pnlPerUnit / riskPerUnit;
+          return {
+            rMultiple: parseFloat(rMultiple.toFixed(2)),
+            entryPrice,
+            exitPrice,
+            stopPrice,
+            riskPerUnit,
+            pnlPerUnit
+          };
         },
         updateStreaks(trade, state) {
           if (trade.side !== "SELL")
@@ -574,7 +827,7 @@
           const flags = FeatureManager.resolveFlags(state, "ADVANCED_COACHING");
           if (!flags.enabled)
             return;
-          const ctx = Market2.context;
+          const ctx = Market.context;
           if (!ctx)
             return;
           const vol = ctx.vol24h;
@@ -686,6 +939,7 @@
           state.session.activeAlerts.push(alert);
           if (state.session.activeAlerts.length > 3)
             state.session.activeAlerts.shift();
+          this.logAlertEvent(state, type, message);
           console.log(`[ELITE ALERT] ${type}: ${message}`);
         },
         updateProfile(state) {
@@ -761,6 +1015,231 @@
 `;
           text += `#Solana #PaperTrading #Crypto`;
           return text;
+        },
+        // ==========================================
+        // EXPORT FUNCTIONALITY
+        // ==========================================
+        exportToCSV(state) {
+          const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+          if (trades.length === 0)
+            return null;
+          const headers = [
+            "Trade ID",
+            "Timestamp",
+            "Side",
+            "Symbol",
+            "Token Mint",
+            "SOL Amount",
+            "Token Qty",
+            "Price USD",
+            "Market Cap",
+            "Realized PnL (SOL)",
+            "Strategy",
+            "Emotion",
+            "Mode",
+            "Planned Stop",
+            "Planned Target",
+            "Risk Defined",
+            "Entry Thesis"
+          ];
+          const rows = trades.map((t) => [
+            t.id,
+            new Date(t.ts).toISOString(),
+            t.side,
+            t.symbol || "",
+            t.mint || "",
+            t.solAmount?.toFixed(6) || "",
+            t.tokenQty?.toFixed(6) || "",
+            t.priceUsd?.toFixed(8) || "",
+            t.marketCap?.toFixed(2) || "",
+            t.realizedPnlSol?.toFixed(6) || "",
+            t.strategy || "",
+            t.emotion || "",
+            t.mode || "paper",
+            t.plannedStop?.toFixed(8) || "",
+            t.plannedTarget?.toFixed(8) || "",
+            t.riskDefined ? "Yes" : "No",
+            `"${(t.entryThesis || "").replace(/"/g, '""')}"`
+          ]);
+          const csvContent = [
+            headers.join(","),
+            ...rows.map((r) => r.join(","))
+          ].join("\n");
+          return csvContent;
+        },
+        exportToJSON(state) {
+          const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+          const session = state.session || {};
+          const behavior = state.behavior || {};
+          const exportData = {
+            exportedAt: (/* @__PURE__ */ new Date()).toISOString(),
+            version: state.version || "1.0.0",
+            session: {
+              balance: session.balance,
+              equity: session.equity,
+              realized: session.realized,
+              winStreak: session.winStreak,
+              lossStreak: session.lossStreak,
+              disciplineScore: session.disciplineScore,
+              tradeCount: trades.length
+            },
+            behavior: {
+              profile: behavior.profile,
+              tiltFrequency: behavior.tiltFrequency,
+              fomoTrades: behavior.fomoTrades,
+              panicSells: behavior.panicSells,
+              sunkCostFrequency: behavior.sunkCostFrequency,
+              overtradingFrequency: behavior.overtradingFrequency,
+              profitNeglectFrequency: behavior.profitNeglectFrequency
+            },
+            analytics: this.analyzeRecentTrades(state),
+            trades: trades.map((t) => ({
+              id: t.id,
+              timestamp: new Date(t.ts).toISOString(),
+              side: t.side,
+              symbol: t.symbol,
+              mint: t.mint,
+              solAmount: t.solAmount,
+              tokenQty: t.tokenQty,
+              priceUsd: t.priceUsd,
+              marketCap: t.marketCap,
+              realizedPnlSol: t.realizedPnlSol,
+              strategy: t.strategy,
+              emotion: t.emotion,
+              mode: t.mode,
+              tradePlan: {
+                plannedStop: t.plannedStop,
+                plannedTarget: t.plannedTarget,
+                entryThesis: t.entryThesis,
+                riskDefined: t.riskDefined
+              },
+              planAdherence: t.planAdherence || null
+            }))
+          };
+          return JSON.stringify(exportData, null, 2);
+        },
+        downloadExport(content, filename, mimeType) {
+          const blob = new Blob([content], { type: mimeType });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        },
+        exportTradesAsCSV(state) {
+          const csv = this.exportToCSV(state);
+          if (!csv) {
+            console.warn("[Export] No trades to export");
+            return false;
+          }
+          const filename = `zero_trades_${(/* @__PURE__ */ new Date()).toISOString().split("T")[0]}.csv`;
+          this.downloadExport(csv, filename, "text/csv;charset=utf-8;");
+          return true;
+        },
+        exportSessionAsJSON(state) {
+          const json = this.exportToJSON(state);
+          const filename = `zero_session_${(/* @__PURE__ */ new Date()).toISOString().split("T")[0]}.json`;
+          this.downloadExport(json, filename, "application/json");
+          return true;
+        },
+        // ==========================================
+        // CONSISTENCY SCORE
+        // ==========================================
+        /**
+         * Calculate Consistency Score (0-100)
+         * Measures:
+         * - Win Rate Stability (variance in rolling win rate)
+         * - Position Sizing Consistency (variance in trade sizes)
+         * - Trade Frequency Stability (time between trades)
+         * - Strategy Focus (% of trades using top 2 strategies)
+         */
+        calculateConsistencyScore(state) {
+          const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+          if (trades.length < 5) {
+            return { score: null, message: "Need 5+ trades for consistency score", breakdown: null };
+          }
+          const breakdown = {
+            winRateStability: 0,
+            sizingConsistency: 0,
+            frequencyStability: 0,
+            strategyFocus: 0
+          };
+          const sellTrades = trades.filter((t) => t.side === "SELL");
+          if (sellTrades.length >= 5) {
+            const windowSize = Math.min(5, Math.floor(sellTrades.length / 2));
+            const rollingWinRates = [];
+            for (let i = windowSize; i <= sellTrades.length; i++) {
+              const window2 = sellTrades.slice(i - windowSize, i);
+              const wins = window2.filter((t) => (t.realizedPnlSol || 0) > 0).length;
+              rollingWinRates.push(wins / windowSize);
+            }
+            if (rollingWinRates.length > 1) {
+              const avg = rollingWinRates.reduce((a, b) => a + b, 0) / rollingWinRates.length;
+              const variance = rollingWinRates.reduce((sum, r) => sum + Math.pow(r - avg, 2), 0) / rollingWinRates.length;
+              const stdDev = Math.sqrt(variance);
+              breakdown.winRateStability = Math.max(0, 25 - stdDev * 100);
+            } else {
+              breakdown.winRateStability = 20;
+            }
+          } else {
+            breakdown.winRateStability = 15;
+          }
+          const buyTrades = trades.filter((t) => t.side === "BUY");
+          if (buyTrades.length >= 3) {
+            const sizes = buyTrades.map((t) => t.solAmount);
+            const avgSize = sizes.reduce((a, b) => a + b, 0) / sizes.length;
+            const variance = sizes.reduce((sum, s) => sum + Math.pow(s - avgSize, 2), 0) / sizes.length;
+            const cv = Math.sqrt(variance) / avgSize;
+            breakdown.sizingConsistency = Math.max(0, 25 - cv * 25);
+          } else {
+            breakdown.sizingConsistency = 15;
+          }
+          if (trades.length >= 4) {
+            const intervals = [];
+            for (let i = 1; i < trades.length; i++) {
+              intervals.push(trades[i].ts - trades[i - 1].ts);
+            }
+            const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+            const variance = intervals.reduce((sum, i) => sum + Math.pow(i - avgInterval, 2), 0) / intervals.length;
+            const cv = Math.sqrt(variance) / avgInterval;
+            breakdown.frequencyStability = Math.max(0, 25 - cv * 12.5);
+          } else {
+            breakdown.frequencyStability = 15;
+          }
+          const strategyCounts = {};
+          buyTrades.forEach((t) => {
+            const strat = t.strategy || "Unknown";
+            strategyCounts[strat] = (strategyCounts[strat] || 0) + 1;
+          });
+          const sortedStrategies = Object.entries(strategyCounts).sort((a, b) => b[1] - a[1]);
+          const top2Count = sortedStrategies.slice(0, 2).reduce((sum, [_, count]) => sum + count, 0);
+          const focusRatio = buyTrades.length > 0 ? top2Count / buyTrades.length : 0;
+          breakdown.strategyFocus = focusRatio * 25;
+          const score = Math.round(
+            breakdown.winRateStability + breakdown.sizingConsistency + breakdown.frequencyStability + breakdown.strategyFocus
+          );
+          let message = "";
+          if (score >= 80)
+            message = "Highly consistent trading patterns";
+          else if (score >= 60)
+            message = "Good consistency, minor variations";
+          else if (score >= 40)
+            message = "Moderate consistency, room for improvement";
+          else
+            message = "Inconsistent patterns detected";
+          return {
+            score,
+            message,
+            breakdown: {
+              winRateStability: Math.round(breakdown.winRateStability),
+              sizingConsistency: Math.round(breakdown.sizingConsistency),
+              frequencyStability: Math.round(breakdown.frequencyStability),
+              strategyFocus: Math.round(breakdown.strategyFocus)
+            }
+          };
         }
       };
     }
@@ -1437,6 +1916,169 @@
 .market-badge .mitem span {
     color: #f8fafc;
     margin-left: 4px;
+}
+
+/* Trade Plan Section Styles */
+.trade-plan-section {
+    margin-top: 14px;
+    padding: 12px;
+    background: rgba(99, 102, 241, 0.05);
+    border: 1px solid rgba(99, 102, 241, 0.15);
+    border-radius: 10px;
+}
+
+.trade-plan-section.gated {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(139, 92, 246, 0.08));
+    border: 1px dashed rgba(99, 102, 241, 0.3);
+    cursor: pointer;
+    text-align: center;
+    padding: 16px 12px;
+    transition: all 0.2s;
+}
+
+.trade-plan-section.gated:hover {
+    border-color: rgba(99, 102, 241, 0.5);
+    background: rgba(99, 102, 241, 0.1);
+}
+
+.plan-gated-badge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: #6366f1;
+    font-weight: 700;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.plan-gated-hint {
+    color: #64748b;
+    font-size: 10px;
+    margin-top: 4px;
+}
+
+.plan-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+
+.plan-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #94a3b8;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.plan-title svg {
+    color: #6366f1;
+}
+
+.plan-tag {
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    color: white;
+    font-size: 8px;
+    font-weight: 800;
+    padding: 2px 6px;
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+}
+
+.plan-row {
+    display: flex;
+    gap: 10px;
+}
+
+.plan-field {
+    flex: 1;
+}
+
+.plan-field.full {
+    margin-top: 10px;
+}
+
+.plan-label {
+    display: block;
+    color: #64748b;
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-bottom: 4px;
+}
+
+.plan-label .optional {
+    color: #475569;
+    font-weight: 500;
+    text-transform: none;
+}
+
+.plan-input-wrap {
+    display: flex;
+    align-items: center;
+    background: #161b22;
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    border-radius: 6px;
+    overflow: hidden;
+    transition: border-color 0.2s;
+}
+
+.plan-input-wrap:focus-within {
+    border-color: #6366f1;
+}
+
+.plan-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: #f8fafc;
+    padding: 8px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    outline: none;
+    width: 100%;
+    min-width: 0;
+}
+
+.plan-input::placeholder {
+    color: #475569;
+}
+
+.plan-unit {
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 600;
+    padding-right: 10px;
+    text-transform: uppercase;
+}
+
+.plan-textarea {
+    width: 100%;
+    background: #161b22;
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    border-radius: 6px;
+    color: #f8fafc;
+    padding: 8px 10px;
+    font-size: 11px;
+    font-family: inherit;
+    outline: none;
+    resize: none;
+    transition: border-color 0.2s;
+}
+
+.plan-textarea::placeholder {
+    color: #475569;
+}
+
+.plan-textarea:focus {
+    border-color: #6366f1;
 }
 `;
 
@@ -2341,7 +2983,10 @@ input:checked + .slider:before {
     LOCK: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`,
     BRAIN: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.97-3.06 2.5 2.5 0 0 1-1.95-4.36 2.5 2.5 0 0 1 2-4.11 2.5 2.5 0 0 1 5.38-2.45Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.97-3.06 2.5 2.5 0 0 0 1.95-4.36 2.5 2.5 0 0 0-2-4.11 2.5 2.5 0 0 0-5.38-2.45Z"/></svg>`,
     SHARE: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12V4a2 2 0 0 1 2-2h10l4 4v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2"/><path d="M14 2v4h4"/><path d="m8 18 3 3 6-6"/></svg>`,
-    X: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`
+    X: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`,
+    DOWNLOAD: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`,
+    FILE_JSON: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M10 12a1 1 0 0 0-1 1v1a1 1 0 0 1-1 1 1 1 0 0 1 1 1v1a1 1 0 0 0 1 1"/><path d="M14 18a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1 1 1 0 0 1-1-1v-1a1 1 0 0 0-1-1"/></svg>`,
+    FILE_CSV: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>`
   };
 
   // src/modules/ui/banner.js
@@ -2522,11 +3167,11 @@ input:checked + .slider:before {
           return;
         }
         let currentPrice = pos.lastPriceUsd || pos.entryPriceUsd;
-        if (currentTokenMint && pos.mint === currentTokenMint && Market2.price > 0 && Market2.price < 1e4) {
-          currentPrice = Market2.price;
+        if (currentTokenMint && pos.mint === currentTokenMint && Market.price > 0 && Market.price < 1e4) {
+          currentPrice = Market.price;
           const oldPrice = pos.lastPriceUsd || pos.entryPriceUsd;
-          if (!pos.lastPriceUsd || Math.abs(oldPrice - Market2.price) / oldPrice > 1e-3) {
-            pos.lastPriceUsd = Market2.price;
+          if (!pos.lastPriceUsd || Math.abs(oldPrice - Market.price) / oldPrice > 1e-3) {
+            pos.lastPriceUsd = Market.price;
             priceWasUpdated = true;
           }
         }
@@ -2564,7 +3209,7 @@ input:checked + .slider:before {
   init_analytics();
   init_featureManager();
   var OrderExecution = {
-    async buy(amountSol, strategy = "Trend", tokenInfo = null) {
+    async buy(amountSol, strategy = "Trend", tokenInfo = null, tradePlan = null) {
       const state = Store.state;
       if (!state.settings.enabled)
         return { success: false, error: "Paper trading disabled" };
@@ -2572,8 +3217,8 @@ input:checked + .slider:before {
         return { success: false, error: "Invalid amount" };
       if (amountSol > state.session.balance)
         return { success: false, error: "Insufficient funds" };
-      let price = Market2.price || 1e-6;
-      let marketCap = Market2.marketCap || 0;
+      let price = Market.price || 1e-6;
+      let marketCap = Market.marketCap || 0;
       if (price > 1e4 && marketCap > 0 && marketCap < 1e4) {
         console.warn(`[Trading] SWAP DETECTED! Price=${price} MarketCap=${marketCap}. Swapping...`);
         [price, marketCap] = [marketCap, price];
@@ -2610,6 +3255,7 @@ input:checked + .slider:before {
       pos.lastPriceUsd = price;
       pos.totalSolSpent += amountSol;
       const tradeId = `trade_${Date.now()}_${Math.floor(Math.random() * 1e3)}`;
+      const plan = tradePlan || {};
       const trade = {
         id: tradeId,
         ts: Date.now(),
@@ -2621,7 +3267,12 @@ input:checked + .slider:before {
         priceUsd: price,
         marketCap,
         strategy: FeatureManager.resolveFlags(state, "STRATEGY_TAGGING").interactive ? strategy || "Trend" : "Trend",
-        mode: state.settings.tradingMode || "paper"
+        mode: state.settings.tradingMode || "paper",
+        // Trade Plan (PRO feature)
+        plannedStop: plan.plannedStop || null,
+        plannedTarget: plan.plannedTarget || null,
+        entryThesis: plan.entryThesis || "",
+        riskDefined: plan.riskDefined || false
       };
       if (!state.trades)
         state.trades = {};
@@ -2630,6 +3281,8 @@ input:checked + .slider:before {
         state.session.trades = [];
       state.session.trades.push(tradeId);
       Analytics.calculateDiscipline(trade, state);
+      Analytics.logTradeEvent(state, trade);
+      this.checkMilestones(trade, state);
       window.postMessage({ __paper: true, type: "PAPER_DRAW_MARKER", trade }, "*");
       await Store.save();
       return { success: true, trade, position: pos };
@@ -2638,7 +3291,7 @@ input:checked + .slider:before {
       const state = Store.state;
       if (!state.settings.enabled)
         return { success: false, error: "Paper trading disabled" };
-      let currentPrice = Market2.price || 0;
+      let currentPrice = Market.price || 0;
       if (currentPrice <= 0)
         return { success: false, error: "No price data" };
       if (currentPrice > 1e4) {
@@ -2677,7 +3330,7 @@ input:checked + .slider:before {
         solAmount: solReceived,
         tokenQty: qtyToSell,
         priceUsd: currentPrice,
-        marketCap: Market2.marketCap || 0,
+        marketCap: Market.marketCap || 0,
         realizedPnlSol,
         strategy: strategy || "Unknown",
         mode: state.settings.tradingMode || "paper"
@@ -2690,6 +3343,8 @@ input:checked + .slider:before {
       state.session.trades.push(tradeId);
       Analytics.calculateDiscipline(trade, state);
       Analytics.updateStreaks(trade, state);
+      Analytics.logTradeEvent(state, trade);
+      this.checkMilestones(trade, state);
       window.postMessage({ __paper: true, type: "PAPER_DRAW_MARKER", trade }, "*");
       await Store.save();
       return { success: true, trade };
@@ -2701,6 +3356,39 @@ input:checked + .slider:before {
       Object.assign(state.trades[tradeId], updates);
       await Store.save();
       return true;
+    },
+    checkMilestones(trade, state) {
+      const tradeCount = Object.keys(state.trades || {}).length;
+      const sellTrades = Object.values(state.trades || {}).filter((t) => t.side === "SELL");
+      const wins = sellTrades.filter((t) => (t.realizedPnlSol || 0) > 0).length;
+      if (tradeCount === 1) {
+        Analytics.logMilestone(state, "FIRST_TRADE", "First trade executed! Welcome to ZER\xD8.", { tradeCount });
+      } else if (tradeCount === 10) {
+        Analytics.logMilestone(state, "TRADE_10", "10 trades completed. Building your baseline.", { tradeCount });
+      } else if (tradeCount === 50) {
+        Analytics.logMilestone(state, "TRADE_50", "50 trades! You have a solid trading history.", { tradeCount });
+      } else if (tradeCount === 100) {
+        Analytics.logMilestone(state, "TRADE_100", "100 trades milestone! Veteran status unlocked.", { tradeCount });
+      }
+      const winStreak = state.session.winStreak || 0;
+      if (winStreak === 5) {
+        Analytics.logMilestone(state, "WIN_STREAK_5", "5 wins in a row! Keep the discipline.", { winStreak });
+      } else if (winStreak === 10) {
+        Analytics.logMilestone(state, "WIN_STREAK_10", "10 consecutive wins! Elite performance.", { winStreak });
+      }
+      const startSol = state.settings.startSol || 10;
+      const currentEquity = state.session.balance + (state.session.realized || 0);
+      const equityMultiple = currentEquity / startSol;
+      if (equityMultiple >= 2 && !state._milestone_2x) {
+        Analytics.logMilestone(state, "EQUITY_2X", "Portfolio doubled! 2x achieved.", { equityMultiple: equityMultiple.toFixed(2) });
+        state._milestone_2x = true;
+      } else if (equityMultiple >= 3 && !state._milestone_3x) {
+        Analytics.logMilestone(state, "EQUITY_3X", "Portfolio tripled! 3x achieved.", { equityMultiple: equityMultiple.toFixed(2) });
+        state._milestone_3x = true;
+      } else if (equityMultiple >= 5 && !state._milestone_5x) {
+        Analytics.logMilestone(state, "EQUITY_5X", "Portfolio 5x! Legendary.", { equityMultiple: equityMultiple.toFixed(2) });
+        state._milestone_5x = true;
+      }
     }
   };
 
@@ -2715,7 +3403,7 @@ input:checked + .slider:before {
     calculateDiscipline: (trade, state) => Analytics.calculateDiscipline(trade, state),
     updateStreaks: (trade, state) => Analytics.updateStreaks(trade, state),
     // Order Execution methods
-    buy: async (amountSol, strategy, tokenInfo) => await OrderExecution.buy(amountSol, strategy, tokenInfo),
+    buy: async (amountSol, strategy, tokenInfo, tradePlan) => await OrderExecution.buy(amountSol, strategy, tokenInfo, tradePlan),
     sell: async (pct, strategy, tokenInfo) => await OrderExecution.sell(pct, strategy, tokenInfo),
     tagTrade: async (tradeId, updates) => await OrderExecution.tagTrade(tradeId, updates)
   };
@@ -2950,6 +3638,7 @@ input:checked + .slider:before {
   // src/modules/ui/dashboard.js
   init_store();
   init_analytics();
+  init_market();
 
   // src/modules/ui/dashboard-styles.js
   var DASHBOARD_CSS = `
@@ -3139,6 +3828,7 @@ canvas#equity-canvas {
       const state = Store.state;
       const stats = Analytics.analyzeRecentTrades(state) || { winRate: "0.0", totalTrades: 0, wins: 0, losses: 0, totalPnlSol: 0 };
       const debrief = Analytics.getProfessorDebrief(state);
+      const consistency = Analytics.calculateConsistencyScore(state);
       const chartFlags = FeatureManager.resolveFlags(state, "EQUITY_CHARTS");
       const logFlags = FeatureManager.resolveFlags(state, "DETAILED_LOGS");
       const aiFlags = FeatureManager.resolveFlags(state, "ADVANCED_ANALYTICS");
@@ -3172,6 +3862,12 @@ canvas#equity-canvas {
                             <div class="dashboard-card big-stat">
                                 <div class="k">Session P&L</div>
                                 <div class="v ${stats.totalPnlSol >= 0 ? "win" : "loss"}">${stats.totalPnlSol.toFixed(4)} SOL</div>
+                            </div>
+                            <div class="dashboard-card big-stat" id="consistency-score-card">
+                                <div class="k">Consistency</div>
+                                <div class="v" style="color:${consistency.score >= 70 ? "#10b981" : consistency.score >= 50 ? "#f59e0b" : "#64748b"};">
+                                    ${consistency.score !== null ? consistency.score : "--"}
+                                </div>
                             </div>
                         </div>
 
@@ -3254,10 +3950,18 @@ canvas#equity-canvas {
                             </div>
                         </div>
 
-                        <div style="margin-top:20px;">
+                        <div style="margin-top:20px; display:flex; flex-direction:column; gap:10px;">
                             <button id="dashboard-share-btn" style="width:100%; background:#1d9bf0; color:white; border:none; padding:10px; border-radius:8px; font-weight:700; font-size:12px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px;">
                                 <span>\u{1D54F}</span> Share Session
                             </button>
+                            <div class="export-btns" style="display:flex; gap:8px;">
+                                <button id="export-csv-btn" class="export-btn" style="flex:1; background:rgba(16,185,129,0.1); color:#10b981; border:1px solid rgba(16,185,129,0.3); padding:8px; border-radius:6px; font-weight:600; font-size:11px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">
+                                    ${ICONS.FILE_CSV} Export CSV
+                                </button>
+                                <button id="export-json-btn" class="export-btn" style="flex:1; background:rgba(99,102,241,0.1); color:#6366f1; border:1px solid rgba(99,102,241,0.3); padding:8px; border-radius:6px; font-weight:600; font-size:11px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">
+                                    ${ICONS.FILE_JSON} Export JSON
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -3294,6 +3998,42 @@ canvas#equity-canvas {
             const text = Analytics.generateXShareText(state);
             const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
             window.open(url, "_blank");
+          };
+        }
+      }
+      const exportCsvBtn = overlay.querySelector("#export-csv-btn");
+      const exportJsonBtn = overlay.querySelector("#export-json-btn");
+      if (exportCsvBtn) {
+        if (logFlags.gated) {
+          exportCsvBtn.style.opacity = "0.5";
+          exportCsvBtn.onclick = () => Paywall.showUpgradeModal("DETAILED_LOGS");
+        } else {
+          exportCsvBtn.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const success = Analytics.exportTradesAsCSV(state);
+            if (success) {
+              exportCsvBtn.textContent = "Downloaded!";
+              setTimeout(() => {
+                exportCsvBtn.innerHTML = `${ICONS.FILE_CSV} Export CSV`;
+              }, 2e3);
+            }
+          };
+        }
+      }
+      if (exportJsonBtn) {
+        if (logFlags.gated) {
+          exportJsonBtn.style.opacity = "0.5";
+          exportJsonBtn.onclick = () => Paywall.showUpgradeModal("DETAILED_LOGS");
+        } else {
+          exportJsonBtn.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            Analytics.exportSessionAsJSON(state);
+            exportJsonBtn.textContent = "Downloaded!";
+            setTimeout(() => {
+              exportJsonBtn.innerHTML = `${ICONS.FILE_JSON} Export JSON`;
+            }, 2e3);
           };
         }
       }
@@ -3709,25 +4449,42 @@ canvas#equity-canvas {
     showResetModal() {
       const overlay = document.createElement("div");
       overlay.className = "confirm-modal-overlay";
+      const duration = Store.getSessionDuration();
+      const summary = Store.getSessionSummary();
       overlay.innerHTML = `
             <div class="confirm-modal">
-                <h3>Reset Session?</h3>
-                <p>Clear all history and restore balance?</p>
+                <h3>End Session?</h3>
+                <p>This will archive your current session and start fresh.</p>
+                ${summary && summary.tradeCount > 0 ? `
+                    <div style="background:rgba(20,184,166,0.1); border:1px solid rgba(20,184,166,0.2); border-radius:8px; padding:10px; margin:12px 0; font-size:11px;">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                            <span style="color:#64748b;">Duration</span>
+                            <span style="color:#f8fafc; font-weight:600;">${duration} min</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                            <span style="color:#64748b;">Trades</span>
+                            <span style="color:#f8fafc; font-weight:600;">${summary.tradeCount}</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                            <span style="color:#64748b;">Win Rate</span>
+                            <span style="color:#10b981; font-weight:600;">${summary.winRate}%</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between;">
+                            <span style="color:#64748b;">P&L</span>
+                            <span style="color:${summary.realized >= 0 ? "#10b981" : "#ef4444"}; font-weight:600;">${summary.realized >= 0 ? "+" : ""}${summary.realized.toFixed(4)} SOL</span>
+                        </div>
+                    </div>
+                ` : ""}
                 <div class="confirm-modal-buttons">
                     <button class="confirm-modal-btn cancel">Cancel</button>
-                    <button class="confirm-modal-btn confirm">Reset</button>
+                    <button class="confirm-modal-btn confirm">New Session</button>
                 </div>
             </div>
         `;
       OverlayManager.getContainer().appendChild(overlay);
       overlay.querySelector(".cancel").onclick = () => overlay.remove();
       overlay.querySelector(".confirm").onclick = async () => {
-        Store.state.session.balance = Store.state.settings.startSol;
-        Store.state.session.realized = 0;
-        Store.state.session.winStreak = 0;
-        Store.state.session.lossStreak = 0;
-        Store.state.session.trades = [];
-        Store.state.trades = {};
+        await Store.startNewSession();
         Store.state.positions = {};
         await Store.save();
         if (window.ZeroHUD && window.ZeroHUD.updateAll) {
@@ -3919,6 +4676,7 @@ canvas#equity-canvas {
                             ${(Store.state.settings.strategies || ["Trend"]).map((s) => `<option value="${s}">${s}</option>`).join("")}
                          </select>
                     </div>
+                    ${this.renderTradePlanFields()}
                     ` : ""}
 
                     <button class="${actionClass}" data-act="action">${actionText}</button>
@@ -3998,11 +4756,15 @@ canvas#equity-canvas {
             return;
           }
           status.textContent = "Executing...";
+          if (this.buyHudTab === "buy") {
+            this.savePendingPlan(root);
+          }
           const tokenInfo = TokenDetector.getCurrentToken();
+          const tradePlan = this.buyHudTab === "buy" ? this.consumePendingPlan() : null;
           let res;
           try {
             if (this.buyHudTab === "buy") {
-              res = await Trading.buy(val, strategy, tokenInfo);
+              res = await Trading.buy(val, strategy, tokenInfo, tradePlan);
             } else {
               res = await Trading.sell(val, strategy, tokenInfo);
             }
@@ -4014,6 +4776,7 @@ canvas#equity-canvas {
           if (res && res.success) {
             status.textContent = "Trade executed!";
             field.value = "";
+            this.clearPlanFields(root);
             if (window.ZeroHUD && window.ZeroHUD.updateAll) {
               window.ZeroHUD.updateAll();
             }
@@ -4024,6 +4787,9 @@ canvas#equity-canvas {
             status.textContent = res.error || "Error executing trade";
             status.style.color = "#ef4444";
           }
+        }
+        if (act === "upgrade-plan") {
+          Paywall.showUpgradeModal("TRADE_PLAN");
         }
         if (act === "edit") {
           this.buyHudEdit = !this.buyHudEdit;
@@ -4157,7 +4923,7 @@ canvas#equity-canvas {
       const flags = FeatureManager.resolveFlags(Store.state, "MARKET_CONTEXT");
       if (!flags.visible)
         return "";
-      const ctx = Market2.context;
+      const ctx = Market.context;
       const isGated = flags.gated;
       let content = "";
       if (isGated) {
@@ -4186,6 +4952,97 @@ canvas#equity-canvas {
                 ${content}
             </div>
         `;
+    },
+    renderTradePlanFields() {
+      if (!Store.state)
+        return "";
+      const flags = FeatureManager.resolveFlags(Store.state, "TRADE_PLAN");
+      if (!flags.visible)
+        return "";
+      const isGated = flags.gated;
+      const plan = Store.state.pendingPlan || {};
+      if (isGated) {
+        return `
+                <div class="trade-plan-section gated" data-act="upgrade-plan">
+                    <div class="plan-gated-badge">
+                        ${ICONS.LOCK}
+                        <span>TRADE PLAN (PRO)</span>
+                    </div>
+                    <div class="plan-gated-hint">Define stop loss, targets & thesis</div>
+                </div>
+            `;
+      }
+      return `
+            <div class="trade-plan-section">
+                <div class="plan-header">
+                    <span class="plan-title">${ICONS.TARGET} Trade Plan</span>
+                    <span class="plan-tag">PRO</span>
+                </div>
+                <div class="plan-row">
+                    <div class="plan-field">
+                        <label class="plan-label">Stop Loss</label>
+                        <div class="plan-input-wrap">
+                            <input type="text" class="plan-input" data-k="stopLoss" placeholder="0.00" value="${plan.stopLoss || ""}">
+                            <span class="plan-unit">USD</span>
+                        </div>
+                    </div>
+                    <div class="plan-field">
+                        <label class="plan-label">Target</label>
+                        <div class="plan-input-wrap">
+                            <input type="text" class="plan-input" data-k="target" placeholder="0.00" value="${plan.target || ""}">
+                            <span class="plan-unit">USD</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="plan-field full">
+                    <label class="plan-label">Entry Thesis <span class="optional">(optional)</span></label>
+                    <textarea class="plan-textarea" data-k="thesis" placeholder="Why are you taking this trade?" rows="2">${plan.thesis || ""}</textarea>
+                </div>
+            </div>
+        `;
+    },
+    // Save pending plan values as user types
+    savePendingPlan(root) {
+      if (!Store.state.pendingPlan) {
+        Store.state.pendingPlan = { stopLoss: null, target: null, thesis: "", maxRiskPct: null };
+      }
+      const stopEl = root.querySelector('[data-k="stopLoss"]');
+      const targetEl = root.querySelector('[data-k="target"]');
+      const thesisEl = root.querySelector('[data-k="thesis"]');
+      if (stopEl) {
+        const val = parseFloat(stopEl.value);
+        Store.state.pendingPlan.stopLoss = isNaN(val) ? null : val;
+      }
+      if (targetEl) {
+        const val = parseFloat(targetEl.value);
+        Store.state.pendingPlan.target = isNaN(val) ? null : val;
+      }
+      if (thesisEl) {
+        Store.state.pendingPlan.thesis = thesisEl.value.trim();
+      }
+    },
+    // Get and clear pending plan for trade execution
+    consumePendingPlan() {
+      const plan = Store.state.pendingPlan || {};
+      Store.state.pendingPlan = { stopLoss: null, target: null, thesis: "", maxRiskPct: null };
+      return {
+        plannedStop: plan.stopLoss || null,
+        plannedTarget: plan.target || null,
+        entryThesis: plan.thesis || "",
+        riskDefined: !!(plan.stopLoss && plan.stopLoss > 0)
+      };
+    },
+    // Clear plan input fields in the UI
+    clearPlanFields(root) {
+      const stopEl = root.querySelector('[data-k="stopLoss"]');
+      const targetEl = root.querySelector('[data-k="target"]');
+      const thesisEl = root.querySelector('[data-k="thesis"]');
+      if (stopEl)
+        stopEl.value = "";
+      if (targetEl)
+        targetEl.value = "";
+      if (thesisEl)
+        thesisEl.value = "";
     }
   };
 
@@ -4203,7 +5060,7 @@ canvas#equity-canvas {
           window.postMessage({ __paper: true, type: "PAPER_DRAW_ALL", trades }, "*");
         }, 2e3);
       }
-      Market2.subscribe(async () => {
+      Market.subscribe(async () => {
         await PnlHud.updatePnlHud();
       });
     },
@@ -4306,7 +5163,7 @@ canvas#equity-canvas {
     }
     try {
       console.log("[ZER\xD8] Init Market...");
-      Market2.init();
+      Market.init();
     } catch (e) {
       console.error("[ZER\xD8] Market Init Failed:", e);
     }

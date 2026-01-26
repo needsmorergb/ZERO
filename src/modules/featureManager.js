@@ -14,6 +14,7 @@ export const FEATURES = {
     EMOTION_TRACKING: 'pro',
     DISCIPLINE_SCORING: 'pro',
     AI_DEBRIEF: 'pro',
+    TRADE_PLAN: 'pro',  // Stop loss, targets, thesis capture
 
     // Phase 5-6: Advanced Pro
     EQUITY_CHARTS: 'pro',

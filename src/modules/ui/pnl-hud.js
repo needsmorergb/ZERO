@@ -331,13 +331,36 @@ export const PnlHud = {
     showResetModal() {
         const overlay = document.createElement('div');
         overlay.className = 'confirm-modal-overlay';
+        const duration = Store.getSessionDuration();
+        const summary = Store.getSessionSummary();
+
         overlay.innerHTML = `
             <div class="confirm-modal">
-                <h3>Reset Session?</h3>
-                <p>Clear all history and restore balance?</p>
+                <h3>End Session?</h3>
+                <p>This will archive your current session and start fresh.</p>
+                ${summary && summary.tradeCount > 0 ? `
+                    <div style="background:rgba(20,184,166,0.1); border:1px solid rgba(20,184,166,0.2); border-radius:8px; padding:10px; margin:12px 0; font-size:11px;">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                            <span style="color:#64748b;">Duration</span>
+                            <span style="color:#f8fafc; font-weight:600;">${duration} min</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                            <span style="color:#64748b;">Trades</span>
+                            <span style="color:#f8fafc; font-weight:600;">${summary.tradeCount}</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                            <span style="color:#64748b;">Win Rate</span>
+                            <span style="color:#10b981; font-weight:600;">${summary.winRate}%</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between;">
+                            <span style="color:#64748b;">P&L</span>
+                            <span style="color:${summary.realized >= 0 ? '#10b981' : '#ef4444'}; font-weight:600;">${summary.realized >= 0 ? '+' : ''}${summary.realized.toFixed(4)} SOL</span>
+                        </div>
+                    </div>
+                ` : ''}
                 <div class="confirm-modal-buttons">
                     <button class="confirm-modal-btn cancel">Cancel</button>
-                    <button class="confirm-modal-btn confirm">Reset</button>
+                    <button class="confirm-modal-btn confirm">New Session</button>
                 </div>
             </div>
         `;
@@ -345,14 +368,13 @@ export const PnlHud = {
 
         overlay.querySelector('.cancel').onclick = () => overlay.remove();
         overlay.querySelector('.confirm').onclick = async () => {
-            Store.state.session.balance = Store.state.settings.startSol;
-            Store.state.session.realized = 0;
-            Store.state.session.winStreak = 0;
-            Store.state.session.lossStreak = 0;
-            Store.state.session.trades = [];
-            Store.state.trades = {};
+            // Use the new session management
+            await Store.startNewSession();
+
+            // Clear positions for new session
             Store.state.positions = {};
             await Store.save();
+
             // Trigger update through HUD
             if (window.ZeroHUD && window.ZeroHUD.updateAll) {
                 window.ZeroHUD.updateAll();

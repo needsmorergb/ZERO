@@ -21,22 +21,34 @@ const DEFAULTS = {
         featureOverrides: {}, // For remote kill-switches
         behavioralAlerts: true // Phase 9: Elite Guardrails
     },
-    // Runtime state (not always persisted fully, but structure is here)
+    // Session as first-class object
     session: {
+        id: null,              // Unique session ID
+        startTime: 0,          // Session start timestamp
+        endTime: null,         // Session end timestamp (null if active)
         balance: 10,
         equity: 10,
         realized: 0,
-        trades: [], // IDs
-        equityHistory: [], // [{ts, equity}]
+        trades: [],            // Trade IDs in this session
+        equityHistory: [],     // [{ts, equity}]
         winStreak: 0,
         lossStreak: 0,
-        startTime: 0,
         tradeCount: 0,
         disciplineScore: 100,
-        activeAlerts: [] // {type, message, ts}
+        activeAlerts: [],      // {type, message, ts}
+        status: 'active'       // 'active' | 'completed' | 'abandoned'
     },
-    trades: {}, // Map ID -> Trade Object { id, strategy, emotion, ... }
+    // Session history (archived sessions)
+    sessionHistory: [],        // Array of completed session objects
+    trades: {}, // Map ID -> Trade Object { id, strategy, emotion, plannedStop, plannedTarget, entryThesis, riskDefined, ... }
     positions: {},
+    // Pending trade plan (cleared after trade execution)
+    pendingPlan: {
+        stopLoss: null,      // Price in USD or % below entry
+        target: null,        // Price in USD or % above entry
+        thesis: '',          // Entry reasoning
+        maxRiskPct: null     // Max % of balance to risk
+    },
     behavior: {
         tiltFrequency: 0,
         panicSells: 0,
@@ -47,6 +59,9 @@ const DEFAULTS = {
         strategyDriftFrequency: 0,
         profile: 'Disciplined'
     },
+    // Persistent Event Log (up to 100 events)
+    eventLog: [], // { ts, type, category, message, data }
+    // Categories: TRADE, ALERT, DISCIPLINE, SYSTEM, MILESTONE
     schemaVersion: 2,
     version: '1.10.7'
 };
@@ -197,6 +212,98 @@ export const Store = {
     validateState() {
         if (this.state) {
             this.state.settings.startSol = parseFloat(this.state.settings.startSol) || 10;
+
+            // Ensure session has an ID
+            if (!this.state.session.id) {
+                this.state.session.id = this.generateSessionId();
+                this.state.session.startTime = Date.now();
+            }
         }
+    },
+
+    generateSessionId() {
+        return `session_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+    },
+
+    // Start a new session (archive current if it has trades)
+    async startNewSession() {
+        const currentSession = this.state.session;
+
+        // Archive current session if it has trades
+        if (currentSession.trades && currentSession.trades.length > 0) {
+            currentSession.endTime = Date.now();
+            currentSession.status = 'completed';
+
+            if (!this.state.sessionHistory) this.state.sessionHistory = [];
+            this.state.sessionHistory.push({ ...currentSession });
+
+            // Keep only last 10 sessions
+            if (this.state.sessionHistory.length > 10) {
+                this.state.sessionHistory = this.state.sessionHistory.slice(-10);
+            }
+        }
+
+        // Create fresh session
+        const startSol = this.state.settings.startSol || 10;
+        this.state.session = {
+            id: this.generateSessionId(),
+            startTime: Date.now(),
+            endTime: null,
+            balance: startSol,
+            equity: startSol,
+            realized: 0,
+            trades: [],
+            equityHistory: [],
+            winStreak: 0,
+            lossStreak: 0,
+            tradeCount: 0,
+            disciplineScore: 100,
+            activeAlerts: [],
+            status: 'active'
+        };
+
+        // Don't clear trades/positions - they're still valid for history
+        // But clear milestone flags
+        delete this.state._milestone_2x;
+        delete this.state._milestone_3x;
+        delete this.state._milestone_5x;
+
+        await this.save();
+        return this.state.session;
+    },
+
+    // Get current session duration in minutes
+    getSessionDuration() {
+        const session = this.state?.session;
+        if (!session || !session.startTime) return 0;
+        const endTime = session.endTime || Date.now();
+        return Math.floor((endTime - session.startTime) / 60000);
+    },
+
+    // Get session summary
+    getSessionSummary() {
+        const session = this.state?.session;
+        if (!session) return null;
+
+        const trades = session.trades || [];
+        const sellTrades = trades
+            .map(id => this.state.trades[id])
+            .filter(t => t && t.side === 'SELL');
+
+        const wins = sellTrades.filter(t => (t.realizedPnlSol || 0) > 0).length;
+        const losses = sellTrades.filter(t => (t.realizedPnlSol || 0) < 0).length;
+        const winRate = sellTrades.length > 0 ? (wins / sellTrades.length * 100).toFixed(1) : 0;
+
+        return {
+            id: session.id,
+            duration: this.getSessionDuration(),
+            tradeCount: trades.length,
+            wins,
+            losses,
+            winRate,
+            realized: session.realized,
+            disciplineScore: session.disciplineScore,
+            status: session.status
+        };
     }
 };

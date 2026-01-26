@@ -83,6 +83,7 @@ export const BuyHud = {
                             ${(Store.state.settings.strategies || ["Trend"]).map(s => `<option value="${s}">${s}</option>`).join('')}
                          </select>
                     </div>
+                    ${this.renderTradePlanFields()}
                     ` : ''}
 
                     <button class="${actionClass}" data-act="action">${actionText}</button>
@@ -174,13 +175,21 @@ export const BuyHud = {
 
                 status.textContent = "Executing...";
 
+                // Save pending plan before execution (for BUY only)
+                if (this.buyHudTab === 'buy') {
+                    this.savePendingPlan(root);
+                }
+
                 // Capture token info
                 const tokenInfo = TokenDetector.getCurrentToken();
+
+                // Get trade plan data (BUY only)
+                const tradePlan = this.buyHudTab === 'buy' ? this.consumePendingPlan() : null;
 
                 let res;
                 try {
                     if (this.buyHudTab === 'buy') {
-                        res = await Trading.buy(val, strategy, tokenInfo);
+                        res = await Trading.buy(val, strategy, tokenInfo, tradePlan);
                     } else {
                         res = await Trading.sell(val, strategy, tokenInfo);
                     }
@@ -193,6 +202,8 @@ export const BuyHud = {
                 if (res && res.success) {
                     status.textContent = "Trade executed!";
                     field.value = "";
+                    // Clear plan fields after successful trade
+                    this.clearPlanFields(root);
                     // Trigger update through HUD
                     if (window.ZeroHUD && window.ZeroHUD.updateAll) {
                         window.ZeroHUD.updateAll();
@@ -205,6 +216,9 @@ export const BuyHud = {
                     status.textContent = res.error || "Error executing trade";
                     status.style.color = "#ef4444";
                 }
+            }
+            if (act === 'upgrade-plan') {
+                Paywall.showUpgradeModal('TRADE_PLAN');
             }
             if (act === 'edit') {
                 // Toggle edit mode for quick buttons (Future: implement editing UI)
@@ -386,5 +400,102 @@ export const BuyHud = {
                 ${content}
             </div>
         `;
+    },
+
+    renderTradePlanFields() {
+        if (!Store.state) return '';
+        const flags = FeatureManager.resolveFlags(Store.state, 'TRADE_PLAN');
+        if (!flags.visible) return '';
+
+        const isGated = flags.gated;
+        const plan = Store.state.pendingPlan || {};
+
+        if (isGated) {
+            return `
+                <div class="trade-plan-section gated" data-act="upgrade-plan">
+                    <div class="plan-gated-badge">
+                        ${ICONS.LOCK}
+                        <span>TRADE PLAN (PRO)</span>
+                    </div>
+                    <div class="plan-gated-hint">Define stop loss, targets & thesis</div>
+                </div>
+            `;
+        }
+
+        return `
+            <div class="trade-plan-section">
+                <div class="plan-header">
+                    <span class="plan-title">${ICONS.TARGET} Trade Plan</span>
+                    <span class="plan-tag">PRO</span>
+                </div>
+                <div class="plan-row">
+                    <div class="plan-field">
+                        <label class="plan-label">Stop Loss</label>
+                        <div class="plan-input-wrap">
+                            <input type="text" class="plan-input" data-k="stopLoss" placeholder="0.00" value="${plan.stopLoss || ''}">
+                            <span class="plan-unit">USD</span>
+                        </div>
+                    </div>
+                    <div class="plan-field">
+                        <label class="plan-label">Target</label>
+                        <div class="plan-input-wrap">
+                            <input type="text" class="plan-input" data-k="target" placeholder="0.00" value="${plan.target || ''}">
+                            <span class="plan-unit">USD</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="plan-field full">
+                    <label class="plan-label">Entry Thesis <span class="optional">(optional)</span></label>
+                    <textarea class="plan-textarea" data-k="thesis" placeholder="Why are you taking this trade?" rows="2">${plan.thesis || ''}</textarea>
+                </div>
+            </div>
+        `;
+    },
+
+    // Save pending plan values as user types
+    savePendingPlan(root) {
+        if (!Store.state.pendingPlan) {
+            Store.state.pendingPlan = { stopLoss: null, target: null, thesis: '', maxRiskPct: null };
+        }
+
+        const stopEl = root.querySelector('[data-k="stopLoss"]');
+        const targetEl = root.querySelector('[data-k="target"]');
+        const thesisEl = root.querySelector('[data-k="thesis"]');
+
+        if (stopEl) {
+            const val = parseFloat(stopEl.value);
+            Store.state.pendingPlan.stopLoss = isNaN(val) ? null : val;
+        }
+        if (targetEl) {
+            const val = parseFloat(targetEl.value);
+            Store.state.pendingPlan.target = isNaN(val) ? null : val;
+        }
+        if (thesisEl) {
+            Store.state.pendingPlan.thesis = thesisEl.value.trim();
+        }
+    },
+
+    // Get and clear pending plan for trade execution
+    consumePendingPlan() {
+        const plan = Store.state.pendingPlan || {};
+        // Reset after consuming
+        Store.state.pendingPlan = { stopLoss: null, target: null, thesis: '', maxRiskPct: null };
+        return {
+            plannedStop: plan.stopLoss || null,
+            plannedTarget: plan.target || null,
+            entryThesis: plan.thesis || '',
+            riskDefined: !!(plan.stopLoss && plan.stopLoss > 0)
+        };
+    },
+
+    // Clear plan input fields in the UI
+    clearPlanFields(root) {
+        const stopEl = root.querySelector('[data-k="stopLoss"]');
+        const targetEl = root.querySelector('[data-k="target"]');
+        const thesisEl = root.querySelector('[data-k="thesis"]');
+
+        if (stopEl) stopEl.value = '';
+        if (targetEl) targetEl.value = '';
+        if (thesisEl) thesisEl.value = '';
     }
 };

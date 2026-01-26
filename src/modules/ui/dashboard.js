@@ -2,6 +2,7 @@ import { Store } from '../store.js';
 import { OverlayManager } from './overlay.js';
 import { Analytics } from '../core/analytics.js';
 import { Trading } from '../core/trading.js';
+import { Market } from '../core/market.js';
 import { DASHBOARD_CSS } from './dashboard-styles.js';
 import { IDS } from './ids.js';
 import { Paywall } from './paywall.js';
@@ -49,6 +50,7 @@ export const Dashboard = {
         const state = Store.state;
         const stats = Analytics.analyzeRecentTrades(state) || { winRate: "0.0", totalTrades: 0, wins: 0, losses: 0, totalPnlSol: 0 };
         const debrief = Analytics.getProfessorDebrief(state);
+        const consistency = Analytics.calculateConsistencyScore(state);
 
         const chartFlags = FeatureManager.resolveFlags(state, 'EQUITY_CHARTS');
         const logFlags = FeatureManager.resolveFlags(state, 'DETAILED_LOGS');
@@ -85,6 +87,12 @@ export const Dashboard = {
                             <div class="dashboard-card big-stat">
                                 <div class="k">Session P&L</div>
                                 <div class="v ${stats.totalPnlSol >= 0 ? 'win' : 'loss'}">${stats.totalPnlSol.toFixed(4)} SOL</div>
+                            </div>
+                            <div class="dashboard-card big-stat" id="consistency-score-card">
+                                <div class="k">Consistency</div>
+                                <div class="v" style="color:${consistency.score >= 70 ? '#10b981' : consistency.score >= 50 ? '#f59e0b' : '#64748b'};">
+                                    ${consistency.score !== null ? consistency.score : '--'}
+                                </div>
                             </div>
                         </div>
 
@@ -167,10 +175,18 @@ export const Dashboard = {
                             </div>
                         </div>
 
-                        <div style="margin-top:20px;">
+                        <div style="margin-top:20px; display:flex; flex-direction:column; gap:10px;">
                             <button id="dashboard-share-btn" style="width:100%; background:#1d9bf0; color:white; border:none; padding:10px; border-radius:8px; font-weight:700; font-size:12px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px;">
                                 <span>𝕏</span> Share Session
                             </button>
+                            <div class="export-btns" style="display:flex; gap:8px;">
+                                <button id="export-csv-btn" class="export-btn" style="flex:1; background:rgba(16,185,129,0.1); color:#10b981; border:1px solid rgba(16,185,129,0.3); padding:8px; border-radius:6px; font-weight:600; font-size:11px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">
+                                    ${ICONS.FILE_CSV} Export CSV
+                                </button>
+                                <button id="export-json-btn" class="export-btn" style="flex:1; background:rgba(99,102,241,0.1); color:#6366f1; border:1px solid rgba(99,102,241,0.3); padding:8px; border-radius:6px; font-weight:600; font-size:11px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">
+                                    ${ICONS.FILE_JSON} Export JSON
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -212,6 +228,42 @@ export const Dashboard = {
                     const text = Analytics.generateXShareText(state);
                     const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
                     window.open(url, '_blank');
+                };
+            }
+        }
+
+        // Export Buttons
+        const exportCsvBtn = overlay.querySelector('#export-csv-btn');
+        const exportJsonBtn = overlay.querySelector('#export-json-btn');
+
+        if (exportCsvBtn) {
+            if (logFlags.gated) {
+                exportCsvBtn.style.opacity = '0.5';
+                exportCsvBtn.onclick = () => Paywall.showUpgradeModal('DETAILED_LOGS');
+            } else {
+                exportCsvBtn.onclick = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const success = Analytics.exportTradesAsCSV(state);
+                    if (success) {
+                        exportCsvBtn.textContent = 'Downloaded!';
+                        setTimeout(() => { exportCsvBtn.innerHTML = `${ICONS.FILE_CSV} Export CSV`; }, 2000);
+                    }
+                };
+            }
+        }
+
+        if (exportJsonBtn) {
+            if (logFlags.gated) {
+                exportJsonBtn.style.opacity = '0.5';
+                exportJsonBtn.onclick = () => Paywall.showUpgradeModal('DETAILED_LOGS');
+            } else {
+                exportJsonBtn.onclick = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    Analytics.exportSessionAsJSON(state);
+                    exportJsonBtn.textContent = 'Downloaded!';
+                    setTimeout(() => { exportJsonBtn.innerHTML = `${ICONS.FILE_JSON} Export JSON`; }, 2000);
                 };
             }
         }

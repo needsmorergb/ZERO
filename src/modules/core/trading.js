@@ -16,7 +16,7 @@ export const Trading = {
     updateStreaks: (trade, state) => Analytics.updateStreaks(trade, state),
 
     // Order Execution methods
-    buy: async (amountSol, strategy, tokenInfo) => await OrderExecution.buy(amountSol, strategy, tokenInfo),
+    buy: async (amountSol, strategy, tokenInfo, tradePlan) => await OrderExecution.buy(amountSol, strategy, tokenInfo, tradePlan),
     sell: async (pct, strategy, tokenInfo) => await OrderExecution.sell(pct, strategy, tokenInfo),
     tagTrade: async (tradeId, updates) => await OrderExecution.tagTrade(tradeId, updates)
 };

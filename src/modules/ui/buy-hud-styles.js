@@ -288,4 +288,167 @@ export const BUY_HUD_CSS = `
     color: #f8fafc;
     margin-left: 4px;
 }
+
+/* Trade Plan Section Styles */
+.trade-plan-section {
+    margin-top: 14px;
+    padding: 12px;
+    background: rgba(99, 102, 241, 0.05);
+    border: 1px solid rgba(99, 102, 241, 0.15);
+    border-radius: 10px;
+}
+
+.trade-plan-section.gated {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(139, 92, 246, 0.08));
+    border: 1px dashed rgba(99, 102, 241, 0.3);
+    cursor: pointer;
+    text-align: center;
+    padding: 16px 12px;
+    transition: all 0.2s;
+}
+
+.trade-plan-section.gated:hover {
+    border-color: rgba(99, 102, 241, 0.5);
+    background: rgba(99, 102, 241, 0.1);
+}
+
+.plan-gated-badge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: #6366f1;
+    font-weight: 700;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.plan-gated-hint {
+    color: #64748b;
+    font-size: 10px;
+    margin-top: 4px;
+}
+
+.plan-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+
+.plan-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #94a3b8;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.plan-title svg {
+    color: #6366f1;
+}
+
+.plan-tag {
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    color: white;
+    font-size: 8px;
+    font-weight: 800;
+    padding: 2px 6px;
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+}
+
+.plan-row {
+    display: flex;
+    gap: 10px;
+}
+
+.plan-field {
+    flex: 1;
+}
+
+.plan-field.full {
+    margin-top: 10px;
+}
+
+.plan-label {
+    display: block;
+    color: #64748b;
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-bottom: 4px;
+}
+
+.plan-label .optional {
+    color: #475569;
+    font-weight: 500;
+    text-transform: none;
+}
+
+.plan-input-wrap {
+    display: flex;
+    align-items: center;
+    background: #161b22;
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    border-radius: 6px;
+    overflow: hidden;
+    transition: border-color 0.2s;
+}
+
+.plan-input-wrap:focus-within {
+    border-color: #6366f1;
+}
+
+.plan-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: #f8fafc;
+    padding: 8px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    outline: none;
+    width: 100%;
+    min-width: 0;
+}
+
+.plan-input::placeholder {
+    color: #475569;
+}
+
+.plan-unit {
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 600;
+    padding-right: 10px;
+    text-transform: uppercase;
+}
+
+.plan-textarea {
+    width: 100%;
+    background: #161b22;
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    border-radius: 6px;
+    color: #f8fafc;
+    padding: 8px 10px;
+    font-size: 11px;
+    font-family: inherit;
+    outline: none;
+    resize: none;
+    transition: border-color 0.2s;
+}
+
+.plan-textarea::placeholder {
+    color: #475569;
+}
+
+.plan-textarea:focus {
+    border-color: #6366f1;
+}
 `;

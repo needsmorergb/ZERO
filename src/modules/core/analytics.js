@@ -2,7 +2,106 @@ import { Store } from '../store.js';
 import { FeatureManager } from '../featureManager.js';
 import { Market } from './market.js';
 
+// Event Categories
+export const EVENT_CATEGORIES = {
+    TRADE: 'TRADE',
+    ALERT: 'ALERT',
+    DISCIPLINE: 'DISCIPLINE',
+    SYSTEM: 'SYSTEM',
+    MILESTONE: 'MILESTONE'
+};
+
 export const Analytics = {
+    // ==========================================
+    // PERSISTENT EVENT LOGGING
+    // ==========================================
+
+    logEvent(state, type, category, message, data = {}) {
+        if (!state.eventLog) state.eventLog = [];
+
+        const event = {
+            id: `evt_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+            ts: Date.now(),
+            type,
+            category,
+            message,
+            data
+        };
+
+        state.eventLog.push(event);
+
+        // Keep only last 100 events
+        if (state.eventLog.length > 100) {
+            state.eventLog = state.eventLog.slice(-100);
+        }
+
+        console.log(`[EVENT LOG] [${category}] ${type}: ${message}`);
+        return event;
+    },
+
+    logTradeEvent(state, trade) {
+        const pnlText = trade.realizedPnlSol
+            ? `P&L: ${trade.realizedPnlSol > 0 ? '+' : ''}${trade.realizedPnlSol.toFixed(4)} SOL`
+            : `Size: ${trade.solAmount.toFixed(4)} SOL`;
+
+        const message = `${trade.side} ${trade.symbol} @ $${trade.priceUsd?.toFixed(6) || 'N/A'} | ${pnlText}`;
+
+        this.logEvent(state, trade.side, EVENT_CATEGORIES.TRADE, message, {
+            tradeId: trade.id,
+            symbol: trade.symbol,
+            priceUsd: trade.priceUsd,
+            solAmount: trade.solAmount,
+            realizedPnlSol: trade.realizedPnlSol,
+            strategy: trade.strategy,
+            riskDefined: trade.riskDefined
+        });
+    },
+
+    logDisciplineEvent(state, score, penalty, reasons) {
+        if (penalty <= 0) return;
+
+        const message = `Discipline -${penalty} pts: ${reasons.join(', ')}`;
+        this.logEvent(state, 'PENALTY', EVENT_CATEGORIES.DISCIPLINE, message, {
+            score,
+            penalty,
+            reasons
+        });
+    },
+
+    logAlertEvent(state, alertType, message) {
+        this.logEvent(state, alertType, EVENT_CATEGORIES.ALERT, message, { alertType });
+    },
+
+    logMilestone(state, type, message, data = {}) {
+        this.logEvent(state, type, EVENT_CATEGORIES.MILESTONE, message, data);
+    },
+
+    getEventLog(state, options = {}) {
+        const { category, limit = 50, offset = 0 } = options;
+        let events = state.eventLog || [];
+
+        if (category) {
+            events = events.filter(e => e.category === category);
+        }
+
+        // Sort by timestamp descending (most recent first)
+        events = events.sort((a, b) => b.ts - a.ts);
+
+        return events.slice(offset, offset + limit);
+    },
+
+    getEventStats(state) {
+        const events = state.eventLog || [];
+        const stats = {
+            total: events.length,
+            trades: events.filter(e => e.category === EVENT_CATEGORIES.TRADE).length,
+            alerts: events.filter(e => e.category === EVENT_CATEGORIES.ALERT).length,
+            disciplineEvents: events.filter(e => e.category === EVENT_CATEGORIES.DISCIPLINE).length,
+            milestones: events.filter(e => e.category === EVENT_CATEGORIES.MILESTONE).length
+        };
+        return stats;
+    },
+
     analyzeRecentTrades(state) {
         const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
         if (trades.length === 0) return null;
@@ -85,6 +184,22 @@ export const Analytics = {
                 penalty += 20;
                 reasons.push("Oversizing (>50%)");
             }
+
+            // 4. No Trade Plan (PRO feature - only penalize if feature is available)
+            const planFlags = FeatureManager.resolveFlags(state, 'TRADE_PLAN');
+            if (planFlags.interactive && !trade.riskDefined) {
+                penalty += 5;
+                reasons.push("No Stop Loss Defined");
+            }
+        }
+
+        // 5. Plan vs Actual - Stop Violation Check (on SELL trades)
+        if (trade.side === "SELL") {
+            const result = this.checkPlanAdherence(trade, state);
+            if (result.penalty > 0) {
+                penalty += result.penalty;
+                reasons.push(...result.reasons);
+            }
         }
 
         // Apply
@@ -94,9 +209,100 @@ export const Analytics = {
 
         if (penalty > 0) {
             console.log(`[DISCIPLINE] Score -${penalty} (${reasons.join(', ')})`);
+            this.logDisciplineEvent(state, score, penalty, reasons);
         }
 
         return { score, penalty, reasons };
+    },
+
+    // Check if trade exit adhered to the original plan
+    checkPlanAdherence(sellTrade, state) {
+        let penalty = 0;
+        const reasons = [];
+
+        // Find the corresponding BUY trade for this position
+        const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+        const buyTrade = trades.find(t =>
+            t.side === 'BUY' &&
+            t.mint === sellTrade.mint &&
+            t.ts < sellTrade.ts &&
+            t.riskDefined
+        );
+
+        if (!buyTrade || !buyTrade.plannedStop) return { penalty: 0, reasons: [] };
+
+        const exitPrice = sellTrade.priceUsd;
+        const plannedStop = buyTrade.plannedStop;
+        const plannedTarget = buyTrade.plannedTarget;
+        const entryPrice = buyTrade.priceUsd;
+
+        // Stop Violation: Sold below the planned stop (didn't honor stop)
+        // This means the trader held through the stop and then sold at an even worse price
+        if (exitPrice < plannedStop && sellTrade.realizedPnlSol < 0) {
+            const violationPct = ((plannedStop - exitPrice) / plannedStop * 100).toFixed(1);
+            penalty += 15;
+            reasons.push(`Stop Violated (-${violationPct}% below stop)`);
+        }
+
+        // Early Exit: Sold significantly before target while in profit
+        // Only flag if they had a target and exited way below it while still profitable
+        if (plannedTarget && exitPrice < plannedTarget && sellTrade.realizedPnlSol > 0) {
+            const targetDistance = ((plannedTarget - exitPrice) / plannedTarget * 100);
+            // Only penalize if they left more than 30% of the target on the table
+            if (targetDistance > 30) {
+                penalty += 5;
+                reasons.push("Early Exit (Left >30% gains)");
+            }
+        }
+
+        // Store adherence data on the sell trade for analytics
+        sellTrade.planAdherence = {
+            hadPlan: true,
+            plannedStop,
+            plannedTarget,
+            entryPrice,
+            exitPrice,
+            stopViolated: exitPrice < plannedStop && sellTrade.realizedPnlSol < 0,
+            hitTarget: plannedTarget && exitPrice >= plannedTarget
+        };
+
+        return { penalty, reasons };
+    },
+
+    // Calculate R-Multiple for a trade (requires defined risk)
+    calculateRMultiple(sellTrade, state) {
+        const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+        const buyTrade = trades.find(t =>
+            t.side === 'BUY' &&
+            t.mint === sellTrade.mint &&
+            t.ts < sellTrade.ts &&
+            t.riskDefined
+        );
+
+        if (!buyTrade || !buyTrade.plannedStop) return null;
+
+        const entryPrice = buyTrade.priceUsd;
+        const exitPrice = sellTrade.priceUsd;
+        const stopPrice = buyTrade.plannedStop;
+
+        // Risk per unit = entry - stop
+        const riskPerUnit = entryPrice - stopPrice;
+        if (riskPerUnit <= 0) return null; // Invalid stop (above entry)
+
+        // P&L per unit = exit - entry
+        const pnlPerUnit = exitPrice - entryPrice;
+
+        // R-Multiple = P&L / Risk
+        const rMultiple = pnlPerUnit / riskPerUnit;
+
+        return {
+            rMultiple: parseFloat(rMultiple.toFixed(2)),
+            entryPrice,
+            exitPrice,
+            stopPrice,
+            riskPerUnit,
+            pnlPerUnit
+        };
     },
 
     updateStreaks(trade, state) {
@@ -267,8 +473,11 @@ export const Analytics = {
         const alert = { type, message, ts: Date.now() };
         state.session.activeAlerts.push(alert);
 
-        // Keep only last 3 alerts
+        // Keep only last 3 alerts (for active display)
         if (state.session.activeAlerts.length > 3) state.session.activeAlerts.shift();
+
+        // Log to persistent event log
+        this.logAlertEvent(state, type, message);
 
         console.log(`[ELITE ALERT] ${type}: ${message}`);
     },
@@ -344,5 +553,266 @@ export const Analytics = {
         text += `#Solana #PaperTrading #Crypto`;
 
         return text;
+    },
+
+    // ==========================================
+    // EXPORT FUNCTIONALITY
+    // ==========================================
+
+    exportToCSV(state) {
+        const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+        if (trades.length === 0) return null;
+
+        // CSV Header
+        const headers = [
+            'Trade ID',
+            'Timestamp',
+            'Side',
+            'Symbol',
+            'Token Mint',
+            'SOL Amount',
+            'Token Qty',
+            'Price USD',
+            'Market Cap',
+            'Realized PnL (SOL)',
+            'Strategy',
+            'Emotion',
+            'Mode',
+            'Planned Stop',
+            'Planned Target',
+            'Risk Defined',
+            'Entry Thesis'
+        ];
+
+        const rows = trades.map(t => [
+            t.id,
+            new Date(t.ts).toISOString(),
+            t.side,
+            t.symbol || '',
+            t.mint || '',
+            t.solAmount?.toFixed(6) || '',
+            t.tokenQty?.toFixed(6) || '',
+            t.priceUsd?.toFixed(8) || '',
+            t.marketCap?.toFixed(2) || '',
+            t.realizedPnlSol?.toFixed(6) || '',
+            t.strategy || '',
+            t.emotion || '',
+            t.mode || 'paper',
+            t.plannedStop?.toFixed(8) || '',
+            t.plannedTarget?.toFixed(8) || '',
+            t.riskDefined ? 'Yes' : 'No',
+            `"${(t.entryThesis || '').replace(/"/g, '""')}"`
+        ]);
+
+        const csvContent = [
+            headers.join(','),
+            ...rows.map(r => r.join(','))
+        ].join('\n');
+
+        return csvContent;
+    },
+
+    exportToJSON(state) {
+        const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+        const session = state.session || {};
+        const behavior = state.behavior || {};
+
+        const exportData = {
+            exportedAt: new Date().toISOString(),
+            version: state.version || '1.0.0',
+            session: {
+                balance: session.balance,
+                equity: session.equity,
+                realized: session.realized,
+                winStreak: session.winStreak,
+                lossStreak: session.lossStreak,
+                disciplineScore: session.disciplineScore,
+                tradeCount: trades.length
+            },
+            behavior: {
+                profile: behavior.profile,
+                tiltFrequency: behavior.tiltFrequency,
+                fomoTrades: behavior.fomoTrades,
+                panicSells: behavior.panicSells,
+                sunkCostFrequency: behavior.sunkCostFrequency,
+                overtradingFrequency: behavior.overtradingFrequency,
+                profitNeglectFrequency: behavior.profitNeglectFrequency
+            },
+            analytics: this.analyzeRecentTrades(state),
+            trades: trades.map(t => ({
+                id: t.id,
+                timestamp: new Date(t.ts).toISOString(),
+                side: t.side,
+                symbol: t.symbol,
+                mint: t.mint,
+                solAmount: t.solAmount,
+                tokenQty: t.tokenQty,
+                priceUsd: t.priceUsd,
+                marketCap: t.marketCap,
+                realizedPnlSol: t.realizedPnlSol,
+                strategy: t.strategy,
+                emotion: t.emotion,
+                mode: t.mode,
+                tradePlan: {
+                    plannedStop: t.plannedStop,
+                    plannedTarget: t.plannedTarget,
+                    entryThesis: t.entryThesis,
+                    riskDefined: t.riskDefined
+                },
+                planAdherence: t.planAdherence || null
+            }))
+        };
+
+        return JSON.stringify(exportData, null, 2);
+    },
+
+    downloadExport(content, filename, mimeType) {
+        const blob = new Blob([content], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    },
+
+    exportTradesAsCSV(state) {
+        const csv = this.exportToCSV(state);
+        if (!csv) {
+            console.warn('[Export] No trades to export');
+            return false;
+        }
+        const filename = `zero_trades_${new Date().toISOString().split('T')[0]}.csv`;
+        this.downloadExport(csv, filename, 'text/csv;charset=utf-8;');
+        return true;
+    },
+
+    exportSessionAsJSON(state) {
+        const json = this.exportToJSON(state);
+        const filename = `zero_session_${new Date().toISOString().split('T')[0]}.json`;
+        this.downloadExport(json, filename, 'application/json');
+        return true;
+    },
+
+    // ==========================================
+    // CONSISTENCY SCORE
+    // ==========================================
+
+    /**
+     * Calculate Consistency Score (0-100)
+     * Measures:
+     * - Win Rate Stability (variance in rolling win rate)
+     * - Position Sizing Consistency (variance in trade sizes)
+     * - Trade Frequency Stability (time between trades)
+     * - Strategy Focus (% of trades using top 2 strategies)
+     */
+    calculateConsistencyScore(state) {
+        const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+        if (trades.length < 5) {
+            return { score: null, message: 'Need 5+ trades for consistency score', breakdown: null };
+        }
+
+        const breakdown = {
+            winRateStability: 0,
+            sizingConsistency: 0,
+            frequencyStability: 0,
+            strategyFocus: 0
+        };
+
+        // 1. Win Rate Stability (25 pts)
+        // Calculate rolling 5-trade win rates and measure variance
+        const sellTrades = trades.filter(t => t.side === 'SELL');
+        if (sellTrades.length >= 5) {
+            const windowSize = Math.min(5, Math.floor(sellTrades.length / 2));
+            const rollingWinRates = [];
+
+            for (let i = windowSize; i <= sellTrades.length; i++) {
+                const window = sellTrades.slice(i - windowSize, i);
+                const wins = window.filter(t => (t.realizedPnlSol || 0) > 0).length;
+                rollingWinRates.push(wins / windowSize);
+            }
+
+            if (rollingWinRates.length > 1) {
+                const avg = rollingWinRates.reduce((a, b) => a + b, 0) / rollingWinRates.length;
+                const variance = rollingWinRates.reduce((sum, r) => sum + Math.pow(r - avg, 2), 0) / rollingWinRates.length;
+                const stdDev = Math.sqrt(variance);
+                // Lower stdDev = more stable = higher score
+                breakdown.winRateStability = Math.max(0, 25 - (stdDev * 100));
+            } else {
+                breakdown.winRateStability = 20; // Not enough data
+            }
+        } else {
+            breakdown.winRateStability = 15; // Minimal data
+        }
+
+        // 2. Position Sizing Consistency (25 pts)
+        // Measure variance in SOL amounts
+        const buyTrades = trades.filter(t => t.side === 'BUY');
+        if (buyTrades.length >= 3) {
+            const sizes = buyTrades.map(t => t.solAmount);
+            const avgSize = sizes.reduce((a, b) => a + b, 0) / sizes.length;
+            const variance = sizes.reduce((sum, s) => sum + Math.pow(s - avgSize, 2), 0) / sizes.length;
+            const cv = Math.sqrt(variance) / avgSize; // Coefficient of variation
+            // Lower CV = more consistent sizing
+            breakdown.sizingConsistency = Math.max(0, 25 - (cv * 25));
+        } else {
+            breakdown.sizingConsistency = 15;
+        }
+
+        // 3. Trade Frequency Stability (25 pts)
+        // Measure variance in time between trades
+        if (trades.length >= 4) {
+            const intervals = [];
+            for (let i = 1; i < trades.length; i++) {
+                intervals.push(trades[i].ts - trades[i - 1].ts);
+            }
+            const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+            const variance = intervals.reduce((sum, i) => sum + Math.pow(i - avgInterval, 2), 0) / intervals.length;
+            const cv = Math.sqrt(variance) / avgInterval;
+            // Lower CV = more consistent timing
+            breakdown.frequencyStability = Math.max(0, 25 - (cv * 12.5));
+        } else {
+            breakdown.frequencyStability = 15;
+        }
+
+        // 4. Strategy Focus (25 pts)
+        // % of trades using top 2 strategies
+        const strategyCounts = {};
+        buyTrades.forEach(t => {
+            const strat = t.strategy || 'Unknown';
+            strategyCounts[strat] = (strategyCounts[strat] || 0) + 1;
+        });
+
+        const sortedStrategies = Object.entries(strategyCounts).sort((a, b) => b[1] - a[1]);
+        const top2Count = sortedStrategies.slice(0, 2).reduce((sum, [_, count]) => sum + count, 0);
+        const focusRatio = buyTrades.length > 0 ? top2Count / buyTrades.length : 0;
+        breakdown.strategyFocus = focusRatio * 25;
+
+        // Calculate total score
+        const score = Math.round(
+            breakdown.winRateStability +
+            breakdown.sizingConsistency +
+            breakdown.frequencyStability +
+            breakdown.strategyFocus
+        );
+
+        let message = '';
+        if (score >= 80) message = 'Highly consistent trading patterns';
+        else if (score >= 60) message = 'Good consistency, minor variations';
+        else if (score >= 40) message = 'Moderate consistency, room for improvement';
+        else message = 'Inconsistent patterns detected';
+
+        return {
+            score,
+            message,
+            breakdown: {
+                winRateStability: Math.round(breakdown.winRateStability),
+                sizingConsistency: Math.round(breakdown.sizingConsistency),
+                frequencyStability: Math.round(breakdown.frequencyStability),
+                strategyFocus: Math.round(breakdown.strategyFocus)
+            }
+        };
     }
 };

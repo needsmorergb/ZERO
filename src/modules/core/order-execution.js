@@ -5,7 +5,7 @@ import { Analytics } from './analytics.js';
 import { FeatureManager } from '../featureManager.js';
 
 export const OrderExecution = {
-    async buy(amountSol, strategy = "Trend", tokenInfo = null) {
+    async buy(amountSol, strategy = "Trend", tokenInfo = null, tradePlan = null) {
         const state = Store.state;
         if (!state.settings.enabled) return { success: false, error: "Paper trading disabled" };
         if (amountSol <= 0) return { success: false, error: "Invalid amount" };
@@ -64,6 +64,10 @@ export const OrderExecution = {
         pos.totalSolSpent += amountSol;
 
         const tradeId = `trade_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+
+        // Extract trade plan if provided
+        const plan = tradePlan || {};
+
         const trade = {
             id: tradeId,
             ts: Date.now(),
@@ -75,7 +79,12 @@ export const OrderExecution = {
             priceUsd: price,
             marketCap,
             strategy: FeatureManager.resolveFlags(state, 'STRATEGY_TAGGING').interactive ? (strategy || "Trend") : "Trend",
-            mode: state.settings.tradingMode || 'paper'
+            mode: state.settings.tradingMode || 'paper',
+            // Trade Plan (PRO feature)
+            plannedStop: plan.plannedStop || null,
+            plannedTarget: plan.plannedTarget || null,
+            entryThesis: plan.entryThesis || '',
+            riskDefined: plan.riskDefined || false
         };
 
         if (!state.trades) state.trades = {};
@@ -86,6 +95,12 @@ export const OrderExecution = {
 
         // Run Discipline Check
         Analytics.calculateDiscipline(trade, state);
+
+        // Log trade event
+        Analytics.logTradeEvent(state, trade);
+
+        // Check for milestones
+        this.checkMilestones(trade, state);
 
         // Draw Marker via Bridge
         window.postMessage({ __paper: true, type: "PAPER_DRAW_MARKER", trade }, "*");
@@ -160,6 +175,12 @@ export const OrderExecution = {
         Analytics.calculateDiscipline(trade, state);
         Analytics.updateStreaks(trade, state);
 
+        // Log trade event
+        Analytics.logTradeEvent(state, trade);
+
+        // Check for milestones
+        this.checkMilestones(trade, state);
+
         // Draw Marker via Bridge
         window.postMessage({ __paper: true, type: "PAPER_DRAW_MARKER", trade }, "*");
 
@@ -174,5 +195,46 @@ export const OrderExecution = {
         Object.assign(state.trades[tradeId], updates);
         await Store.save();
         return true;
+    },
+
+    checkMilestones(trade, state) {
+        const tradeCount = Object.keys(state.trades || {}).length;
+        const sellTrades = Object.values(state.trades || {}).filter(t => t.side === 'SELL');
+        const wins = sellTrades.filter(t => (t.realizedPnlSol || 0) > 0).length;
+
+        // Trade count milestones
+        if (tradeCount === 1) {
+            Analytics.logMilestone(state, 'FIRST_TRADE', 'First trade executed! Welcome to ZERØ.', { tradeCount });
+        } else if (tradeCount === 10) {
+            Analytics.logMilestone(state, 'TRADE_10', '10 trades completed. Building your baseline.', { tradeCount });
+        } else if (tradeCount === 50) {
+            Analytics.logMilestone(state, 'TRADE_50', '50 trades! You have a solid trading history.', { tradeCount });
+        } else if (tradeCount === 100) {
+            Analytics.logMilestone(state, 'TRADE_100', '100 trades milestone! Veteran status unlocked.', { tradeCount });
+        }
+
+        // Win streak milestones
+        const winStreak = state.session.winStreak || 0;
+        if (winStreak === 5) {
+            Analytics.logMilestone(state, 'WIN_STREAK_5', '5 wins in a row! Keep the discipline.', { winStreak });
+        } else if (winStreak === 10) {
+            Analytics.logMilestone(state, 'WIN_STREAK_10', '10 consecutive wins! Elite performance.', { winStreak });
+        }
+
+        // Equity milestones
+        const startSol = state.settings.startSol || 10;
+        const currentEquity = state.session.balance + (state.session.realized || 0);
+        const equityMultiple = currentEquity / startSol;
+
+        if (equityMultiple >= 2 && !state._milestone_2x) {
+            Analytics.logMilestone(state, 'EQUITY_2X', 'Portfolio doubled! 2x achieved.', { equityMultiple: equityMultiple.toFixed(2) });
+            state._milestone_2x = true;
+        } else if (equityMultiple >= 3 && !state._milestone_3x) {
+            Analytics.logMilestone(state, 'EQUITY_3X', 'Portfolio tripled! 3x achieved.', { equityMultiple: equityMultiple.toFixed(2) });
+            state._milestone_3x = true;
+        } else if (equityMultiple >= 5 && !state._milestone_5x) {
+            Analytics.logMilestone(state, 'EQUITY_5X', 'Portfolio 5x! Legendary.', { equityMultiple: equityMultiple.toFixed(2) });
+            state._milestone_5x = true;
+        }
     }
 };
