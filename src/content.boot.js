@@ -7,7 +7,7 @@ import { PnlCalculator } from './modules/core/pnl-calculator.js';
 
 (async () => {
     "use strict";
-    console.log('%c ZERØ v1.11.3 (Elite Admin Bridge Deployed)', 'color: #14b8a6; font-weight: bold; font-size: 14px;');
+    console.log('%c ZERØ v1.11.4 (Market Context Refined)', 'color: #14b8a6; font-weight: bold; font-size: 14px;');
 
     const PLATFORM = {
         isAxiom: window.location.hostname.includes('axiom.trade'),
