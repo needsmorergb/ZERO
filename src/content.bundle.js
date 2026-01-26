@@ -1689,6 +1689,28 @@
   from { transform: translateY(30px) scale(0.9); opacity: 0; }
   to { transform: translateY(0) scale(1); opacity: 1; }
 }
+
+/* Premium Scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0d1117;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(20, 184, 166, 0.2);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #14b8a6;
+  background-clip: content-box;
+}
 `;
 
   // src/modules/ui/banner-styles.js
