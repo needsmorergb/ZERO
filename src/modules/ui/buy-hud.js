@@ -5,6 +5,8 @@ import { TokenDetector } from './token-detector.js';
 import { IDS } from './ids.js';
 import { FeatureManager } from '../featureManager.js';
 import { Paywall } from './paywall.js';
+import { Market } from '../core/market.js';
+import { ICONS } from './icons.js';
 
 function px(n) { return n + 'px'; }
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
@@ -66,6 +68,7 @@ export const BuyHud = {
                     <div class="tab ${!isBuy ? 'active' : ''}" data-act="tab-sell">Sell</div>
                 </div>
                 <div class="body">
+                    ${this.renderMarketContext()}
                     <div class="fieldLabel">${label}</div>
                     <input class="field" type="text" inputmode="decimal" data-k="field" placeholder="0.0">
 
@@ -344,5 +347,44 @@ export const BuyHud = {
             root.style.top = "";
             root.style.right = ""; // CSS class handles docked pos
         }
+    },
+
+    renderMarketContext() {
+        if (!Store.state) return '';
+        const flags = FeatureManager.resolveFlags(Store.state, 'MARKET_CONTEXT');
+        if (!flags.visible) return '';
+
+        const ctx = Market.context;
+        const isGated = flags.gated;
+
+        let content = '';
+        if (isGated) {
+            content = `
+                <div class="market-badge gated" style="cursor:pointer;" onclick="this.dispatchEvent(new CustomEvent('zero-upgrade', { bubbles:true, detail:'MARKET_CONTEXT' }))">
+                    ${ICONS.LOCK} MARKET CONTEXT (ELITE)
+                </div>
+            `;
+        } else if (ctx) {
+            const vol = (ctx.vol24h / 1000000).toFixed(1) + 'M';
+            const chg = ctx.priceChange24h.toFixed(1) + '%';
+            const chgColor = ctx.priceChange24h >= 0 ? '#10b981' : '#ef4444';
+
+            content = `
+                <div class="market-badge">
+                    <div class="mitem">VOL <span>$${vol}</span></div>
+                    <div class="mitem">24H <span style="color:${chgColor}">${chg}</span></div>
+                </div>
+            `;
+        } else {
+            content = `
+                <div class="market-badge loading">Fetching market data...</div>
+            `;
+        }
+
+        return `
+            <div class="market-context-container" style="margin-bottom:12px;">
+                ${content}
+            </div>
+        `;
     }
 };

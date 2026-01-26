@@ -227,7 +227,26 @@
           this.detectPanicSell(trade, state);
           this.detectSunkCost(trade, state);
           this.detectStrategyDrift(trade, state);
+          this.monitorMarketRegime(state);
           this.updateProfile(state);
+        },
+        monitorMarketRegime(state) {
+          const flags = FeatureManager.resolveFlags(state, "ADVANCED_COACHING");
+          if (!flags.enabled)
+            return;
+          const ctx = Market.context;
+          if (!ctx)
+            return;
+          const vol = ctx.vol24h;
+          const chg = Math.abs(ctx.priceChange24h);
+          if (vol < 5e5 && Date.now() - (state.lastRegimeAlert || 0) > 36e5) {
+            this.addAlert(state, "MARKET_REGIME", "\u{1F4C9} LOW VOLUME: Liquidity is thin ($<500k). Slippage may be high.");
+            state.lastRegimeAlert = Date.now();
+          }
+          if (chg > 50 && Date.now() - (state.lastRegimeAlert || 0) > 36e5) {
+            this.addAlert(state, "MARKET_REGIME", "\u26A0\uFE0F HIGH VOLATILITY: 24h change is >50%. Expect rapid swings.");
+            state.lastRegimeAlert = Date.now();
+          }
         },
         detectTilt(trade, state) {
           const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
@@ -1974,6 +1993,7 @@ input:checked + .slider:before {
 .elite-alert.VELOCITY { border-color: #ec4899; border-left: 4px solid #ec4899; }
 .elite-alert.PROFIT_NEGLECT { border-color: #10b981; border-left: 4px solid #10b981; }
 .elite-alert.DRIFT { border-color: #06b6d4; border-left: 4px solid #06b6d4; }
+.elite-alert.MARKET_REGIME { border-color: #fbbf24; border-left: 4px solid #fbbf24; }
 
 .elite-alert-close {
     margin-left: auto;
@@ -2101,10 +2121,13 @@ input:checked + .slider:before {
   };
 
   // src/modules/core/market.js
-  var Market = {
+  var Market2 = {
     price: 0,
     marketCap: 0,
     lastPriceTs: 0,
+    context: null,
+    // { vol24h, priceChange24h, liquidity, fdv }
+    lastContextFetch: 0,
     listeners: [],
     init() {
       this.startPolling();
@@ -2159,7 +2182,34 @@ input:checked + .slider:before {
             }
           }
           this.updatePrice(val);
+          this.fetchMarketContext();
         }
+      }
+    },
+    async fetchMarketContext() {
+      const url = window.location.href;
+      const mintMatch = url.match(/\/trade\/([a-zA-Z0-9]+)/);
+      const mint = mintMatch ? mintMatch[1] : null;
+      if (!mint || this.lastContextFetch && Date.now() - this.lastContextFetch < 3e4)
+        return;
+      this.lastContextFetch = Date.now();
+      try {
+        console.log(`[Market] Fetching context for ${mint}...`);
+        const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${mint}`);
+        const data = await response.json();
+        const pair = data.pairs?.[0];
+        if (pair) {
+          this.context = {
+            vol24h: pair.volume?.h24 || 0,
+            priceChange24h: pair.priceChange?.h24 || 0,
+            liquidity: pair.liquidity?.usd || 0,
+            fdv: pair.fdv || 0,
+            ts: Date.now()
+          };
+          console.log(`[Market] Context: Vol=$${(this.context.vol24h / 1e6).toFixed(1)}M, Chg=${this.context.priceChange24h}%`);
+        }
+      } catch (e) {
+        console.error("[Market] Context fetch failed:", e);
       }
     },
     parsePriceStr(text) {
@@ -2406,11 +2456,11 @@ input:checked + .slider:before {
           return;
         }
         let currentPrice = pos.lastPriceUsd || pos.entryPriceUsd;
-        if (currentTokenMint && pos.mint === currentTokenMint && Market.price > 0 && Market.price < 1e4) {
-          currentPrice = Market.price;
+        if (currentTokenMint && pos.mint === currentTokenMint && Market2.price > 0 && Market2.price < 1e4) {
+          currentPrice = Market2.price;
           const oldPrice = pos.lastPriceUsd || pos.entryPriceUsd;
-          if (!pos.lastPriceUsd || Math.abs(oldPrice - Market.price) / oldPrice > 1e-3) {
-            pos.lastPriceUsd = Market.price;
+          if (!pos.lastPriceUsd || Math.abs(oldPrice - Market2.price) / oldPrice > 1e-3) {
+            pos.lastPriceUsd = Market2.price;
             priceWasUpdated = true;
           }
         }
@@ -2454,8 +2504,8 @@ input:checked + .slider:before {
         return { success: false, error: "Invalid amount" };
       if (amountSol > state.session.balance)
         return { success: false, error: "Insufficient funds" };
-      let price = Market.price || 1e-6;
-      let marketCap = Market.marketCap || 0;
+      let price = Market2.price || 1e-6;
+      let marketCap = Market2.marketCap || 0;
       if (price > 1e4 && marketCap > 0 && marketCap < 1e4) {
         console.warn(`[Trading] SWAP DETECTED! Price=${price} MarketCap=${marketCap}. Swapping...`);
         [price, marketCap] = [marketCap, price];
@@ -2520,7 +2570,7 @@ input:checked + .slider:before {
       const state = Store.state;
       if (!state.settings.enabled)
         return { success: false, error: "Paper trading disabled" };
-      let currentPrice = Market.price || 0;
+      let currentPrice = Market2.price || 0;
       if (currentPrice <= 0)
         return { success: false, error: "No price data" };
       if (currentPrice > 1e4) {
@@ -2559,7 +2609,7 @@ input:checked + .slider:before {
         solAmount: solReceived,
         tokenQty: qtyToSell,
         priceUsd: currentPrice,
-        marketCap: Market.marketCap || 0,
+        marketCap: Market2.marketCap || 0,
         realizedPnlSol,
         strategy: strategy || "Unknown",
         mode: state.settings.tradingMode || "paper"
@@ -3764,6 +3814,7 @@ canvas#equity-canvas {
                     <div class="tab ${!isBuy ? "active" : ""}" data-act="tab-sell">Sell</div>
                 </div>
                 <div class="body">
+                    ${this.renderMarketContext()}
                     <div class="fieldLabel">${label}</div>
                     <input class="field" type="text" inputmode="decimal" data-k="field" placeholder="0.0">
 
@@ -4009,6 +4060,42 @@ canvas#equity-canvas {
         root.style.top = "";
         root.style.right = "";
       }
+    },
+    renderMarketContext() {
+      if (!Store.state)
+        return "";
+      const flags = FeatureManager.resolveFlags(Store.state, "MARKET_CONTEXT");
+      if (!flags.visible)
+        return "";
+      const ctx = Market2.context;
+      const isGated = flags.gated;
+      let content = "";
+      if (isGated) {
+        content = `
+                <div class="market-badge gated" style="cursor:pointer;" onclick="this.dispatchEvent(new CustomEvent('zero-upgrade', { bubbles:true, detail:'MARKET_CONTEXT' }))">
+                    ${ICONS.LOCK} MARKET CONTEXT (ELITE)
+                </div>
+            `;
+      } else if (ctx) {
+        const vol = (ctx.vol24h / 1e6).toFixed(1) + "M";
+        const chg = ctx.priceChange24h.toFixed(1) + "%";
+        const chgColor = ctx.priceChange24h >= 0 ? "#10b981" : "#ef4444";
+        content = `
+                <div class="market-badge">
+                    <div class="mitem">VOL <span>$${vol}</span></div>
+                    <div class="mitem">24H <span style="color:${chgColor}">${chg}</span></div>
+                </div>
+            `;
+      } else {
+        content = `
+                <div class="market-badge loading">Fetching market data...</div>
+            `;
+      }
+      return `
+            <div class="market-context-container" style="margin-bottom:12px;">
+                ${content}
+            </div>
+        `;
     }
   };
 
@@ -4026,7 +4113,7 @@ canvas#equity-canvas {
           window.postMessage({ __paper: true, type: "PAPER_DRAW_ALL", trades }, "*");
         }, 2e3);
       }
-      Market.subscribe(async () => {
+      Market2.subscribe(async () => {
         await PnlHud.updatePnlHud();
       });
     },
@@ -4129,7 +4216,7 @@ canvas#equity-canvas {
     }
     try {
       console.log("[ZER\xD8] Init Market...");
-      Market.init();
+      Market2.init();
     } catch (e) {
       console.error("[ZER\xD8] Market Init Failed:", e);
     }

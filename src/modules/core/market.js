@@ -2,6 +2,8 @@ export const Market = {
     price: 0,
     marketCap: 0,
     lastPriceTs: 0,
+    context: null, // { vol24h, priceChange24h, liquidity, fdv }
+    lastContextFetch: 0,
     listeners: [],
 
     init() {
@@ -69,14 +71,44 @@ export const Market = {
                 if (this.price > 0) {
                     const ratio = val / this.price;
                     if (ratio > 100 || ratio < 0.01) {
-                        console.warn(`[Market] SPIKE REJECTED: $${val} (${(ratio*100).toFixed(0)}x change from $${this.price})`);
+                        console.warn(`[Market] SPIKE REJECTED: $${val} (${(ratio * 100).toFixed(0)}x change from $${this.price})`);
                         continue;
                     }
                 }
 
                 // This is price (most tokens are < $10k per token)
                 this.updatePrice(val);
+                this.fetchMarketContext(); // Phase 12: Get broader context
             }
+        }
+    },
+
+    async fetchMarketContext() {
+        const url = window.location.href;
+        const mintMatch = url.match(/\/trade\/([a-zA-Z0-9]+)/);
+        const mint = mintMatch ? mintMatch[1] : null;
+
+        if (!mint || (this.lastContextFetch && Date.now() - this.lastContextFetch < 30000)) return;
+        this.lastContextFetch = Date.now();
+
+        try {
+            console.log(`[Market] Fetching context for ${mint}...`);
+            const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${mint}`);
+            const data = await response.json();
+            const pair = data.pairs?.[0];
+
+            if (pair) {
+                this.context = {
+                    vol24h: pair.volume?.h24 || 0,
+                    priceChange24h: pair.priceChange?.h24 || 0,
+                    liquidity: pair.liquidity?.usd || 0,
+                    fdv: pair.fdv || 0,
+                    ts: Date.now()
+                };
+                console.log(`[Market] Context: Vol=$${(this.context.vol24h / 1000000).toFixed(1)}M, Chg=${this.context.priceChange24h}%`);
+            }
+        } catch (e) {
+            console.error('[Market] Context fetch failed:', e);
         }
     },
 

@@ -127,7 +127,31 @@ export const Analytics = {
         this.detectPanicSell(trade, state);
         this.detectSunkCost(trade, state);
         this.detectStrategyDrift(trade, state);
+        this.monitorMarketRegime(state);
         this.updateProfile(state);
+    },
+
+    monitorMarketRegime(state) {
+        const flags = FeatureManager.resolveFlags(state, 'ADVANCED_COACHING');
+        if (!flags.enabled) return;
+
+        const ctx = Market.context;
+        if (!ctx) return;
+
+        const vol = ctx.vol24h;
+        const chg = Math.abs(ctx.priceChange24h);
+
+        // 1. Choppy / Low Vol Warning
+        if (vol < 500000 && Date.now() - (state.lastRegimeAlert || 0) > 3600000) {
+            this.addAlert(state, 'MARKET_REGIME', "📉 LOW VOLUME: Liquidity is thin ($<500k). Slippage may be high.");
+            state.lastRegimeAlert = Date.now();
+        }
+
+        // 2. High Volatility Warning
+        if (chg > 50 && Date.now() - (state.lastRegimeAlert || 0) > 3600000) {
+            this.addAlert(state, 'MARKET_REGIME', "⚠️ HIGH VOLATILITY: 24h change is >50%. Expect rapid swings.");
+            state.lastRegimeAlert = Date.now();
+        }
     },
 
     detectTilt(trade, state) {

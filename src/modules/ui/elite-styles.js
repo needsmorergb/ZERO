@@ -38,6 +38,7 @@ export const ELITE_CSS = `
 .elite-alert.VELOCITY { border-color: #ec4899; border-left: 4px solid #ec4899; }
 .elite-alert.PROFIT_NEGLECT { border-color: #10b981; border-left: 4px solid #10b981; }
 .elite-alert.DRIFT { border-color: #06b6d4; border-left: 4px solid #06b6d4; }
+.elite-alert.MARKET_REGIME { border-color: #fbbf24; border-left: 4px solid #fbbf24; }
 
 .elite-alert-close {
     margin-left: auto;
