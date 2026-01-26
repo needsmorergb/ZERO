@@ -458,7 +458,16 @@
         },
         pollMint() {
           const url = window.location.href;
-          const mintMatch = url.match(/\/trade\/([a-zA-Z0-9]{32,44})/) || url.match(/\/token\/([a-zA-Z0-9]{32,44})/);
+          let mintMatch = url.match(/\/trade\/(?:solana\/)?([a-zA-Z0-9]{32,44})/) || url.match(/\/token\/(?:solana\/)?([a-zA-Z0-9]{32,44})/);
+          if (!mintMatch) {
+            const allMints = url.match(/[1-9A-HJ-NP-Za-km-z]{32,44}/g);
+            if (allMints) {
+              const candidate = allMints[allMints.length - 1];
+              if (candidate && candidate.length > 30) {
+                mintMatch = [null, candidate];
+              }
+            }
+          }
           const mint = mintMatch ? mintMatch[1] : null;
           if (mint && mint !== this.currentMint) {
             console.log(`[Market] New token detected: ${mint}`);
@@ -504,7 +513,6 @@
                 }
               }
               this.updatePrice(val);
-              this.fetchMarketContext();
             }
           }
         },
@@ -526,13 +534,15 @@
               this.context = {
                 vol24h: pair.volume?.h24 || 0,
                 priceChange24h: pair.priceChange?.h24 || 0,
-                liquidity: pair.liquidity?.base || 0,
+                liquidity: pair.liquidity?.usd || 0,
                 fdv: pair.fdv || 0,
                 symbol: pair.baseToken?.symbol || "",
                 ts: Date.now()
               };
               console.log(`[Market] Context Ready: Vol=$${(this.context.vol24h / 1e6).toFixed(1)}M, Chg=${this.context.priceChange24h}%`);
               this.notify();
+            } else {
+              console.warn(`[Market] No DexScreener pair found for ${mint}`);
             }
           } catch (e) {
             console.error("[Market] Context fetch failed:", e);
