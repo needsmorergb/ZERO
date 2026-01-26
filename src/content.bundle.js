@@ -128,7 +128,7 @@
         // { ts, type, category, message, data }
         // Categories: TRADE, ALERT, DISCIPLINE, SYSTEM, MILESTONE
         schemaVersion: 2,
-        version: "1.11.5"
+        version: "1.11.6"
       };
       Store = {
         state: null,
@@ -7063,7 +7063,7 @@ canvas#equity-canvas {
   // src/content.boot.js
   (async () => {
     "use strict";
-    console.log("%c ZER\xD8 v1.11.5 (Universal Token Discovery)", "color: #14b8a6; font-weight: bold; font-size: 14px;");
+    console.log("%c ZER\xD8 v1.11.6 (Premium Aesthetic Refinement)", "color: #14b8a6; font-weight: bold; font-size: 14px;");
     const PLATFORM = {
       isAxiom: window.location.hostname.includes("axiom.trade"),
       isPadre: window.location.hostname.includes("padre.gg"),

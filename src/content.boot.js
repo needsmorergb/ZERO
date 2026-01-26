@@ -7,7 +7,7 @@ import { PnlCalculator } from './modules/core/pnl-calculator.js';
 
 (async () => {
     "use strict";
-    console.log('%c ZERØ v1.11.5 (Universal Token Discovery)', 'color: #14b8a6; font-weight: bold; font-size: 14px;');
+    console.log('%c ZERØ v1.11.6 (Premium Aesthetic Refinement)', 'color: #14b8a6; font-weight: bold; font-size: 14px;');
 
     const PLATFORM = {
         isAxiom: window.location.hostname.includes('axiom.trade'),
