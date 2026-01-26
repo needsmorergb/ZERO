@@ -65,6 +65,28 @@ import { PnlCalculator } from './modules/core/pnl-calculator.js';
         console.error('[ZERØ] HUD Init Failed:', e);
     }
 
+    // Command Bridge (for Debugging/Elevated Testing)
+    window.addEventListener('message', async (e) => {
+        if (e.source !== window || !e.data?.__paper_cmd) return;
+        const { type, val } = e.data;
+
+        if (type === 'SET_TIER') {
+            const state = Store.state;
+            if (state && state.settings) {
+                console.log(`[ZERØ] Admin: Setting tier to ${val}...`);
+                state.settings.tier = val;
+                await Store.save();
+                location.reload();
+            }
+        }
+
+        if (type === 'RESET_STORE') {
+            console.warn('[ZERØ] Admin: Resetting store...');
+            await Store.clear();
+            location.reload();
+        }
+    });
+
     console.log('[ZERØ] Boot sequence finished.');
 
 })();

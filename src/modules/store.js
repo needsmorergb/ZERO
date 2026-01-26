@@ -173,6 +173,16 @@ export const Store = {
         });
     },
 
+    async clear() {
+        if (!isChromeStorageAvailable()) return;
+        return new Promise((resolve) => {
+            chrome.storage.local.remove(EXT_KEY, () => {
+                this.state = JSON.parse(JSON.stringify(DEFAULTS));
+                resolve();
+            });
+        });
+    },
+
     migrateV1toV2(oldState) {
         // Create fresh V2 state
         const newState = JSON.parse(JSON.stringify(DEFAULTS));

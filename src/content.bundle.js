@@ -207,6 +207,16 @@
             }
           });
         },
+        async clear() {
+          if (!isChromeStorageAvailable())
+            return;
+          return new Promise((resolve) => {
+            chrome.storage.local.remove(EXT_KEY, () => {
+              this.state = JSON.parse(JSON.stringify(DEFAULTS));
+              resolve();
+            });
+          });
+        },
         migrateV1toV2(oldState) {
           const newState = JSON.parse(JSON.stringify(DEFAULTS));
           newState.settings.enabled = oldState.enabled ?? true;
@@ -7061,6 +7071,25 @@ canvas#equity-canvas {
     } catch (e) {
       console.error("[ZER\xD8] HUD Init Failed:", e);
     }
+    window.addEventListener("message", async (e) => {
+      if (e.source !== window || !e.data?.__paper_cmd)
+        return;
+      const { type, val } = e.data;
+      if (type === "SET_TIER") {
+        const state = Store.state;
+        if (state && state.settings) {
+          console.log(`[ZER\xD8] Admin: Setting tier to ${val}...`);
+          state.settings.tier = val;
+          await Store.save();
+          location.reload();
+        }
+      }
+      if (type === "RESET_STORE") {
+        console.warn("[ZER\xD8] Admin: Resetting store...");
+        await Store.clear();
+        location.reload();
+      }
+    });
     console.log("[ZER\xD8] Boot sequence finished.");
   })();
 })();
