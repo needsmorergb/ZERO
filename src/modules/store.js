@@ -18,7 +18,8 @@ const DEFAULTS = {
         tradingMode: 'paper', // 'paper' | 'shadow'
         showProfessor: true, // Show trade analysis popup
         rolloutPhase: 'full', // 'beta' | 'preview' | 'full'
-        featureOverrides: {} // For remote kill-switches
+        featureOverrides: {}, // For remote kill-switches
+        behavioralAlerts: true // Phase 9: Elite Guardrails
     },
     // Runtime state (not always persisted fully, but structure is here)
     session: {
@@ -31,12 +32,16 @@ const DEFAULTS = {
         lossStreak: 0,
         startTime: 0,
         tradeCount: 0,
-        disciplineScore: 100
+        disciplineScore: 100,
+        activeAlerts: [] // {type, message, ts}
     },
     trades: {}, // Map ID -> Trade Object { id, strategy, emotion, ... }
     positions: {},
     behavior: {
-        tiltFrequency: 0
+        tiltFrequency: 0,
+        panicSells: 0,
+        fomoTrades: 0,
+        profile: 'Disciplined'
     },
     schemaVersion: 2,
     version: '1.10.3'

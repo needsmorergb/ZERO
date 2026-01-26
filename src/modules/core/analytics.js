@@ -123,18 +123,70 @@ export const Analytics = {
         if (state.session.equityHistory.length > 50) state.session.equityHistory.shift();
 
         this.detectTilt(trade, state);
+        this.detectFomo(trade, state);
+        this.detectPanicSell(trade, state);
+        this.updateProfile(state);
     },
 
     detectTilt(trade, state) {
         const flags = FeatureManager.resolveFlags(state, 'TILT_DETECTION');
         if (!flags.enabled) return;
 
-        // Elite: Silent data collection logic
         const lossStreak = state.session.lossStreak || 0;
         if (lossStreak >= 3) {
-            console.log("[ZERØ ELITE] ⚠️ Tilt Pattern Detected Silently (Revenge trading risk)");
+            this.addAlert(state, 'TILT', `⚠️ TILT DETECTED: ${lossStreak} Losses in a row. Take a break.`);
             state.behavior.tiltFrequency = (state.behavior.tiltFrequency || 0) + 1;
         }
+    },
+
+    detectFomo(trade, state) {
+        if (trade.side !== 'BUY') return;
+        const flags = FeatureManager.resolveFlags(state, 'TILT_DETECTION'); // Use Tilt Detection as proxy for behavioral
+        if (!flags.enabled) return;
+
+        const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+        const prevTrade = trades.length > 1 ? trades[trades.length - 2] : null;
+
+        // FOMO: Rapid buy after a loss or without strategy at potentially high MC
+        if (prevTrade && (trade.ts - prevTrade.ts < 30000) && prevTrade.side === 'SELL' && (prevTrade.realizedPnlSol || 0) < 0) {
+            this.addAlert(state, 'FOMO', "🚨 FOMO ALERT: Revenge trading detected.");
+            state.behavior.fomoTrades = (state.behavior.fomoTrades || 0) + 1;
+        }
+    },
+
+    detectPanicSell(trade, state) {
+        if (trade.side !== 'SELL') return;
+        const flags = FeatureManager.resolveFlags(state, 'TILT_DETECTION');
+        if (!flags.enabled) return;
+
+        // Panic Sell: Sell shortly after a price dip if not at target
+        // For now, simple time-based check after entry
+        if (trade.entryTs && (trade.ts - trade.entryTs < 45000) && (trade.realizedPnlSol || 0) < 0) {
+            this.addAlert(state, 'PANIC', "😱 PANIC SELL: You're cutting too early. Trust your stops.");
+            state.behavior.panicSells = (state.behavior.panicSells || 0) + 1;
+        }
+    },
+
+    addAlert(state, type, message) {
+        if (!state.session.activeAlerts) state.session.activeAlerts = [];
+        const alert = { type, message, ts: Date.now() };
+        state.session.activeAlerts.push(alert);
+
+        // Keep only last 3 alerts
+        if (state.session.activeAlerts.length > 3) state.session.activeAlerts.shift();
+
+        console.log(`[ELITE ALERT] ${type}: ${message}`);
+    },
+
+    updateProfile(state) {
+        const b = state.behavior;
+        const totalMistakes = (b.tiltFrequency || 0) + (b.fomoTrades || 0) + (b.panicSells || 0);
+
+        if (totalMistakes === 0) b.profile = 'Disciplined';
+        else if (b.tiltFrequency > 2) b.profile = 'Emotional';
+        else if (b.fomoTrades > 2) b.profile = 'Impulsive';
+        else if (b.panicSells > 2) b.profile = 'Hesitant';
+        else b.profile = 'Improving';
     },
 
     getProfessorDebrief(state) {

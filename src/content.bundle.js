@@ -23,8 +23,10 @@
       // Show trade analysis popup
       rolloutPhase: "full",
       // 'beta' | 'preview' | 'full'
-      featureOverrides: {}
+      featureOverrides: {},
       // For remote kill-switches
+      behavioralAlerts: true
+      // Phase 9: Elite Guardrails
     },
     // Runtime state (not always persisted fully, but structure is here)
     session: {
@@ -39,13 +41,18 @@
       lossStreak: 0,
       startTime: 0,
       tradeCount: 0,
-      disciplineScore: 100
+      disciplineScore: 100,
+      activeAlerts: []
+      // {type, message, ts}
     },
     trades: {},
     // Map ID -> Trade Object { id, strategy, emotion, ... }
     positions: {},
     behavior: {
-      tiltFrequency: 0
+      tiltFrequency: 0,
+      panicSells: 0,
+      fomoTrades: 0,
+      profile: "Disciplined"
     },
     schemaVersion: 2,
     version: "1.10.3"
@@ -1599,8 +1606,67 @@ input:checked + .slider:before {
 }
 `;
 
+  // src/modules/ui/elite-styles.js
+  var ELITE_CSS = `
+.elite-alert-overlay {
+    position: fixed;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2147483647;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: center;
+    pointer-events: none;
+    width: 400px;
+}
+
+.elite-alert {
+    background: rgba(13, 17, 23, 0.95);
+    border: 1px solid rgba(245, 158, 11, 0.5);
+    border-radius: 12px;
+    padding: 12px 20px;
+    color: #f8fafc;
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    pointer-events: auto;
+    animation: alertSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    width: 100%;
+}
+
+.elite-alert.TILT { border-color: #ef4444; border-left: 4px solid #ef4444; }
+.elite-alert.FOMO { border-color: #f59e0b; border-left: 4px solid #f59e0b; }
+.elite-alert.PANIC { border-color: #6366f1; border-left: 4px solid #6366f1; }
+
+.elite-alert-close {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: #64748b;
+    cursor: pointer;
+    font-size: 18px;
+    padding: 0 4px;
+}
+
+@keyframes alertSlideUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes alertFadeOut {
+    from { opacity: 1; transform: translateY(0); }
+    to { opacity: 0; transform: translateY(-20px); }
+}
+`;
+
   // src/modules/ui/styles.js
-  var CSS = COMMON_CSS + BANNER_CSS + PNL_HUD_CSS + BUY_HUD_CSS + MODALS_CSS + PROFESSOR_CSS + THEME_OVERRIDES_CSS;
+  var CSS = COMMON_CSS + BANNER_CSS + PNL_HUD_CSS + BUY_HUD_CSS + MODALS_CSS + PROFESSOR_CSS + THEME_OVERRIDES_CSS + ELITE_CSS;
 
   // src/modules/ui/overlay.js
   var OverlayManager = {
@@ -1812,6 +1878,50 @@ input:checked + .slider:before {
       if (stateEl)
         stateEl.textContent = enabled ? "ENABLED" : "DISABLED";
       bar.classList.toggle("disabled", !enabled);
+      this.updateAlerts();
+    },
+    updateAlerts() {
+      const root = OverlayManager.getShadowRoot();
+      if (!root || !Store.state)
+        return;
+      const flags = FeatureManager.resolveFlags(Store.state, "TILT_DETECTION");
+      if (!flags.visible || !Store.state.settings.behavioralAlerts) {
+        const existing = root.getElementById("elite-alert-container");
+        if (existing)
+          existing.remove();
+        return;
+      }
+      let container = root.getElementById("elite-alert-container");
+      if (!container) {
+        container = document.createElement("div");
+        container.id = "elite-alert-container";
+        container.className = "elite-alert-overlay";
+        root.appendChild(container);
+      }
+      const alerts = Store.state.session.activeAlerts || [];
+      const existingIds = Array.from(container.children).map((c) => c.dataset.ts);
+      alerts.forEach((alert) => {
+        if (!existingIds.includes(alert.ts.toString())) {
+          const el = document.createElement("div");
+          el.className = `elite-alert ${alert.type}`;
+          el.dataset.ts = alert.ts;
+          el.innerHTML = `
+                    <div class="alert-msg">${alert.message}</div>
+                    <button class="elite-alert-close">\xD7</button>
+                `;
+          el.querySelector(".elite-alert-close").onclick = () => {
+            el.style.animation = "alertFadeOut 0.3s forwards";
+            setTimeout(() => el.remove(), 300);
+          };
+          container.appendChild(el);
+          setTimeout(() => {
+            if (el.parentNode) {
+              el.style.animation = "alertFadeOut 0.3s forwards";
+              setTimeout(() => el.remove(), 300);
+            }
+          }, 5e3);
+        }
+      });
     }
   };
 
@@ -2023,6 +2133,9 @@ input:checked + .slider:before {
       if (state.session.equityHistory.length > 50)
         state.session.equityHistory.shift();
       this.detectTilt(trade, state);
+      this.detectFomo(trade, state);
+      this.detectPanicSell(trade, state);
+      this.updateProfile(state);
     },
     detectTilt(trade, state) {
       const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
@@ -2030,9 +2143,56 @@ input:checked + .slider:before {
         return;
       const lossStreak = state.session.lossStreak || 0;
       if (lossStreak >= 3) {
-        console.log("[ZER\xD8 ELITE] \u26A0\uFE0F Tilt Pattern Detected Silently (Revenge trading risk)");
+        this.addAlert(state, "TILT", `\u26A0\uFE0F TILT DETECTED: ${lossStreak} Losses in a row. Take a break.`);
         state.behavior.tiltFrequency = (state.behavior.tiltFrequency || 0) + 1;
       }
+    },
+    detectFomo(trade, state) {
+      if (trade.side !== "BUY")
+        return;
+      const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
+      if (!flags.enabled)
+        return;
+      const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+      const prevTrade = trades.length > 1 ? trades[trades.length - 2] : null;
+      if (prevTrade && trade.ts - prevTrade.ts < 3e4 && prevTrade.side === "SELL" && (prevTrade.realizedPnlSol || 0) < 0) {
+        this.addAlert(state, "FOMO", "\u{1F6A8} FOMO ALERT: Revenge trading detected.");
+        state.behavior.fomoTrades = (state.behavior.fomoTrades || 0) + 1;
+      }
+    },
+    detectPanicSell(trade, state) {
+      if (trade.side !== "SELL")
+        return;
+      const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
+      if (!flags.enabled)
+        return;
+      if (trade.entryTs && trade.ts - trade.entryTs < 45e3 && (trade.realizedPnlSol || 0) < 0) {
+        this.addAlert(state, "PANIC", "\u{1F631} PANIC SELL: You're cutting too early. Trust your stops.");
+        state.behavior.panicSells = (state.behavior.panicSells || 0) + 1;
+      }
+    },
+    addAlert(state, type, message) {
+      if (!state.session.activeAlerts)
+        state.session.activeAlerts = [];
+      const alert = { type, message, ts: Date.now() };
+      state.session.activeAlerts.push(alert);
+      if (state.session.activeAlerts.length > 3)
+        state.session.activeAlerts.shift();
+      console.log(`[ELITE ALERT] ${type}: ${message}`);
+    },
+    updateProfile(state) {
+      const b = state.behavior;
+      const totalMistakes = (b.tiltFrequency || 0) + (b.fomoTrades || 0) + (b.panicSells || 0);
+      if (totalMistakes === 0)
+        b.profile = "Disciplined";
+      else if (b.tiltFrequency > 2)
+        b.profile = "Emotional";
+      else if (b.fomoTrades > 2)
+        b.profile = "Impulsive";
+      else if (b.panicSells > 2)
+        b.profile = "Hesitant";
+      else
+        b.profile = "Improving";
     },
     getProfessorDebrief(state) {
       const score = state.session.disciplineScore !== void 0 ? state.session.disciplineScore : 100;

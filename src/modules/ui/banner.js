@@ -1,6 +1,7 @@
 import { Store } from '../store.js';
 import { OverlayManager } from './overlay.js';
 import { IDS } from './ids.js';
+import { FeatureManager } from '../featureManager.js';
 
 export const Banner = {
     mountBanner() {
@@ -44,5 +45,57 @@ export const Banner = {
         const stateEl = bar.querySelector(".state");
         if (stateEl) stateEl.textContent = enabled ? "ENABLED" : "DISABLED";
         bar.classList.toggle("disabled", !enabled);
+
+        this.updateAlerts();
+    },
+
+    updateAlerts() {
+        const root = OverlayManager.getShadowRoot();
+        if (!root || !Store.state) return;
+
+        const flags = FeatureManager.resolveFlags(Store.state, 'TILT_DETECTION');
+        if (!flags.visible || !Store.state.settings.behavioralAlerts) {
+            const existing = root.getElementById('elite-alert-container');
+            if (existing) existing.remove();
+            return;
+        }
+
+        let container = root.getElementById('elite-alert-container');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'elite-alert-container';
+            container.className = 'elite-alert-overlay';
+            root.appendChild(container);
+        }
+
+        const alerts = Store.state.session.activeAlerts || [];
+        const existingIds = Array.from(container.children).map(c => c.dataset.ts);
+
+        alerts.forEach(alert => {
+            if (!existingIds.includes(alert.ts.toString())) {
+                const el = document.createElement('div');
+                el.className = `elite-alert ${alert.type}`;
+                el.dataset.ts = alert.ts;
+                el.innerHTML = `
+                    <div class="alert-msg">${alert.message}</div>
+                    <button class="elite-alert-close">×</button>
+                `;
+
+                el.querySelector('.elite-alert-close').onclick = () => {
+                    el.style.animation = 'alertFadeOut 0.3s forwards';
+                    setTimeout(() => el.remove(), 300);
+                };
+
+                container.appendChild(el);
+
+                // Auto-remove after 5 seconds
+                setTimeout(() => {
+                    if (el.parentNode) {
+                        el.style.animation = 'alertFadeOut 0.3s forwards';
+                        setTimeout(() => el.remove(), 300);
+                    }
+                }, 5000);
+            }
+        });
     }
 };

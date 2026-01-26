@@ -9,6 +9,7 @@ import { BUY_HUD_CSS } from './buy-hud-styles.js';
 import { MODALS_CSS } from './modals-styles.js';
 import { PROFESSOR_CSS } from './professor-styles.js';
 import { THEME_OVERRIDES_CSS } from './theme-overrides.js';
+import { ELITE_CSS } from './elite-styles.js';
 
 // Concatenate all CSS modules
 export const CSS =
@@ -18,4 +19,5 @@ export const CSS =
   BUY_HUD_CSS +
   MODALS_CSS +
   PROFESSOR_CSS +
-  THEME_OVERRIDES_CSS;
+  THEME_OVERRIDES_CSS +
+  ELITE_CSS;
