@@ -48,7 +48,7 @@ const DEFAULTS = {
         profile: 'Disciplined'
     },
     schemaVersion: 2,
-    version: '1.10.4'
+    version: '1.10.5'
 };
 
 // Helper utils

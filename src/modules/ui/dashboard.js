@@ -120,7 +120,7 @@ export const Dashboard = {
                             <div style="font-size:13px; color:#94a3b8; line-height:1.5;">
                                 Your trading patterns suggest a **${state.behavior.profile || 'Disciplined'}** archetype this session.
                             </div>
-                            <div class="behavior-stats">
+                            <div class="behavior-stats" style="grid-template-columns: repeat(3, 1fr);">
                                 <div class="behavior-stat-item">
                                     <div class="k">Tilt</div>
                                     <div class="v">${state.behavior.tiltFrequency || 0}</div>
@@ -132,6 +132,18 @@ export const Dashboard = {
                                 <div class="behavior-stat-item">
                                     <div class="k">Panic</div>
                                     <div class="v">${state.behavior.panicSells || 0}</div>
+                                </div>
+                                <div class="behavior-stat-item">
+                                    <div class="k">Sunk Cost</div>
+                                    <div class="v">${state.behavior.sunkCostFrequency || 0}</div>
+                                </div>
+                                <div class="behavior-stat-item">
+                                    <div class="k">Velocity</div>
+                                    <div class="v">${state.behavior.overtradingFrequency || 0}</div>
+                                </div>
+                                <div class="behavior-stat-item">
+                                    <div class="k">Neglect</div>
+                                    <div class="v">${state.behavior.profitNeglectFrequency || 0}</div>
                                 </div>
                             </div>
                         </div>
