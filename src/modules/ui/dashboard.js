@@ -5,6 +5,7 @@ import { Trading } from '../core/trading.js';
 import { DASHBOARD_CSS } from './dashboard-styles.js';
 import { IDS } from './ids.js';
 import { Paywall } from './paywall.js';
+import { ICONS } from './icons.js';
 import { FeatureManager } from '../featureManager.js';
 
 export const Dashboard = {
@@ -302,8 +303,8 @@ export const Dashboard = {
         const overlay = document.createElement('div');
         overlay.className = 'locked-overlay';
         overlay.innerHTML = `
-            <div class="locked-icon">🔒</div>
-            <div class="locked-text">PRO FEATURE</div>
+            <div class="locked-icon">${ICONS.LOCK}</div>
+            <div class="locked-text">${featureName.includes('ELITE') || featureName === 'BEHAVIOR_BASELINE' ? 'ELITE FEATURE' : 'PRO FEATURE'}</div>
         `;
         overlay.onclick = (e) => {
             e.stopPropagation();

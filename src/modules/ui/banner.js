@@ -2,6 +2,7 @@ import { Store } from '../store.js';
 import { OverlayManager } from './overlay.js';
 import { IDS } from './ids.js';
 import { FeatureManager } from '../featureManager.js';
+import { ICONS } from './icons.js';
 
 export const Banner = {
     mountBanner() {
@@ -77,8 +78,11 @@ export const Banner = {
                 el.className = `elite-alert ${alert.type}`;
                 el.dataset.ts = alert.ts;
                 el.innerHTML = `
+                    <div class="alert-icon" style="flex-shrink:0; display:flex;">
+                        ${ICONS[alert.type] || ICONS.TILT}
+                    </div>
                     <div class="alert-msg">${alert.message}</div>
-                    <button class="elite-alert-close">×</button>
+                    <button class="elite-alert-close">${ICONS.X}</button>
                 `;
 
                 el.querySelector('.elite-alert-close').onclick = () => {

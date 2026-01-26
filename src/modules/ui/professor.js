@@ -1,4 +1,5 @@
 import { OverlayManager } from './overlay.js';
+import { ICONS } from './icons.js';
 
 export const Professor = {
 
@@ -19,7 +20,9 @@ export const Professor = {
             <div class="professor-container" style="box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 1px solid rgba(20,184,166,0.2);">
                 <img src="${chrome.runtime.getURL('src/professor.png')}" class="professor-image">
                 <div class="professor-bubble">
-                    <div class="professor-title">${title}</div>
+                    <div class="professor-title" style="display:flex; align-items:center; gap:8px;">
+                        ${ICONS.BRAIN} ${title}
+                    </div>
                     <div class="professor-message">${message}</div>
                     <div style="margin-top:10px; display:flex; align-items:center; justify-content:space-between; gap:10px;">
                         <label style="display:flex; align-items:center; gap:6px; font-size:10px; color:#64748b; cursor:pointer;">

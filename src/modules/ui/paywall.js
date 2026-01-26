@@ -1,6 +1,7 @@
 import { Store } from '../store.js';
 import { OverlayManager } from './overlay.js';
 import { FeatureManager } from '../featureManager.js';
+import { ICONS } from './icons.js';
 
 export const Paywall = {
     showUpgradeModal(lockedFeature = null) {
@@ -37,10 +38,10 @@ export const Paywall = {
             <div class="paywall-modal">
                 <div class="paywall-header">
                     <div class="paywall-badge">
-                        <svg class="badge-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                        ${ICONS.ZERO}
                         <span>ZERØ PRO</span>
                     </div>
-                    <button class="paywall-close" data-act="close">✕</button>
+                    <button class="paywall-close" data-act="close">${ICONS.X}</button>
                 </div>
 
                 <div class="paywall-hero">
