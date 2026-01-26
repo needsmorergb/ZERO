@@ -111,11 +111,24 @@ export const PnlCalculator = {
             const valueUsd = pos.tokenQty * currentPrice;
             const valueSol = valueUsd / solUsd;
             const pnl = valueSol - pos.totalSolSpent;
+            const pnlPct = (pnl / pos.totalSolSpent) * 100;
 
-            console.log(`[PNL] ${pos.symbol}: qty=${pos.tokenQty.toFixed(2)}, price=$${currentPrice.toFixed(6)}, value=${valueSol.toFixed(4)} SOL, spent=${pos.totalSolSpent.toFixed(4)} SOL, pnl=${pnl.toFixed(4)} SOL`);
+            // Track Peak PNL Pct for Profit Overstay detection
+            if (pos.peakPnlPct === undefined || pnlPct > pos.peakPnlPct) {
+                pos.peakPnlPct = pnlPct;
+            }
+
+            pos.pnlPct = pnlPct; // Store current pct for analytics
+
+            console.log(`[PNL] ${pos.symbol}: qty=${pos.tokenQty.toFixed(2)}, price=$${currentPrice.toFixed(6)}, pnl=${pnl.toFixed(4)} SOL (${pnlPct.toFixed(1)}%)`);
 
             totalUnrealized += pnl;
         });
+
+        // Elite Phase 10: Trigger background monitors
+        const { Analytics } = require('./analytics.js');
+        Analytics.monitorProfitOverstay(state);
+        Analytics.detectOvertrading(state);
 
         // Debounced save - only save if price changed and it's been >5 seconds since last save
         const now = Date.now();

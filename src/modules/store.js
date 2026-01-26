@@ -41,10 +41,14 @@ const DEFAULTS = {
         tiltFrequency: 0,
         panicSells: 0,
         fomoTrades: 0,
+        sunkCostFrequency: 0,
+        overtradingFrequency: 0,
+        profitNeglectFrequency: 0,
+        strategyDriftFrequency: 0,
         profile: 'Disciplined'
     },
     schemaVersion: 2,
-    version: '1.10.3'
+    version: '1.10.4'
 };
 
 // Helper utils

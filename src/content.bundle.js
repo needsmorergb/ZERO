@@ -1,4 +1,412 @@
 (() => {
+  var __defProp = Object.defineProperty;
+  var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+  var __getOwnPropNames = Object.getOwnPropertyNames;
+  var __hasOwnProp = Object.prototype.hasOwnProperty;
+  var __esm = (fn, res) => function __init() {
+    return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+  };
+  var __export = (target, all) => {
+    for (var name in all)
+      __defProp(target, name, { get: all[name], enumerable: true });
+  };
+  var __copyProps = (to, from, except, desc) => {
+    if (from && typeof from === "object" || typeof from === "function") {
+      for (let key of __getOwnPropNames(from))
+        if (!__hasOwnProp.call(to, key) && key !== except)
+          __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+    }
+    return to;
+  };
+  var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+
+  // src/modules/featureManager.js
+  var TIERS, FEATURES, FeatureManager;
+  var init_featureManager = __esm({
+    "src/modules/featureManager.js"() {
+      TIERS = {
+        FREE: "free",
+        PRO: "pro",
+        ELITE: "elite"
+      };
+      FEATURES = {
+        // Phase 1-2: Core
+        BASIC_TRADING: "free",
+        REAL_TIME_PNL: "free",
+        // Phase 2-4: Pro Foundations
+        STRATEGY_TAGGING: "pro",
+        EMOTION_TRACKING: "pro",
+        DISCIPLINE_SCORING: "pro",
+        AI_DEBRIEF: "pro",
+        // Phase 5-6: Advanced Pro
+        EQUITY_CHARTS: "pro",
+        DETAILED_LOGS: "pro",
+        ADVANCED_ANALYTICS: "pro",
+        RISK_ADJUSTED_METRICS: "pro",
+        SHARE_TO_X: "pro",
+        // Phase 6+: Elite
+        TILT_DETECTION: "elite",
+        SESSION_REPLAY: "elite",
+        ADVANCED_COACHING: "elite",
+        BEHAVIOR_BASELINE: "elite",
+        MARKET_CONTEXT: "elite"
+      };
+      FeatureManager = {
+        TIERS,
+        FEATURES,
+        resolveFlags(state, featureName) {
+          const userTier = state.settings?.tier || TIERS.FREE;
+          const requiredTier = FEATURES[featureName];
+          const flags = {
+            enabled: false,
+            visible: false,
+            interactive: false,
+            gated: false
+          };
+          if (!requiredTier)
+            return flags;
+          const hasEntitlement = this.hasTierAccess(userTier, requiredTier);
+          const phase = state.settings?.rolloutPhase || "full";
+          if (requiredTier === TIERS.FREE) {
+            flags.enabled = true;
+            flags.visible = true;
+            flags.interactive = true;
+            flags.gated = false;
+          } else {
+            flags.enabled = true;
+            if (hasEntitlement) {
+              flags.visible = true;
+              flags.interactive = true;
+              flags.gated = false;
+            } else {
+              if (phase === "preview") {
+                flags.visible = true;
+                flags.interactive = true;
+                flags.gated = false;
+              } else if (phase === "beta") {
+                flags.visible = false;
+                flags.interactive = false;
+              } else {
+                flags.visible = true;
+                flags.interactive = false;
+                flags.gated = true;
+              }
+            }
+          }
+          if (state.settings?.featureOverrides?.[featureName] === false) {
+            flags.enabled = false;
+            flags.visible = false;
+            flags.interactive = false;
+          }
+          return flags;
+        },
+        hasTierAccess(userTier, requiredTier) {
+          if (requiredTier === TIERS.FREE)
+            return true;
+          if (requiredTier === TIERS.PRO)
+            return [TIERS.PRO, TIERS.ELITE].includes(userTier);
+          if (requiredTier === TIERS.ELITE)
+            return userTier === TIERS.ELITE;
+          return false;
+        }
+      };
+    }
+  });
+
+  // src/modules/core/analytics.js
+  var analytics_exports = {};
+  __export(analytics_exports, {
+    Analytics: () => Analytics
+  });
+  var Analytics;
+  var init_analytics = __esm({
+    "src/modules/core/analytics.js"() {
+      init_featureManager();
+      Analytics = {
+        analyzeRecentTrades(state) {
+          const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+          if (trades.length === 0)
+            return null;
+          const recentTrades = trades.slice(-10);
+          let wins = 0, losses = 0;
+          let totalHoldTimeMs = 0;
+          let totalPnlSol = 0;
+          let avgEntryMc = 0, avgExitMc = 0;
+          let entryMcCount = 0, exitMcCount = 0;
+          let quickFlips = 0;
+          let longHolds = 0;
+          for (const trade of recentTrades) {
+            const pnl = trade.realizedPnlSol || 0;
+            if (pnl > 0)
+              wins++;
+            else if (pnl < 0)
+              losses++;
+            totalPnlSol += pnl;
+            if (trade.marketCap) {
+              avgExitMc += trade.marketCap;
+              exitMcCount++;
+            }
+          }
+          const winRate = recentTrades.length > 0 ? wins / recentTrades.length * 100 : 0;
+          const grossProfits = recentTrades.reduce((sum, t) => sum + Math.max(0, t.realizedPnlSol || 0), 0);
+          const grossLosses = Math.abs(recentTrades.reduce((sum, t) => sum + Math.min(0, t.realizedPnlSol || 0), 0));
+          const profitFactor = grossLosses > 0 ? (grossProfits / grossLosses).toFixed(2) : grossProfits > 0 ? "MAX" : "0.00";
+          let peak = 0, maxDd = 0, currentBal = 0;
+          recentTrades.forEach((t) => {
+            currentBal += t.realizedPnlSol || 0;
+            if (currentBal > peak)
+              peak = currentBal;
+            const dd = peak - currentBal;
+            if (dd > maxDd)
+              maxDd = dd;
+          });
+          return {
+            totalTrades: recentTrades.length,
+            wins,
+            losses,
+            winRate: winRate.toFixed(1),
+            profitFactor,
+            maxDrawdown: maxDd.toFixed(4),
+            totalPnlSol
+          };
+        },
+        calculateDiscipline(trade, state) {
+          const flags = FeatureManager.resolveFlags(state, "DISCIPLINE_SCORING");
+          if (!flags.enabled)
+            return { score: state.session.disciplineScore || 100, penalty: 0, reasons: [] };
+          const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+          const prevTrade = trades.length > 1 ? trades[trades.length - 2] : null;
+          let penalty = 0;
+          let reasons = [];
+          if (prevTrade && trade.ts - prevTrade.ts < 6e4) {
+            penalty += 10;
+            reasons.push("FOMO (Rapid logic)");
+          }
+          if (!trade.strategy || trade.strategy === "Unknown" || trade.strategy === "Other") {
+            penalty += 5;
+            reasons.push("No Strategy");
+          }
+          if (trade.side === "BUY") {
+            const currentBal = state.session.balance + trade.solSize;
+            if (trade.solSize > currentBal * 0.5) {
+              penalty += 20;
+              reasons.push("Oversizing (>50%)");
+            }
+          }
+          let score = state.session.disciplineScore !== void 0 ? state.session.disciplineScore : 100;
+          score = Math.max(0, score - penalty);
+          state.session.disciplineScore = score;
+          if (penalty > 0) {
+            console.log(`[DISCIPLINE] Score -${penalty} (${reasons.join(", ")})`);
+          }
+          return { score, penalty, reasons };
+        },
+        updateStreaks(trade, state) {
+          if (trade.side !== "SELL")
+            return;
+          const pnl = trade.realizedPnlSol || 0;
+          if (pnl > 0) {
+            state.session.winStreak = (state.session.winStreak || 0) + 1;
+            state.session.lossStreak = 0;
+            console.log(`[ZER\xD8] Win! +${pnl.toFixed(4)} SOL. Win streak: ${state.session.winStreak}`);
+          } else if (pnl < 0) {
+            state.session.lossStreak = (state.session.lossStreak || 0) + 1;
+            state.session.winStreak = 0;
+            console.log(`[ZER\xD8] Loss. ${pnl.toFixed(4)} SOL. Loss streak: ${state.session.lossStreak}`);
+          }
+          if (!state.session.equityHistory)
+            state.session.equityHistory = [];
+          state.session.equityHistory.push({
+            ts: Date.now(),
+            equity: state.session.balance + (state.session.realized || 0)
+          });
+          if (state.session.equityHistory.length > 50)
+            state.session.equityHistory.shift();
+          this.detectTilt(trade, state);
+          this.detectFomo(trade, state);
+          this.detectPanicSell(trade, state);
+          this.detectSunkCost(trade, state);
+          this.detectStrategyDrift(trade, state);
+          this.updateProfile(state);
+        },
+        detectTilt(trade, state) {
+          const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
+          if (!flags.enabled)
+            return;
+          const lossStreak = state.session.lossStreak || 0;
+          if (lossStreak >= 3) {
+            this.addAlert(state, "TILT", `\u26A0\uFE0F TILT DETECTED: ${lossStreak} Losses in a row. Take a break.`);
+            state.behavior.tiltFrequency = (state.behavior.tiltFrequency || 0) + 1;
+          }
+        },
+        detectSunkCost(trade, state) {
+          if (trade.side !== "BUY")
+            return;
+          const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
+          if (!flags.enabled)
+            return;
+          const pos = state.positions[trade.mint];
+          if (pos && (pos.pnlSol || 0) < 0) {
+            this.addAlert(state, "SUNK_COST", "\u{1F4C9} SUNK COST: Averaging down into a losing position increases risk.");
+            state.behavior.sunkCostFrequency = (state.behavior.sunkCostFrequency || 0) + 1;
+          }
+        },
+        detectOvertrading(state) {
+          const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
+          if (!flags.enabled)
+            return;
+          const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+          if (trades.length < 5)
+            return;
+          const last5 = trades.slice(-5);
+          const timeSpan = last5[4].ts - last5[0].ts;
+          if (timeSpan < 3e5) {
+            this.addAlert(state, "VELOCITY", "\u26A0\uFE0F OVERTRADING: You're trading too fast. Stop and evaluate setups.");
+            state.behavior.overtradingFrequency = (state.behavior.overtradingFrequency || 0) + 1;
+          }
+        },
+        monitorProfitOverstay(state) {
+          const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
+          if (!flags.enabled)
+            return;
+          Object.values(state.positions).forEach((pos) => {
+            const pnlPct = pos.pnlPct || 0;
+            const peakPct = pos.peakPnlPct !== void 0 ? pos.peakPnlPct : 0;
+            if (peakPct > 10 && pnlPct < 0) {
+              if (!pos.alertedGreenToRed) {
+                this.addAlert(state, "PROFIT_NEGLECT", `\u{1F34F} GREEN-TO-RED: ${pos.symbol} was up 10%+. Don't let winners die.`);
+                pos.alertedGreenToRed = true;
+                state.behavior.profitNeglectFrequency = (state.behavior.profitNeglectFrequency || 0) + 1;
+              }
+            }
+          });
+        },
+        detectStrategyDrift(trade, state) {
+          if (trade.side !== "BUY")
+            return;
+          const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
+          if (!flags.enabled)
+            return;
+          if (trade.strategy === "Unknown" || trade.strategy === "Other") {
+            const trades = Object.values(state.trades || {});
+            const profitableStrategies = trades.filter((t) => (t.realizedPnlSol || 0) > 0 && t.strategy !== "Unknown").map((t) => t.strategy);
+            if (profitableStrategies.length >= 3) {
+              this.addAlert(state, "DRIFT", "\u{1F575}\uFE0F STRATEGY DRIFT: Playing 'Unknown' instead of your winning setups.");
+              state.behavior.strategyDriftFrequency = (state.behavior.strategyDriftFrequency || 0) + 1;
+            }
+          }
+        },
+        detectFomo(trade, state) {
+          if (trade.side !== "BUY")
+            return;
+          const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
+          if (!flags.enabled)
+            return;
+          const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+          const prevTrade = trades.length > 1 ? trades[trades.length - 2] : null;
+          if (prevTrade && trade.ts - prevTrade.ts < 3e4 && prevTrade.side === "SELL" && (prevTrade.realizedPnlSol || 0) < 0) {
+            this.addAlert(state, "FOMO", "\u{1F6A8} FOMO ALERT: Revenge trading detected.");
+            state.behavior.fomoTrades = (state.behavior.fomoTrades || 0) + 1;
+          }
+        },
+        detectPanicSell(trade, state) {
+          if (trade.side !== "SELL")
+            return;
+          const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
+          if (!flags.enabled)
+            return;
+          if (trade.entryTs && trade.ts - trade.entryTs < 45e3 && (trade.realizedPnlSol || 0) < 0) {
+            this.addAlert(state, "PANIC", "\u{1F631} PANIC SELL: You're cutting too early. Trust your stops.");
+            state.behavior.panicSells = (state.behavior.panicSells || 0) + 1;
+          }
+        },
+        addAlert(state, type, message) {
+          if (!state.session.activeAlerts)
+            state.session.activeAlerts = [];
+          const alert = { type, message, ts: Date.now() };
+          state.session.activeAlerts.push(alert);
+          if (state.session.activeAlerts.length > 3)
+            state.session.activeAlerts.shift();
+          console.log(`[ELITE ALERT] ${type}: ${message}`);
+        },
+        updateProfile(state) {
+          const b = state.behavior;
+          const totalMistakes = (b.tiltFrequency || 0) + (b.fomoTrades || 0) + (b.panicSells || 0);
+          if (totalMistakes === 0)
+            b.profile = "Disciplined";
+          else if (b.tiltFrequency > 2)
+            b.profile = "Emotional";
+          else if (b.fomoTrades > 2)
+            b.profile = "Impulsive";
+          else if (b.panicSells > 2)
+            b.profile = "Hesitant";
+          else
+            b.profile = "Improving";
+        },
+        getProfessorDebrief(state) {
+          const score = state.session.disciplineScore !== void 0 ? state.session.disciplineScore : 100;
+          const stats = this.analyzeRecentTrades(state) || { winRate: 0, style: "balanced" };
+          let critique = "Keep your discipline score high to trade like a pro.";
+          if (score < 70) {
+            critique = "You're trading emotionally. Stop, breathe, and stick to your strategy.";
+          } else if (stats.winRate > 60 && score >= 90) {
+            critique = "Excellent execution. You're trading with professional-grade discipline.";
+          } else if (stats.style === "scalper" && score < 90) {
+            critique = "Scalping requires perfect discipline. Watch your sizing.";
+          } else if (stats.totalTrades >= 3 && stats.winRate < 40) {
+            critique = "Market conditions are tough. Focus on high-conviction setups only.";
+          }
+          return { score, critique };
+        },
+        generateXShareText(state) {
+          const trades = Object.values(state.trades || {});
+          const sellTrades = trades.filter((t) => t.side === "SELL");
+          const wins = sellTrades.filter((t) => (t.realizedPnlSol || 0) > 0).length;
+          const losses = sellTrades.filter((t) => (t.realizedPnlSol || 0) < 0).length;
+          const totalPnl = state.session.realized || 0;
+          const winRate = sellTrades.length > 0 ? (wins / sellTrades.length * 100).toFixed(0) : 0;
+          const disciplineScore = state.session.disciplineScore || 100;
+          const winStreak = state.session.winStreak || 0;
+          const lossStreak = state.session.lossStreak || 0;
+          const currentStreak = winStreak > 0 ? `${winStreak}W` : lossStreak > 0 ? `${lossStreak}L` : "0";
+          const pnlFormatted = totalPnl >= 0 ? `+${totalPnl.toFixed(3)}` : totalPnl.toFixed(3);
+          const pnlEmoji = totalPnl >= 0 ? "\u{1F4C8}" : "\u{1F4C9}";
+          let text = `\u{1F3AF} ZER\xD8 Trading Session Complete
+
+`;
+          text += `${pnlEmoji} P&L: ${pnlFormatted} SOL
+`;
+          text += `\u{1F4CA} Win Rate: ${winRate}%
+`;
+          text += `\u{1F3B2} Trades: ${wins}W / ${losses}L
+`;
+          text += `\u{1F525} Streak: ${currentStreak}
+`;
+          text += `\u{1F9E0} Discipline: ${disciplineScore}/100
+
+`;
+          if (winRate >= 70) {
+            text += `Crushing it today! \u{1F4AA}
+
+`;
+          } else if (winRate >= 50) {
+            text += `Staying profitable \u{1F4CA}
+
+`;
+          } else if (sellTrades.length >= 3) {
+            text += `Learning and improving \u{1F4DA}
+
+`;
+          }
+          text += `Paper trading with ZER\xD8 on Solana
+`;
+          text += `#Solana #PaperTrading #Crypto`;
+          return text;
+        }
+      };
+    }
+  });
+
   // src/modules/store.js
   var EXT_KEY = "sol_paper_trader_v1";
   var DEFAULTS = {
@@ -52,10 +460,14 @@
       tiltFrequency: 0,
       panicSells: 0,
       fomoTrades: 0,
+      sunkCostFrequency: 0,
+      overtradingFrequency: 0,
+      profitNeglectFrequency: 0,
+      strategyDriftFrequency: 0,
       profile: "Disciplined"
     },
     schemaVersion: 2,
-    version: "1.10.3"
+    version: "1.10.4"
   };
   function deepMerge(base, patch) {
     if (!patch || typeof patch !== "object")
@@ -186,93 +598,8 @@
     }
   };
 
-  // src/modules/featureManager.js
-  var TIERS = {
-    FREE: "free",
-    PRO: "pro",
-    ELITE: "elite"
-  };
-  var FEATURES = {
-    // Phase 1-2: Core
-    BASIC_TRADING: "free",
-    REAL_TIME_PNL: "free",
-    // Phase 2-4: Pro Foundations
-    STRATEGY_TAGGING: "pro",
-    EMOTION_TRACKING: "pro",
-    DISCIPLINE_SCORING: "pro",
-    AI_DEBRIEF: "pro",
-    // Phase 5-6: Advanced Pro
-    EQUITY_CHARTS: "pro",
-    DETAILED_LOGS: "pro",
-    ADVANCED_ANALYTICS: "pro",
-    RISK_ADJUSTED_METRICS: "pro",
-    SHARE_TO_X: "pro",
-    // Phase 6+: Elite
-    TILT_DETECTION: "elite",
-    SESSION_REPLAY: "elite",
-    ADVANCED_COACHING: "elite",
-    BEHAVIOR_BASELINE: "elite",
-    MARKET_CONTEXT: "elite"
-  };
-  var FeatureManager = {
-    TIERS,
-    FEATURES,
-    resolveFlags(state, featureName) {
-      const userTier = state.settings?.tier || TIERS.FREE;
-      const requiredTier = FEATURES[featureName];
-      const flags = {
-        enabled: false,
-        visible: false,
-        interactive: false,
-        gated: false
-      };
-      if (!requiredTier)
-        return flags;
-      const hasEntitlement = this.hasTierAccess(userTier, requiredTier);
-      const phase = state.settings?.rolloutPhase || "full";
-      if (requiredTier === TIERS.FREE) {
-        flags.enabled = true;
-        flags.visible = true;
-        flags.interactive = true;
-        flags.gated = false;
-      } else {
-        flags.enabled = true;
-        if (hasEntitlement) {
-          flags.visible = true;
-          flags.interactive = true;
-          flags.gated = false;
-        } else {
-          if (phase === "preview") {
-            flags.visible = true;
-            flags.interactive = true;
-            flags.gated = false;
-          } else if (phase === "beta") {
-            flags.visible = false;
-            flags.interactive = false;
-          } else {
-            flags.visible = true;
-            flags.interactive = false;
-            flags.gated = true;
-          }
-        }
-      }
-      if (state.settings?.featureOverrides?.[featureName] === false) {
-        flags.enabled = false;
-        flags.visible = false;
-        flags.interactive = false;
-      }
-      return flags;
-    },
-    hasTierAccess(userTier, requiredTier) {
-      if (requiredTier === TIERS.FREE)
-        return true;
-      if (requiredTier === TIERS.PRO)
-        return [TIERS.PRO, TIERS.ELITE].includes(userTier);
-      if (requiredTier === TIERS.ELITE)
-        return userTier === TIERS.ELITE;
-      return false;
-    }
-  };
+  // src/content.boot.js
+  init_featureManager();
 
   // src/modules/ui/ids.js
   var IDS = {
@@ -1881,6 +2208,7 @@ input:checked + .slider:before {
   };
 
   // src/modules/ui/banner.js
+  init_featureManager();
   var Banner = {
     mountBanner() {
       const root = OverlayManager.getShadowRoot();
@@ -1967,6 +2295,9 @@ input:checked + .slider:before {
       });
     }
   };
+
+  // src/modules/ui/pnl-hud.js
+  init_featureManager();
 
   // src/modules/core/pnl-calculator.js
   var PnlCalculator = {
@@ -2062,9 +2393,17 @@ input:checked + .slider:before {
         const valueUsd = pos.tokenQty * currentPrice;
         const valueSol = valueUsd / solUsd;
         const pnl = valueSol - pos.totalSolSpent;
-        console.log(`[PNL] ${pos.symbol}: qty=${pos.tokenQty.toFixed(2)}, price=$${currentPrice.toFixed(6)}, value=${valueSol.toFixed(4)} SOL, spent=${pos.totalSolSpent.toFixed(4)} SOL, pnl=${pnl.toFixed(4)} SOL`);
+        const pnlPct = pnl / pos.totalSolSpent * 100;
+        if (pos.peakPnlPct === void 0 || pnlPct > pos.peakPnlPct) {
+          pos.peakPnlPct = pnlPct;
+        }
+        pos.pnlPct = pnlPct;
+        console.log(`[PNL] ${pos.symbol}: qty=${pos.tokenQty.toFixed(2)}, price=$${currentPrice.toFixed(6)}, pnl=${pnl.toFixed(4)} SOL (${pnlPct.toFixed(1)}%)`);
         totalUnrealized += pnl;
       });
+      const { Analytics: Analytics2 } = (init_analytics(), __toCommonJS(analytics_exports));
+      Analytics2.monitorProfitOverstay(state);
+      Analytics2.detectOvertrading(state);
       const now = Date.now();
       if (priceWasUpdated && now - this.lastPriceSave > 5e3) {
         this.lastPriceSave = now;
@@ -2074,234 +2413,12 @@ input:checked + .slider:before {
     }
   };
 
-  // src/modules/core/analytics.js
-  var Analytics = {
-    analyzeRecentTrades(state) {
-      const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
-      if (trades.length === 0)
-        return null;
-      const recentTrades = trades.slice(-10);
-      let wins = 0, losses = 0;
-      let totalHoldTimeMs = 0;
-      let totalPnlSol = 0;
-      let avgEntryMc = 0, avgExitMc = 0;
-      let entryMcCount = 0, exitMcCount = 0;
-      let quickFlips = 0;
-      let longHolds = 0;
-      for (const trade of recentTrades) {
-        const pnl = trade.realizedPnlSol || 0;
-        if (pnl > 0)
-          wins++;
-        else if (pnl < 0)
-          losses++;
-        totalPnlSol += pnl;
-        if (trade.marketCap) {
-          avgExitMc += trade.marketCap;
-          exitMcCount++;
-        }
-      }
-      const winRate = recentTrades.length > 0 ? wins / recentTrades.length * 100 : 0;
-      const grossProfits = recentTrades.reduce((sum, t) => sum + Math.max(0, t.realizedPnlSol || 0), 0);
-      const grossLosses = Math.abs(recentTrades.reduce((sum, t) => sum + Math.min(0, t.realizedPnlSol || 0), 0));
-      const profitFactor = grossLosses > 0 ? (grossProfits / grossLosses).toFixed(2) : grossProfits > 0 ? "MAX" : "0.00";
-      let peak = 0, maxDd = 0, currentBal = 0;
-      recentTrades.forEach((t) => {
-        currentBal += t.realizedPnlSol || 0;
-        if (currentBal > peak)
-          peak = currentBal;
-        const dd = peak - currentBal;
-        if (dd > maxDd)
-          maxDd = dd;
-      });
-      return {
-        totalTrades: recentTrades.length,
-        wins,
-        losses,
-        winRate: winRate.toFixed(1),
-        profitFactor,
-        maxDrawdown: maxDd.toFixed(4),
-        totalPnlSol
-      };
-    },
-    calculateDiscipline(trade, state) {
-      const flags = FeatureManager.resolveFlags(state, "DISCIPLINE_SCORING");
-      if (!flags.enabled)
-        return { score: state.session.disciplineScore || 100, penalty: 0, reasons: [] };
-      const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
-      const prevTrade = trades.length > 1 ? trades[trades.length - 2] : null;
-      let penalty = 0;
-      let reasons = [];
-      if (prevTrade && trade.ts - prevTrade.ts < 6e4) {
-        penalty += 10;
-        reasons.push("FOMO (Rapid logic)");
-      }
-      if (!trade.strategy || trade.strategy === "Unknown" || trade.strategy === "Other") {
-        penalty += 5;
-        reasons.push("No Strategy");
-      }
-      if (trade.side === "BUY") {
-        const currentBal = state.session.balance + trade.solSize;
-        if (trade.solSize > currentBal * 0.5) {
-          penalty += 20;
-          reasons.push("Oversizing (>50%)");
-        }
-      }
-      let score = state.session.disciplineScore !== void 0 ? state.session.disciplineScore : 100;
-      score = Math.max(0, score - penalty);
-      state.session.disciplineScore = score;
-      if (penalty > 0) {
-        console.log(`[DISCIPLINE] Score -${penalty} (${reasons.join(", ")})`);
-      }
-      return { score, penalty, reasons };
-    },
-    updateStreaks(trade, state) {
-      if (trade.side !== "SELL")
-        return;
-      const pnl = trade.realizedPnlSol || 0;
-      if (pnl > 0) {
-        state.session.winStreak = (state.session.winStreak || 0) + 1;
-        state.session.lossStreak = 0;
-        console.log(`[ZER\xD8] Win! +${pnl.toFixed(4)} SOL. Win streak: ${state.session.winStreak}`);
-      } else if (pnl < 0) {
-        state.session.lossStreak = (state.session.lossStreak || 0) + 1;
-        state.session.winStreak = 0;
-        console.log(`[ZER\xD8] Loss. ${pnl.toFixed(4)} SOL. Loss streak: ${state.session.lossStreak}`);
-      }
-      if (!state.session.equityHistory)
-        state.session.equityHistory = [];
-      state.session.equityHistory.push({
-        ts: Date.now(),
-        equity: state.session.balance + (state.session.realized || 0)
-      });
-      if (state.session.equityHistory.length > 50)
-        state.session.equityHistory.shift();
-      this.detectTilt(trade, state);
-      this.detectFomo(trade, state);
-      this.detectPanicSell(trade, state);
-      this.detectSunkCost(trade, state);
-      this.detectStrategyDrift(trade, state);
-      this.updateProfile(state);
-    },
-    detectTilt(trade, state) {
-      const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
-      if (!flags.enabled)
-        return;
-      const lossStreak = state.session.lossStreak || 0;
-      if (lossStreak >= 3) {
-        this.addAlert(state, "TILT", `\u26A0\uFE0F TILT DETECTED: ${lossStreak} Losses in a row. Take a break.`);
-        state.behavior.tiltFrequency = (state.behavior.tiltFrequency || 0) + 1;
-      }
-    },
-    detectFomo(trade, state) {
-      if (trade.side !== "BUY")
-        return;
-      const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
-      if (!flags.enabled)
-        return;
-      const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
-      const prevTrade = trades.length > 1 ? trades[trades.length - 2] : null;
-      if (prevTrade && trade.ts - prevTrade.ts < 3e4 && prevTrade.side === "SELL" && (prevTrade.realizedPnlSol || 0) < 0) {
-        this.addAlert(state, "FOMO", "\u{1F6A8} FOMO ALERT: Revenge trading detected.");
-        state.behavior.fomoTrades = (state.behavior.fomoTrades || 0) + 1;
-      }
-    },
-    detectPanicSell(trade, state) {
-      if (trade.side !== "SELL")
-        return;
-      const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
-      if (!flags.enabled)
-        return;
-      if (trade.entryTs && trade.ts - trade.entryTs < 45e3 && (trade.realizedPnlSol || 0) < 0) {
-        this.addAlert(state, "PANIC", "\u{1F631} PANIC SELL: You're cutting too early. Trust your stops.");
-        state.behavior.panicSells = (state.behavior.panicSells || 0) + 1;
-      }
-    },
-    addAlert(state, type, message) {
-      if (!state.session.activeAlerts)
-        state.session.activeAlerts = [];
-      const alert = { type, message, ts: Date.now() };
-      state.session.activeAlerts.push(alert);
-      if (state.session.activeAlerts.length > 3)
-        state.session.activeAlerts.shift();
-      console.log(`[ELITE ALERT] ${type}: ${message}`);
-    },
-    updateProfile(state) {
-      const b = state.behavior;
-      const totalMistakes = (b.tiltFrequency || 0) + (b.fomoTrades || 0) + (b.panicSells || 0);
-      if (totalMistakes === 0)
-        b.profile = "Disciplined";
-      else if (b.tiltFrequency > 2)
-        b.profile = "Emotional";
-      else if (b.fomoTrades > 2)
-        b.profile = "Impulsive";
-      else if (b.panicSells > 2)
-        b.profile = "Hesitant";
-      else
-        b.profile = "Improving";
-    },
-    getProfessorDebrief(state) {
-      const score = state.session.disciplineScore !== void 0 ? state.session.disciplineScore : 100;
-      const stats = this.analyzeRecentTrades(state) || { winRate: 0, style: "balanced" };
-      let critique = "Keep your discipline score high to trade like a pro.";
-      if (score < 70) {
-        critique = "You're trading emotionally. Stop, breathe, and stick to your strategy.";
-      } else if (stats.winRate > 60 && score >= 90) {
-        critique = "Excellent execution. You're trading with professional-grade discipline.";
-      } else if (stats.style === "scalper" && score < 90) {
-        critique = "Scalping requires perfect discipline. Watch your sizing.";
-      } else if (stats.totalTrades >= 3 && stats.winRate < 40) {
-        critique = "Market conditions are tough. Focus on high-conviction setups only.";
-      }
-      return { score, critique };
-    },
-    generateXShareText(state) {
-      const trades = Object.values(state.trades || {});
-      const sellTrades = trades.filter((t) => t.side === "SELL");
-      const wins = sellTrades.filter((t) => (t.realizedPnlSol || 0) > 0).length;
-      const losses = sellTrades.filter((t) => (t.realizedPnlSol || 0) < 0).length;
-      const totalPnl = state.session.realized || 0;
-      const winRate = sellTrades.length > 0 ? (wins / sellTrades.length * 100).toFixed(0) : 0;
-      const disciplineScore = state.session.disciplineScore || 100;
-      const winStreak = state.session.winStreak || 0;
-      const lossStreak = state.session.lossStreak || 0;
-      const currentStreak = winStreak > 0 ? `${winStreak}W` : lossStreak > 0 ? `${lossStreak}L` : "0";
-      const pnlFormatted = totalPnl >= 0 ? `+${totalPnl.toFixed(3)}` : totalPnl.toFixed(3);
-      const pnlEmoji = totalPnl >= 0 ? "\u{1F4C8}" : "\u{1F4C9}";
-      let text = `\u{1F3AF} ZER\xD8 Trading Session Complete
-
-`;
-      text += `${pnlEmoji} P&L: ${pnlFormatted} SOL
-`;
-      text += `\u{1F4CA} Win Rate: ${winRate}%
-`;
-      text += `\u{1F3B2} Trades: ${wins}W / ${losses}L
-`;
-      text += `\u{1F525} Streak: ${currentStreak}
-`;
-      text += `\u{1F9E0} Discipline: ${disciplineScore}/100
-
-`;
-      if (winRate >= 70) {
-        text += `Crushing it today! \u{1F4AA}
-
-`;
-      } else if (winRate >= 50) {
-        text += `Staying profitable \u{1F4CA}
-
-`;
-      } else if (sellTrades.length >= 3) {
-        text += `Learning and improving \u{1F4DA}
-
-`;
-      }
-      text += `Paper trading with ZER\xD8 on Solana
-`;
-      text += `#Solana #PaperTrading #Crypto`;
-      return text;
-    }
-  };
+  // src/modules/core/trading.js
+  init_analytics();
 
   // src/modules/core/order-execution.js
+  init_analytics();
+  init_featureManager();
   var OrderExecution = {
     async buy(amountSol, strategy = "Trend", tokenInfo = null) {
       const state = Store.state;
@@ -2514,6 +2631,7 @@ input:checked + .slider:before {
   };
 
   // src/modules/ui/paywall.js
+  init_featureManager();
   var Paywall = {
     showUpgradeModal(lockedFeature = null) {
       const root = OverlayManager.getShadowRoot();
@@ -2681,6 +2799,12 @@ input:checked + .slider:before {
     }
   };
 
+  // src/modules/ui/pnl-hud.js
+  init_analytics();
+
+  // src/modules/ui/dashboard.js
+  init_analytics();
+
   // src/modules/ui/dashboard-styles.js
   var DASHBOARD_CSS = `
 .paper-dashboard-overlay {
@@ -2833,6 +2957,7 @@ canvas#equity-canvas {
 `;
 
   // src/modules/ui/dashboard.js
+  init_featureManager();
   var Dashboard = {
     isOpen: false,
     toggle() {
@@ -3544,6 +3669,7 @@ canvas#equity-canvas {
   };
 
   // src/modules/ui/buy-hud.js
+  init_featureManager();
   function px2(n) {
     return n + "px";
   }

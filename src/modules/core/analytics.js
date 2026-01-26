@@ -141,6 +141,72 @@ export const Analytics = {
         }
     },
 
+    detectSunkCost(trade, state) {
+        if (trade.side !== 'BUY') return;
+        const flags = FeatureManager.resolveFlags(state, 'TILT_DETECTION');
+        if (!flags.enabled) return;
+
+        const pos = state.positions[trade.mint];
+        if (pos && (pos.pnlSol || 0) < 0) {
+            this.addAlert(state, 'SUNK_COST', "📉 SUNK COST: Averaging down into a losing position increases risk.");
+            state.behavior.sunkCostFrequency = (state.behavior.sunkCostFrequency || 0) + 1;
+        }
+    },
+
+    detectOvertrading(state) {
+        const flags = FeatureManager.resolveFlags(state, 'TILT_DETECTION');
+        if (!flags.enabled) return;
+
+        const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+        if (trades.length < 5) return;
+
+        const last5 = trades.slice(-5);
+        const timeSpan = last5[4].ts - last5[0].ts;
+
+        // 5 trades in less than 5 minutes
+        if (timeSpan < 300000) {
+            this.addAlert(state, 'VELOCITY', "⚠️ OVERTRADING: You're trading too fast. Stop and evaluate setups.");
+            state.behavior.overtradingFrequency = (state.behavior.overtradingFrequency || 0) + 1;
+        }
+    },
+
+    monitorProfitOverstay(state) {
+        const flags = FeatureManager.resolveFlags(state, 'TILT_DETECTION');
+        if (!flags.enabled) return;
+
+        Object.values(state.positions).forEach(pos => {
+            const pnlPct = pos.pnlPct || 0;
+            const peakPct = (pos.peakPnlPct !== undefined) ? pos.peakPnlPct : 0;
+
+            // If it was up > 10% and now it's < 0%
+            if (peakPct > 10 && pnlPct < 0) {
+                if (!pos.alertedGreenToRed) {
+                    this.addAlert(state, 'PROFIT_NEGLECT', `🍏 GREEN-TO-RED: ${pos.symbol} was up 10%+. Don't let winners die.`);
+                    pos.alertedGreenToRed = true;
+                    state.behavior.profitNeglectFrequency = (state.behavior.profitNeglectFrequency || 0) + 1;
+                }
+            }
+        });
+    },
+
+    detectStrategyDrift(trade, state) {
+        if (trade.side !== 'BUY') return;
+        const flags = FeatureManager.resolveFlags(state, 'TILT_DETECTION');
+        if (!flags.enabled) return;
+
+        if (trade.strategy === 'Unknown' || trade.strategy === 'Other') {
+            const trades = Object.values(state.trades || {});
+            const profitableStrategies = trades
+                .filter(t => (t.realizedPnlSol || 0) > 0 && t.strategy !== 'Unknown')
+                .map(t => t.strategy);
+
+            if (profitableStrategies.length >= 3) {
+                this.addAlert(state, 'DRIFT', "🕵️ STRATEGY DRIFT: Playing 'Unknown' instead of your winning setups.");
+                state.behavior.strategyDriftFrequency = (state.behavior.strategyDriftFrequency || 0) + 1;
+            }
+        }
+    },
+
     detectFomo(trade, state) {
         if (trade.side !== 'BUY') return;
         const flags = FeatureManager.resolveFlags(state, 'TILT_DETECTION'); // Use Tilt Detection as proxy for behavioral
