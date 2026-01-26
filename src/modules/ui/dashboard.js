@@ -53,6 +53,7 @@ export const Dashboard = {
         const logFlags = FeatureManager.resolveFlags(state, 'DETAILED_LOGS');
         const aiFlags = FeatureManager.resolveFlags(state, 'ADVANCED_ANALYTICS');
         const shareFlags = FeatureManager.resolveFlags(state, 'SHARE_TO_X');
+        const eliteFlags = FeatureManager.resolveFlags(state, 'BEHAVIOR_BASELINE');
 
         const isFree = state.settings.tier === 'free';
 
@@ -111,6 +112,28 @@ export const Dashboard = {
                         <div class="trade-mini-list" id="dashboard-recent-logs">
                             <div class="dashboard-title" style="font-size:12px; margin-bottom:12px; opacity:0.6;">RECENT LOGS</div>
                             ${this.renderRecentMiniRows(state)}
+                        </div>
+
+                        <div class="behavior-profile-card" id="dashboard-behavior-profile">
+                            <div class="dashboard-title" style="font-size:12px; margin-bottom:12px; opacity:0.6;">BEHAVIORAL PROFILE</div>
+                            <div class="behavior-tag ${state.behavior.profile}">${state.behavior.profile || 'Disciplined'}</div>
+                            <div style="font-size:13px; color:#94a3b8; line-height:1.5;">
+                                Your trading patterns suggest a **${state.behavior.profile || 'Disciplined'}** archetype this session.
+                            </div>
+                            <div class="behavior-stats">
+                                <div class="behavior-stat-item">
+                                    <div class="k">Tilt</div>
+                                    <div class="v">${state.behavior.tiltFrequency || 0}</div>
+                                </div>
+                                <div class="behavior-stat-item">
+                                    <div class="k">FOMO</div>
+                                    <div class="v">${state.behavior.fomoTrades || 0}</div>
+                                </div>
+                                <div class="behavior-stat-item">
+                                    <div class="k">Panic</div>
+                                    <div class="v">${state.behavior.panicSells || 0}</div>
+                                </div>
+                            </div>
                         </div>
 
                         <div style="margin-top:20px;">

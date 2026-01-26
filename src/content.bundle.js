@@ -1663,6 +1663,45 @@ input:checked + .slider:before {
     from { opacity: 1; transform: translateY(0); }
     to { opacity: 0; transform: translateY(-20px); }
 }
+
+.behavior-profile-card {
+    margin-top: 24px;
+    padding: 20px;
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.1));
+    border: 1px solid rgba(139, 92, 246, 0.2);
+    border-radius: 16px;
+}
+
+.behavior-tag {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 12px;
+}
+
+.behavior-tag.Disciplined { background: rgba(16, 185, 129, 0.2); color: #10b981; }
+.behavior-tag.Impulsive { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+.behavior-tag.Emotional { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+.behavior-tag.Hesitant { background: rgba(99, 102, 241, 0.2); color: #6366f1; }
+.behavior-tag.Improving { background: rgba(20, 184, 166, 0.2); color: #14b8a6; }
+
+.behavior-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-top: 16px;
+}
+
+.behavior-stat-item {
+    text-align: center;
+}
+
+.behavior-stat-item .k { font-size: 9px; color: #64748b; text-transform: uppercase; margin-bottom: 4px; }
+.behavior-stat-item .v { font-size: 16px; font-weight: 800; color: #f8fafc; }
 `;
 
   // src/modules/ui/styles.js
@@ -2817,6 +2856,7 @@ canvas#equity-canvas {
       const logFlags = FeatureManager.resolveFlags(state, "DETAILED_LOGS");
       const aiFlags = FeatureManager.resolveFlags(state, "ADVANCED_ANALYTICS");
       const shareFlags = FeatureManager.resolveFlags(state, "SHARE_TO_X");
+      const eliteFlags = FeatureManager.resolveFlags(state, "BEHAVIOR_BASELINE");
       const isFree = state.settings.tier === "free";
       overlay.innerHTML = `
             <div class="paper-dashboard-modal">
@@ -2873,6 +2913,28 @@ canvas#equity-canvas {
                         <div class="trade-mini-list" id="dashboard-recent-logs">
                             <div class="dashboard-title" style="font-size:12px; margin-bottom:12px; opacity:0.6;">RECENT LOGS</div>
                             ${this.renderRecentMiniRows(state)}
+                        </div>
+
+                        <div class="behavior-profile-card" id="dashboard-behavior-profile">
+                            <div class="dashboard-title" style="font-size:12px; margin-bottom:12px; opacity:0.6;">BEHAVIORAL PROFILE</div>
+                            <div class="behavior-tag ${state.behavior.profile}">${state.behavior.profile || "Disciplined"}</div>
+                            <div style="font-size:13px; color:#94a3b8; line-height:1.5;">
+                                Your trading patterns suggest a **${state.behavior.profile || "Disciplined"}** archetype this session.
+                            </div>
+                            <div class="behavior-stats">
+                                <div class="behavior-stat-item">
+                                    <div class="k">Tilt</div>
+                                    <div class="v">${state.behavior.tiltFrequency || 0}</div>
+                                </div>
+                                <div class="behavior-stat-item">
+                                    <div class="k">FOMO</div>
+                                    <div class="v">${state.behavior.fomoTrades || 0}</div>
+                                </div>
+                                <div class="behavior-stat-item">
+                                    <div class="k">Panic</div>
+                                    <div class="v">${state.behavior.panicSells || 0}</div>
+                                </div>
+                            </div>
                         </div>
 
                         <div style="margin-top:20px;">
