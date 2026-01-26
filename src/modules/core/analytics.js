@@ -708,6 +708,388 @@ export const Analytics = {
      * - Trade Frequency Stability (time between trades)
      * - Strategy Focus (% of trades using top 2 strategies)
      */
+    // ==========================================
+    // PERSONAL TRADER PROFILE (ELITE)
+    // ==========================================
+
+    /**
+     * Generate a comprehensive trader profile based on historical data
+     * Analyzes: Best strategies, worst conditions, optimal session length, best time of day
+     */
+    generateTraderProfile(state) {
+        const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+
+        if (trades.length < 10) {
+            return {
+                ready: false,
+                message: 'Need 10+ trades to generate your profile',
+                tradesNeeded: 10 - trades.length
+            };
+        }
+
+        const sellTrades = trades.filter(t => t.side === 'SELL');
+        const buyTrades = trades.filter(t => t.side === 'BUY');
+
+        return {
+            ready: true,
+            generatedAt: Date.now(),
+            tradeCount: trades.length,
+            bestStrategies: this._analyzeBestStrategies(buyTrades, sellTrades, trades),
+            worstConditions: this._analyzeWorstConditions(trades, state),
+            optimalSessionLength: this._analyzeOptimalSessionLength(trades, state),
+            bestTimeOfDay: this._analyzeBestTimeOfDay(sellTrades),
+            tradingStyle: this._determineTradingStyle(trades),
+            riskProfile: this._analyzeRiskProfile(buyTrades, state),
+            emotionalPatterns: this._analyzeEmotionalPatterns(trades, state)
+        };
+    },
+
+    _analyzeBestStrategies(buyTrades, sellTrades, allTrades) {
+        const strategyStats = {};
+
+        // Group by strategy
+        buyTrades.forEach(buy => {
+            const strat = buy.strategy || 'Unknown';
+            if (!strategyStats[strat]) {
+                strategyStats[strat] = { count: 0, wins: 0, totalPnl: 0, avgHoldTime: 0, trades: [] };
+            }
+            strategyStats[strat].count++;
+            strategyStats[strat].trades.push(buy);
+        });
+
+        // Match sells to calculate P&L
+        sellTrades.forEach(sell => {
+            const matchingBuy = allTrades.find(t =>
+                t.side === 'BUY' &&
+                t.mint === sell.mint &&
+                t.ts < sell.ts
+            );
+            if (matchingBuy) {
+                const strat = matchingBuy.strategy || 'Unknown';
+                if (strategyStats[strat]) {
+                    const pnl = sell.realizedPnlSol || 0;
+                    strategyStats[strat].totalPnl += pnl;
+                    if (pnl > 0) strategyStats[strat].wins++;
+                    strategyStats[strat].avgHoldTime += (sell.ts - matchingBuy.ts);
+                }
+            }
+        });
+
+        // Calculate metrics
+        const results = Object.entries(strategyStats)
+            .filter(([_, s]) => s.count >= 2) // Need at least 2 trades
+            .map(([name, s]) => ({
+                name,
+                count: s.count,
+                winRate: s.count > 0 ? ((s.wins / s.count) * 100).toFixed(1) : 0,
+                totalPnl: s.totalPnl,
+                avgPnl: s.count > 0 ? (s.totalPnl / s.count) : 0,
+                avgHoldTime: s.wins > 0 ? Math.round((s.avgHoldTime / s.wins) / 60000) : 0 // in minutes
+            }))
+            .sort((a, b) => b.totalPnl - a.totalPnl);
+
+        return {
+            top: results.slice(0, 3),
+            worst: results.filter(s => s.totalPnl < 0).sort((a, b) => a.totalPnl - b.totalPnl).slice(0, 2),
+            mostUsed: results.sort((a, b) => b.count - a.count)[0] || null
+        };
+    },
+
+    _analyzeWorstConditions(trades, state) {
+        const conditions = [];
+
+        // 1. Performance after losses
+        let afterLossWins = 0, afterLossTotal = 0;
+        for (let i = 1; i < trades.length; i++) {
+            if (trades[i - 1].side === 'SELL' && (trades[i - 1].realizedPnlSol || 0) < 0) {
+                afterLossTotal++;
+                if (trades[i].side === 'SELL' && (trades[i].realizedPnlSol || 0) > 0) {
+                    afterLossWins++;
+                }
+            }
+        }
+        if (afterLossTotal >= 3) {
+            const afterLossWinRate = (afterLossWins / afterLossTotal * 100).toFixed(0);
+            if (afterLossWinRate < 40) {
+                conditions.push({
+                    type: 'AFTER_LOSS',
+                    label: 'After Losing Trades',
+                    severity: 'high',
+                    stat: `${afterLossWinRate}% win rate`,
+                    advice: 'Take a 5-minute break after losses before your next trade.'
+                });
+            }
+        }
+
+        // 2. Rapid trading performance
+        let rapidWins = 0, rapidTotal = 0;
+        for (let i = 1; i < trades.length; i++) {
+            if (trades[i].ts - trades[i - 1].ts < 120000) { // Within 2 minutes
+                rapidTotal++;
+                if (trades[i].side === 'SELL' && (trades[i].realizedPnlSol || 0) > 0) {
+                    rapidWins++;
+                }
+            }
+        }
+        if (rapidTotal >= 3) {
+            const rapidWinRate = (rapidWins / rapidTotal * 100).toFixed(0);
+            if (rapidWinRate < 35) {
+                conditions.push({
+                    type: 'RAPID_TRADING',
+                    label: 'Rapid-Fire Trading',
+                    severity: 'high',
+                    stat: `${rapidWinRate}% win rate`,
+                    advice: 'Slow down. Wait at least 2 minutes between trades.'
+                });
+            }
+        }
+
+        // 3. Large position performance
+        const avgSize = trades.filter(t => t.side === 'BUY').reduce((sum, t) => sum + (t.solAmount || 0), 0) / trades.filter(t => t.side === 'BUY').length;
+        let largeWins = 0, largeTotal = 0;
+        trades.filter(t => t.side === 'SELL').forEach(t => {
+            const matchingBuy = trades.find(b => b.side === 'BUY' && b.mint === t.mint && b.ts < t.ts);
+            if (matchingBuy && matchingBuy.solAmount > avgSize * 1.5) {
+                largeTotal++;
+                if ((t.realizedPnlSol || 0) > 0) largeWins++;
+            }
+        });
+        if (largeTotal >= 2) {
+            const largeWinRate = (largeWins / largeTotal * 100).toFixed(0);
+            if (largeWinRate < 40) {
+                conditions.push({
+                    type: 'LARGE_POSITIONS',
+                    label: 'Oversized Positions',
+                    severity: 'medium',
+                    stat: `${largeWinRate}% win rate`,
+                    advice: 'Your large trades underperform. Stick to consistent sizing.'
+                });
+            }
+        }
+
+        // 4. Late session performance (last hour)
+        const sessionTrades = this._groupBySession(trades, state);
+        let lateWins = 0, lateTotal = 0;
+        sessionTrades.forEach(session => {
+            if (session.length < 5) return;
+            const sessionStart = session[0].ts;
+            const lateThreshold = sessionStart + (60 * 60 * 1000); // 1 hour in
+            session.filter(t => t.ts > lateThreshold && t.side === 'SELL').forEach(t => {
+                lateTotal++;
+                if ((t.realizedPnlSol || 0) > 0) lateWins++;
+            });
+        });
+        if (lateTotal >= 3) {
+            const lateWinRate = (lateWins / lateTotal * 100).toFixed(0);
+            if (lateWinRate < 35) {
+                conditions.push({
+                    type: 'LATE_SESSION',
+                    label: 'Extended Sessions',
+                    severity: 'medium',
+                    stat: `${lateWinRate}% win rate`,
+                    advice: 'Your performance drops after 1 hour. Consider shorter sessions.'
+                });
+            }
+        }
+
+        return conditions.sort((a, b) => (b.severity === 'high' ? 1 : 0) - (a.severity === 'high' ? 1 : 0));
+    },
+
+    _analyzeOptimalSessionLength(trades, state) {
+        const sessionTrades = this._groupBySession(trades, state);
+        if (sessionTrades.length < 2) {
+            return { optimal: null, message: 'Need more session data' };
+        }
+
+        const sessionPerformance = sessionTrades.map(session => {
+            const duration = session.length > 0
+                ? (session[session.length - 1].ts - session[0].ts) / 60000
+                : 0;
+            const sells = session.filter(t => t.side === 'SELL');
+            const pnl = sells.reduce((sum, t) => sum + (t.realizedPnlSol || 0), 0);
+            const wins = sells.filter(t => (t.realizedPnlSol || 0) > 0).length;
+            const winRate = sells.length > 0 ? (wins / sells.length * 100) : 0;
+
+            return { duration, pnl, winRate, tradeCount: session.length };
+        });
+
+        // Find optimal duration bucket
+        const buckets = {
+            short: { range: '< 30 min', sessions: [], avgPnl: 0, avgWinRate: 0 },
+            medium: { range: '30-60 min', sessions: [], avgPnl: 0, avgWinRate: 0 },
+            long: { range: '60-120 min', sessions: [], avgPnl: 0, avgWinRate: 0 },
+            extended: { range: '> 120 min', sessions: [], avgPnl: 0, avgWinRate: 0 }
+        };
+
+        sessionPerformance.forEach(s => {
+            if (s.duration < 30) buckets.short.sessions.push(s);
+            else if (s.duration < 60) buckets.medium.sessions.push(s);
+            else if (s.duration < 120) buckets.long.sessions.push(s);
+            else buckets.extended.sessions.push(s);
+        });
+
+        Object.values(buckets).forEach(b => {
+            if (b.sessions.length > 0) {
+                b.avgPnl = b.sessions.reduce((sum, s) => sum + s.pnl, 0) / b.sessions.length;
+                b.avgWinRate = b.sessions.reduce((sum, s) => sum + s.winRate, 0) / b.sessions.length;
+            }
+        });
+
+        const best = Object.entries(buckets)
+            .filter(([_, b]) => b.sessions.length >= 1)
+            .sort((a, b) => b[1].avgPnl - a[1].avgPnl)[0];
+
+        return {
+            optimal: best ? best[1].range : null,
+            bestPnl: best ? best[1].avgPnl.toFixed(4) : 0,
+            bestWinRate: best ? best[1].avgWinRate.toFixed(1) : 0,
+            buckets: Object.fromEntries(
+                Object.entries(buckets).map(([k, v]) => [k, {
+                    range: v.range,
+                    count: v.sessions.length,
+                    avgPnl: v.avgPnl.toFixed(4),
+                    avgWinRate: v.avgWinRate.toFixed(1)
+                }])
+            )
+        };
+    },
+
+    _analyzeBestTimeOfDay(sellTrades) {
+        if (sellTrades.length < 5) {
+            return { best: null, message: 'Need more trades' };
+        }
+
+        const timeSlots = {
+            morning: { range: '6AM-12PM', wins: 0, total: 0, pnl: 0 },
+            afternoon: { range: '12PM-6PM', wins: 0, total: 0, pnl: 0 },
+            evening: { range: '6PM-12AM', wins: 0, total: 0, pnl: 0 },
+            night: { range: '12AM-6AM', wins: 0, total: 0, pnl: 0 }
+        };
+
+        sellTrades.forEach(t => {
+            const hour = new Date(t.ts).getHours();
+            let slot;
+            if (hour >= 6 && hour < 12) slot = 'morning';
+            else if (hour >= 12 && hour < 18) slot = 'afternoon';
+            else if (hour >= 18 && hour < 24) slot = 'evening';
+            else slot = 'night';
+
+            timeSlots[slot].total++;
+            timeSlots[slot].pnl += (t.realizedPnlSol || 0);
+            if ((t.realizedPnlSol || 0) > 0) timeSlots[slot].wins++;
+        });
+
+        const results = Object.entries(timeSlots)
+            .filter(([_, s]) => s.total >= 2)
+            .map(([name, s]) => ({
+                name,
+                range: s.range,
+                winRate: s.total > 0 ? ((s.wins / s.total) * 100).toFixed(1) : 0,
+                pnl: s.pnl,
+                count: s.total
+            }))
+            .sort((a, b) => b.pnl - a.pnl);
+
+        return {
+            best: results[0] || null,
+            worst: results[results.length - 1] || null,
+            breakdown: results
+        };
+    },
+
+    _determineTradingStyle(trades) {
+        const sellTrades = trades.filter(t => t.side === 'SELL');
+        if (sellTrades.length < 5) return { style: 'Unknown', description: 'Need more data' };
+
+        // Calculate average hold time
+        let totalHoldTime = 0, holdCount = 0;
+        sellTrades.forEach(sell => {
+            const buy = trades.find(t => t.side === 'BUY' && t.mint === sell.mint && t.ts < sell.ts);
+            if (buy) {
+                totalHoldTime += (sell.ts - buy.ts);
+                holdCount++;
+            }
+        });
+        const avgHoldMinutes = holdCount > 0 ? (totalHoldTime / holdCount) / 60000 : 0;
+
+        // Determine style
+        if (avgHoldMinutes < 5) {
+            return { style: 'Scalper', description: 'Quick in-and-out trades, high frequency', avgHold: avgHoldMinutes.toFixed(1) };
+        } else if (avgHoldMinutes < 30) {
+            return { style: 'Day Trader', description: 'Short-term positions, momentum focused', avgHold: avgHoldMinutes.toFixed(1) };
+        } else if (avgHoldMinutes < 120) {
+            return { style: 'Swing Trader', description: 'Medium holds, trend following', avgHold: avgHoldMinutes.toFixed(1) };
+        } else {
+            return { style: 'Position Trader', description: 'Long holds, conviction plays', avgHold: avgHoldMinutes.toFixed(1) };
+        }
+    },
+
+    _analyzeRiskProfile(buyTrades, state) {
+        if (buyTrades.length < 3) return { profile: 'Unknown', avgRisk: 0 };
+
+        const startSol = state.settings?.startSol || 10;
+        const riskPcts = buyTrades.map(t => (t.solAmount / startSol) * 100);
+        const avgRisk = riskPcts.reduce((a, b) => a + b, 0) / riskPcts.length;
+        const maxRisk = Math.max(...riskPcts);
+        const plansUsed = buyTrades.filter(t => t.riskDefined).length;
+        const planRate = (plansUsed / buyTrades.length * 100).toFixed(0);
+
+        let profile;
+        if (avgRisk < 5) profile = 'Conservative';
+        else if (avgRisk < 15) profile = 'Moderate';
+        else if (avgRisk < 30) profile = 'Aggressive';
+        else profile = 'High Risk';
+
+        return {
+            profile,
+            avgRisk: avgRisk.toFixed(1),
+            maxRisk: maxRisk.toFixed(1),
+            planUsageRate: planRate,
+            plansUsed
+        };
+    },
+
+    _analyzeEmotionalPatterns(trades, state) {
+        const behavior = state.behavior || {};
+        const patterns = [];
+
+        if ((behavior.fomoTrades || 0) > 2) {
+            patterns.push({ type: 'FOMO', frequency: behavior.fomoTrades, advice: 'Wait 60 seconds before entering after seeing green candles.' });
+        }
+        if ((behavior.panicSells || 0) > 2) {
+            patterns.push({ type: 'Panic Selling', frequency: behavior.panicSells, advice: 'Set stop losses in advance and trust them.' });
+        }
+        if ((behavior.tiltFrequency || 0) > 1) {
+            patterns.push({ type: 'Tilt Trading', frequency: behavior.tiltFrequency, advice: 'Take a mandatory break after 3 consecutive losses.' });
+        }
+        if ((behavior.sunkCostFrequency || 0) > 1) {
+            patterns.push({ type: 'Sunk Cost Bias', frequency: behavior.sunkCostFrequency, advice: 'Never average down more than once per position.' });
+        }
+
+        return patterns;
+    },
+
+    _groupBySession(trades, state) {
+        // Group trades into sessions (gap of > 30 mins = new session)
+        const sessions = [];
+        let currentSession = [];
+        const SESSION_GAP = 30 * 60 * 1000; // 30 minutes
+
+        trades.forEach((trade, i) => {
+            if (i === 0) {
+                currentSession.push(trade);
+            } else if (trade.ts - trades[i - 1].ts > SESSION_GAP) {
+                if (currentSession.length > 0) sessions.push(currentSession);
+                currentSession = [trade];
+            } else {
+                currentSession.push(trade);
+            }
+        });
+        if (currentSession.length > 0) sessions.push(currentSession);
+
+        return sessions;
+    },
+
     calculateConsistencyScore(state) {
         const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
         if (trades.length < 5) {

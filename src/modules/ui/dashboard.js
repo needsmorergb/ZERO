@@ -9,6 +9,7 @@ import { Paywall } from './paywall.js';
 import { ICONS } from './icons.js';
 import { FeatureManager } from '../featureManager.js';
 import { SessionReplay } from './session-replay.js';
+import { TraderProfile } from './trader-profile.js';
 
 export const Dashboard = {
     isOpen: false,
@@ -184,6 +185,10 @@ export const Dashboard = {
                                 ${ICONS.BRAIN} Session Replay
                                 <span style="font-size:9px; background:linear-gradient(135deg,#8b5cf6,#a78bfa); color:white; padding:2px 6px; border-radius:4px; margin-left:4px;">ELITE</span>
                             </button>
+                            <button id="trader-profile-btn" style="width:100%; background:rgba(99,102,241,0.15); color:#818cf8; border:1px solid rgba(99,102,241,0.3); padding:10px; border-radius:8px; font-weight:700; font-size:12px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px;">
+                                ${ICONS.USER} Trader Profile
+                                <span style="font-size:9px; background:linear-gradient(135deg,#6366f1,#818cf8); color:white; padding:2px 6px; border-radius:4px; margin-left:4px;">ELITE</span>
+                            </button>
                             <div class="export-btns" style="display:flex; gap:8px;">
                                 <button id="export-csv-btn" class="export-btn" style="flex:1; background:rgba(16,185,129,0.1); color:#10b981; border:1px solid rgba(16,185,129,0.3); padding:8px; border-radius:6px; font-weight:600; font-size:11px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">
                                     ${ICONS.FILE_CSV} Export CSV
@@ -281,6 +286,17 @@ export const Dashboard = {
                 e.stopPropagation();
                 self.close();
                 SessionReplay.open();
+            };
+        }
+
+        // Trader Profile Button
+        const profileBtn = overlay.querySelector('#trader-profile-btn');
+        if (profileBtn) {
+            profileBtn.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                self.close();
+                TraderProfile.open();
             };
         }
 

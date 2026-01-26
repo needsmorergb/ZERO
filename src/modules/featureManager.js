@@ -28,7 +28,8 @@ export const FEATURES = {
     SESSION_REPLAY: 'elite',
     ADVANCED_COACHING: 'elite',
     BEHAVIOR_BASELINE: 'elite',
-    MARKET_CONTEXT: 'elite'
+    MARKET_CONTEXT: 'elite',
+    TRADER_PROFILE: 'elite'  // Personal Trader Profile dashboard
 };
 
 /**
