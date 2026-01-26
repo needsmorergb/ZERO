@@ -63,7 +63,7 @@ const DEFAULTS = {
     eventLog: [], // { ts, type, category, message, data }
     // Categories: TRADE, ALERT, DISCIPLINE, SYSTEM, MILESTONE
     schemaVersion: 2,
-    version: '1.11.4'
+    version: '1.11.5'
 };
 
 // Helper utils

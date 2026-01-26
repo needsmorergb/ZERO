@@ -126,19 +126,26 @@ export const Market = {
     },
 
     async fetchMarketContext(mintOverride) {
-        const mint = mintOverride || this.currentMint;
-        if (!mint) return;
+        const query = mintOverride || this.currentMint;
+        if (!query) return;
 
         // Prevent double-fetching within 10s
         if (this.lastContextFetch && (Date.now() - this.lastContextFetch < 10000) && this.context) return;
         this.lastContextFetch = Date.now();
 
         try {
-            console.log(`[Market] Fetching context for ${mint}...`);
-            const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${mint}`);
+            console.log(`[Market] Searching context for ${query}...`);
+            // Use search endpoint: works for mints, pair addresses, and symbols
+            const response = await fetch(`https://api.dexscreener.com/latest/dex/search?q=${query}`);
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             const data = await response.json();
-            const pair = data.pairs?.[0];
+
+            // Pick the pair with the highest liquidity
+            const pairs = (data.pairs || []).sort((a, b) => {
+                return (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0);
+            });
+
+            const pair = pairs[0];
 
             if (pair) {
                 this.context = {
@@ -147,12 +154,13 @@ export const Market = {
                     liquidity: pair.liquidity?.usd || 0,
                     fdv: pair.fdv || 0,
                     symbol: pair.baseToken?.symbol || '',
+                    dex: pair.dexId,
                     ts: Date.now()
                 };
-                console.log(`[Market] Context Ready: Vol=$${(this.context.vol24h / 1000000).toFixed(1)}M, Chg=${this.context.priceChange24h}%`);
+                console.log(`[Market] Context Ready: ${this.context.symbol} on ${this.context.dex} (Vol: $${(this.context.vol24h / 1000).toFixed(0)}K)`);
                 this.notify();
             } else {
-                console.warn(`[Market] No DexScreener pair found for ${mint}`);
+                console.warn(`[Market] No results found for ${query}`);
             }
         } catch (e) {
             console.error('[Market] Context fetch failed:', e);

@@ -128,7 +128,7 @@
         // { ts, type, category, message, data }
         // Categories: TRADE, ALERT, DISCIPLINE, SYSTEM, MILESTONE
         schemaVersion: 2,
-        version: "1.11.4"
+        version: "1.11.5"
       };
       Store = {
         state: null,
@@ -517,19 +517,22 @@
           }
         },
         async fetchMarketContext(mintOverride) {
-          const mint = mintOverride || this.currentMint;
-          if (!mint)
+          const query = mintOverride || this.currentMint;
+          if (!query)
             return;
           if (this.lastContextFetch && Date.now() - this.lastContextFetch < 1e4 && this.context)
             return;
           this.lastContextFetch = Date.now();
           try {
-            console.log(`[Market] Fetching context for ${mint}...`);
-            const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${mint}`);
+            console.log(`[Market] Searching context for ${query}...`);
+            const response = await fetch(`https://api.dexscreener.com/latest/dex/search?q=${query}`);
             if (!response.ok)
               throw new Error(`HTTP error! status: ${response.status}`);
             const data = await response.json();
-            const pair = data.pairs?.[0];
+            const pairs = (data.pairs || []).sort((a, b) => {
+              return (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0);
+            });
+            const pair = pairs[0];
             if (pair) {
               this.context = {
                 vol24h: pair.volume?.h24 || 0,
@@ -537,12 +540,13 @@
                 liquidity: pair.liquidity?.usd || 0,
                 fdv: pair.fdv || 0,
                 symbol: pair.baseToken?.symbol || "",
+                dex: pair.dexId,
                 ts: Date.now()
               };
-              console.log(`[Market] Context Ready: Vol=$${(this.context.vol24h / 1e6).toFixed(1)}M, Chg=${this.context.priceChange24h}%`);
+              console.log(`[Market] Context Ready: ${this.context.symbol} on ${this.context.dex} (Vol: $${(this.context.vol24h / 1e3).toFixed(0)}K)`);
               this.notify();
             } else {
-              console.warn(`[Market] No DexScreener pair found for ${mint}`);
+              console.warn(`[Market] No results found for ${query}`);
             }
           } catch (e) {
             console.error("[Market] Context fetch failed:", e);
@@ -7037,7 +7041,7 @@ canvas#equity-canvas {
   // src/content.boot.js
   (async () => {
     "use strict";
-    console.log("%c ZER\xD8 v1.11.4 (Market Context Refined)", "color: #14b8a6; font-weight: bold; font-size: 14px;");
+    console.log("%c ZER\xD8 v1.11.5 (Universal Token Discovery)", "color: #14b8a6; font-weight: bold; font-size: 14px;");
     const PLATFORM = {
       isAxiom: window.location.hostname.includes("axiom.trade"),
       isPadre: window.location.hostname.includes("padre.gg"),
