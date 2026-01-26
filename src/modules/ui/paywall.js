@@ -28,6 +28,9 @@ export const Paywall = {
         } else if (lockedFeature === 'AI_DEBRIEF') {
             featureTitle = 'AI Debrief - PRO Feature';
             featureDesc = 'Get AI-powered insights on your trading patterns';
+        } else if (lockedFeature === 'BEHAVIOR_BASELINE') {
+            featureTitle = 'Behavioral Profile - ELITE Feature';
+            featureDesc = 'Deep psychological profiling and real-time intervention';
         }
 
         overlay.innerHTML = `
@@ -103,8 +106,11 @@ export const Paywall = {
                         <span>Upgrade to PRO</span>
                         <span class="btn-icon">→</span>
                     </button>
+                    <button class="paywall-btn secondary" data-act="unlock-elite">
+                        <span>Unlock ELITE (Dev)</span>
+                    </button>
                     <button class="paywall-btn secondary" data-act="demo">
-                        <span>Unlock Demo (Dev Mode)</span>
+                        <span>Unlock PRO (Dev)</span>
                     </button>
                 </div>
 
@@ -125,7 +131,12 @@ export const Paywall = {
             }
 
             if (e.target.closest('[data-act="demo"]')) {
-                this.unlockDemo();
+                this.unlockDemo('pro');
+                overlay.remove();
+            }
+
+            if (e.target.closest('[data-act="unlock-elite"]')) {
+                this.unlockDemo('elite');
                 overlay.remove();
             }
         });
@@ -133,24 +144,24 @@ export const Paywall = {
         root.appendChild(overlay);
     },
 
-    handleUpgrade() {
+    handleUpgrade(tier = 'pro') {
         // Open upgrade page in new tab
-        const upgradeUrl = 'https://zero-trading.com/pro'; // Update with actual URL
-        window.open(upgradeUrl, '_blank');
-        console.log('[Paywall] Redirecting to upgrade page');
+        const url = tier === 'elite' ? 'https://zero-trading.com/elite' : 'https://zero-trading.com/pro';
+        window.open(url, '_blank');
+        console.log(`[Paywall] Redirecting to ${tier.toUpperCase()} upgrade page`);
     },
 
-    unlockDemo() {
-        // Dev mode: Unlock PRO tier for testing
-        Store.state.settings.tier = 'pro';
+    unlockDemo(tier = 'pro') {
+        // Dev mode: Unlock tier for testing
+        Store.state.settings.tier = tier;
         Store.save();
-        console.log('[Paywall] Demo mode unlocked - PRO tier activated');
+        console.log(`[Paywall] Demo mode unlocked - ${tier.toUpperCase()} tier activated`);
 
         // Show success message
         const root = OverlayManager.getShadowRoot();
         const toast = document.createElement('div');
         toast.className = 'paywall-toast';
-        toast.textContent = '✓ PRO Demo Unlocked';
+        toast.textContent = `✓ ${tier.toUpperCase()} Demo Unlocked`;
         toast.style.cssText = `
             position: fixed;
             top: 80px;

@@ -207,6 +207,13 @@ export const Dashboard = {
             overlay.querySelector('#dashboard-recent-logs').style.display = 'none';
         }
 
+        if (eliteFlags.visible) {
+            const eliteEl = overlay.querySelector('#dashboard-behavior-profile');
+            if (eliteFlags.gated) this.lockSection(eliteEl, 'BEHAVIOR_BASELINE');
+        } else {
+            overlay.querySelector('#dashboard-behavior-profile').style.display = 'none';
+        }
+
         if (aiFlags.visible) {
             const aiEl = overlay.querySelector('#dashboard-professor-box');
             if (aiFlags.gated) this.lockSection(aiEl, 'ADVANCED_ANALYTICS');

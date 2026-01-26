@@ -2528,6 +2528,9 @@ input:checked + .slider:before {
       } else if (lockedFeature === "AI_DEBRIEF") {
         featureTitle = "AI Debrief - PRO Feature";
         featureDesc = "Get AI-powered insights on your trading patterns";
+      } else if (lockedFeature === "BEHAVIOR_BASELINE") {
+        featureTitle = "Behavioral Profile - ELITE Feature";
+        featureDesc = "Deep psychological profiling and real-time intervention";
       }
       overlay.innerHTML = `
             <div class="paywall-modal">
@@ -2602,8 +2605,11 @@ input:checked + .slider:before {
                         <span>Upgrade to PRO</span>
                         <span class="btn-icon">\u2192</span>
                     </button>
+                    <button class="paywall-btn secondary" data-act="unlock-elite">
+                        <span>Unlock ELITE (Dev)</span>
+                    </button>
                     <button class="paywall-btn secondary" data-act="demo">
-                        <span>Unlock Demo (Dev Mode)</span>
+                        <span>Unlock PRO (Dev)</span>
                     </button>
                 </div>
 
@@ -2620,25 +2626,29 @@ input:checked + .slider:before {
           this.handleUpgrade();
         }
         if (e.target.closest('[data-act="demo"]')) {
-          this.unlockDemo();
+          this.unlockDemo("pro");
+          overlay.remove();
+        }
+        if (e.target.closest('[data-act="unlock-elite"]')) {
+          this.unlockDemo("elite");
           overlay.remove();
         }
       });
       root.appendChild(overlay);
     },
-    handleUpgrade() {
-      const upgradeUrl = "https://zero-trading.com/pro";
-      window.open(upgradeUrl, "_blank");
-      console.log("[Paywall] Redirecting to upgrade page");
+    handleUpgrade(tier = "pro") {
+      const url = tier === "elite" ? "https://zero-trading.com/elite" : "https://zero-trading.com/pro";
+      window.open(url, "_blank");
+      console.log(`[Paywall] Redirecting to ${tier.toUpperCase()} upgrade page`);
     },
-    unlockDemo() {
-      Store.state.settings.tier = "pro";
+    unlockDemo(tier = "pro") {
+      Store.state.settings.tier = tier;
       Store.save();
-      console.log("[Paywall] Demo mode unlocked - PRO tier activated");
+      console.log(`[Paywall] Demo mode unlocked - ${tier.toUpperCase()} tier activated`);
       const root = OverlayManager.getShadowRoot();
       const toast = document.createElement("div");
       toast.className = "paywall-toast";
-      toast.textContent = "\u2713 PRO Demo Unlocked";
+      toast.textContent = `\u2713 ${tier.toUpperCase()} Demo Unlocked`;
       toast.style.cssText = `
             position: fixed;
             top: 80px;
@@ -2999,6 +3009,13 @@ canvas#equity-canvas {
           this.lockSection(logEl, "DETAILED_LOGS");
       } else {
         overlay.querySelector("#dashboard-recent-logs").style.display = "none";
+      }
+      if (eliteFlags.visible) {
+        const eliteEl = overlay.querySelector("#dashboard-behavior-profile");
+        if (eliteFlags.gated)
+          this.lockSection(eliteEl, "BEHAVIOR_BASELINE");
+      } else {
+        overlay.querySelector("#dashboard-behavior-profile").style.display = "none";
       }
       if (aiFlags.visible) {
         const aiEl = overlay.querySelector("#dashboard-professor-box");
