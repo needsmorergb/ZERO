@@ -1643,6 +1643,10 @@ input:checked + .slider:before {
 .elite-alert.TILT { border-color: #ef4444; border-left: 4px solid #ef4444; }
 .elite-alert.FOMO { border-color: #f59e0b; border-left: 4px solid #f59e0b; }
 .elite-alert.PANIC { border-color: #6366f1; border-left: 4px solid #6366f1; }
+.elite-alert.SUNK_COST { border-color: #a855f7; border-left: 4px solid #a855f7; }
+.elite-alert.VELOCITY { border-color: #ec4899; border-left: 4px solid #ec4899; }
+.elite-alert.PROFIT_NEGLECT { border-color: #10b981; border-left: 4px solid #10b981; }
+.elite-alert.DRIFT { border-color: #06b6d4; border-left: 4px solid #06b6d4; }
 
 .elite-alert-close {
     margin-left: auto;
@@ -2174,6 +2178,8 @@ input:checked + .slider:before {
       this.detectTilt(trade, state);
       this.detectFomo(trade, state);
       this.detectPanicSell(trade, state);
+      this.detectSunkCost(trade, state);
+      this.detectStrategyDrift(trade, state);
       this.updateProfile(state);
     },
     detectTilt(trade, state) {
@@ -3931,7 +3937,7 @@ canvas#equity-canvas {
   // src/content.boot.js
   (async () => {
     "use strict";
-    console.log("%c ZER\xD8 v1.10.3 (Click-Through Fix)", "color: #14b8a6; font-weight: bold; font-size: 14px;");
+    console.log("%c ZER\xD8 v1.10.4 (Elite Behavioral Guardrails)", "color: #14b8a6; font-weight: bold; font-size: 14px;");
     const PLATFORM = {
       isAxiom: window.location.hostname.includes("axiom.trade"),
       isPadre: window.location.hostname.includes("padre.gg"),

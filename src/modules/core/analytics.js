@@ -125,6 +125,8 @@ export const Analytics = {
         this.detectTilt(trade, state);
         this.detectFomo(trade, state);
         this.detectPanicSell(trade, state);
+        this.detectSunkCost(trade, state);
+        this.detectStrategyDrift(trade, state);
         this.updateProfile(state);
     },
 
