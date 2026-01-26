@@ -3,6 +3,7 @@ export const Market = {
     marketCap: 0,
     lastPriceTs: 0,
     context: null, // { vol24h, priceChange24h, liquidity, fdv }
+    currentMint: null,
     lastContextFetch: 0,
     listeners: [],
 
@@ -23,9 +24,36 @@ export const Market = {
 
     startPolling() {
         setInterval(() => {
-            if (!window.location.pathname.includes('/trade/')) return;
+            const isTradePage = window.location.pathname.includes('/trade/') || window.location.pathname.includes('/token/');
+            if (!isTradePage) return;
+
+            // 1. Poll for Mint changes (from URL)
+            this.pollMint();
+
+            // 2. Poll for DOM price updates
             this.pollDOM();
         }, 1000);
+    },
+
+    pollMint() {
+        const url = window.location.href;
+        // Support Padre, Axiom, and DexScreener URLs
+        const mintMatch = url.match(/\/trade\/([a-zA-Z0-9]{32,44})/) || url.match(/\/token\/([a-zA-Z0-9]{32,44})/);
+        const mint = mintMatch ? mintMatch[1] : null;
+
+        if (mint && mint !== this.currentMint) {
+            console.log(`[Market] New token detected: ${mint}`);
+            this.currentMint = mint;
+            this.context = null; // Clear old context
+            this.lastContextFetch = 0;
+            this.fetchMarketContext(mint);
+
+            // Trigger UI refresh immediately
+            this.notify();
+        } else if (mint && (!this.context || Date.now() - this.lastContextFetch > 60000)) {
+            // Periodic refresh every minute
+            this.fetchMarketContext(mint);
+        }
     },
 
     pollDOM() {
@@ -83,17 +111,18 @@ export const Market = {
         }
     },
 
-    async fetchMarketContext() {
-        const url = window.location.href;
-        const mintMatch = url.match(/\/trade\/([a-zA-Z0-9]+)/);
-        const mint = mintMatch ? mintMatch[1] : null;
+    async fetchMarketContext(mintOverride) {
+        const mint = mintOverride || this.currentMint;
+        if (!mint) return;
 
-        if (!mint || (this.lastContextFetch && Date.now() - this.lastContextFetch < 30000)) return;
+        // Prevent double-fetching within 10s
+        if (this.lastContextFetch && (Date.now() - this.lastContextFetch < 10000) && this.context) return;
         this.lastContextFetch = Date.now();
 
         try {
             console.log(`[Market] Fetching context for ${mint}...`);
             const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${mint}`);
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             const data = await response.json();
             const pair = data.pairs?.[0];
 
@@ -101,15 +130,25 @@ export const Market = {
                 this.context = {
                     vol24h: pair.volume?.h24 || 0,
                     priceChange24h: pair.priceChange?.h24 || 0,
-                    liquidity: pair.liquidity?.usd || 0,
+                    liquidity: pair.liquidity?.base || 0,
                     fdv: pair.fdv || 0,
+                    symbol: pair.baseToken?.symbol || '',
                     ts: Date.now()
                 };
-                console.log(`[Market] Context: Vol=$${(this.context.vol24h / 1000000).toFixed(1)}M, Chg=${this.context.priceChange24h}%`);
+                console.log(`[Market] Context Ready: Vol=$${(this.context.vol24h / 1000000).toFixed(1)}M, Chg=${this.context.priceChange24h}%`);
+                this.notify();
             }
         } catch (e) {
             console.error('[Market] Context fetch failed:', e);
         }
+    },
+
+    notify() {
+        this.listeners.forEach(cb => cb({
+            price: this.price,
+            context: this.context,
+            mint: this.currentMint
+        }));
     },
 
     parsePriceStr(text) {
@@ -141,10 +180,10 @@ export const Market = {
     updatePrice(val) {
         if (!val || val <= 0.000000000001) return;
         if (val !== this.price) {
-            console.log(`[Market] Price updated: $${val.toFixed(8)} (MC: $${this.marketCap.toFixed(0)})`);
+            console.log(`[Market] Price: $${val.toFixed(8)} (MC: $${this.marketCap.toFixed(0)})`);
             this.price = val;
             this.lastPriceTs = Date.now();
-            this.listeners.forEach(cb => cb(val));
+            this.notify();
         }
     }
 };
