@@ -20,6 +20,202 @@
   };
   var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
+  // src/modules/store.js
+  function deepMerge(base, patch) {
+    if (!patch || typeof patch !== "object")
+      return base;
+    const out = Array.isArray(base) ? [...base] : { ...base };
+    for (const [k, v] of Object.entries(patch)) {
+      if (v && typeof v === "object" && !Array.isArray(v) && base[k] && typeof base[k] === "object") {
+        out[k] = deepMerge(base[k], v);
+      } else {
+        out[k] = v;
+      }
+    }
+    return out;
+  }
+  function isChromeStorageAvailable() {
+    try {
+      return typeof chrome !== "undefined" && chrome.storage && chrome.storage.local;
+    } catch {
+      return false;
+    }
+  }
+  var EXT_KEY, DEFAULTS, Store;
+  var init_store = __esm({
+    "src/modules/store.js"() {
+      EXT_KEY = "sol_paper_trader_v1";
+      DEFAULTS = {
+        settings: {
+          tier: "free",
+          enabled: true,
+          buyHudDocked: true,
+          pnlDocked: true,
+          buyHudPos: { x: 20, y: 120 },
+          pnlPos: { x: 20, y: 60 },
+          startSol: 10,
+          quickBuySols: [0.01, 0.05, 0.1, 0.25, 0.5, 1],
+          quickSellPcts: [10, 25, 50, 75, 100],
+          strategies: ["Trend", "Breakout", "Reversal", "Scalp", "News", "Other"],
+          // Phase 2: Context
+          tokenDisplayUsd: false,
+          sessionDisplayUsd: false,
+          tutorialCompleted: false,
+          tradingMode: "paper",
+          // 'paper' | 'shadow'
+          showProfessor: true,
+          // Show trade analysis popup
+          rolloutPhase: "full",
+          // 'beta' | 'preview' | 'full'
+          featureOverrides: {},
+          // For remote kill-switches
+          behavioralAlerts: true
+          // Phase 9: Elite Guardrails
+        },
+        // Runtime state (not always persisted fully, but structure is here)
+        session: {
+          balance: 10,
+          equity: 10,
+          realized: 0,
+          trades: [],
+          // IDs
+          equityHistory: [],
+          // [{ts, equity}]
+          winStreak: 0,
+          lossStreak: 0,
+          startTime: 0,
+          tradeCount: 0,
+          disciplineScore: 100,
+          activeAlerts: []
+          // {type, message, ts}
+        },
+        trades: {},
+        // Map ID -> Trade Object { id, strategy, emotion, ... }
+        positions: {},
+        behavior: {
+          tiltFrequency: 0,
+          panicSells: 0,
+          fomoTrades: 0,
+          sunkCostFrequency: 0,
+          overtradingFrequency: 0,
+          profitNeglectFrequency: 0,
+          strategyDriftFrequency: 0,
+          profile: "Disciplined"
+        },
+        schemaVersion: 2,
+        version: "1.10.5"
+      };
+      Store = {
+        state: null,
+        async load() {
+          let timeoutId;
+          const loadLogic = new Promise((resolve) => {
+            try {
+              if (!isChromeStorageAvailable()) {
+                this.state = JSON.parse(JSON.stringify(DEFAULTS));
+                if (timeoutId)
+                  clearTimeout(timeoutId);
+                resolve(this.state);
+                return;
+              }
+              chrome.storage.local.get([EXT_KEY], (res) => {
+                if (timeoutId)
+                  clearTimeout(timeoutId);
+                if (chrome.runtime.lastError) {
+                  const msg = chrome.runtime.lastError.message;
+                  if (msg && !msg.includes("context invalidated")) {
+                    console.warn("[ZER\xD8] Storage load error:", msg);
+                  }
+                  this.state = JSON.parse(JSON.stringify(DEFAULTS));
+                  resolve(this.state);
+                  return;
+                }
+                const saved = res[EXT_KEY];
+                if (!saved) {
+                  this.state = JSON.parse(JSON.stringify(DEFAULTS));
+                } else if (!saved.schemaVersion || saved.schemaVersion < 2) {
+                  console.log("[ZER\xD8] Migrating storage schema v1 -> v2");
+                  this.state = this.migrateV1toV2(saved);
+                  this.save();
+                } else {
+                  this.state = deepMerge(DEFAULTS, saved);
+                }
+                this.validateState();
+                resolve(this.state);
+              });
+            } catch (e) {
+              console.error("[ZER\xD8] Storage load exception:", e);
+              if (timeoutId)
+                clearTimeout(timeoutId);
+              resolve(JSON.parse(JSON.stringify(DEFAULTS)));
+            }
+          });
+          const timeout = new Promise((resolve) => {
+            timeoutId = setTimeout(() => {
+              console.warn("[ZER\xD8] Storage load timed out, using defaults.");
+              if (!this.state)
+                this.state = JSON.parse(JSON.stringify(DEFAULTS));
+              resolve(this.state);
+            }, 1e3);
+          });
+          return Promise.race([loadLogic, timeout]);
+        },
+        async save() {
+          if (!isChromeStorageAvailable() || !this.state)
+            return;
+          return new Promise((resolve) => {
+            try {
+              chrome.storage.local.set({ [EXT_KEY]: this.state }, () => {
+                if (chrome.runtime.lastError) {
+                  const msg = chrome.runtime.lastError.message;
+                  if (msg && !msg.includes("context invalidated")) {
+                    console.warn("[ZER\xD8] Storage save error:", msg);
+                  }
+                }
+                resolve();
+              });
+            } catch (e) {
+              if (!e.message.includes("context invalidated")) {
+                console.error("[ZER\xD8] Storage save exception:", e);
+              }
+              resolve();
+            }
+          });
+        },
+        migrateV1toV2(oldState) {
+          const newState = JSON.parse(JSON.stringify(DEFAULTS));
+          newState.settings.enabled = oldState.enabled ?? true;
+          newState.settings.buyHudDocked = oldState.buyHudDocked ?? true;
+          newState.settings.pnlDocked = oldState.pnlDocked ?? true;
+          newState.settings.buyHudPos = oldState.buyHudPos ?? { x: 20, y: 120 };
+          newState.settings.pnlPos = oldState.pnlPos ?? { x: 20, y: 60 };
+          newState.settings.startSol = oldState.startSol ?? 10;
+          newState.settings.tutorialCompleted = oldState.tutorialCompleted ?? false;
+          newState.session.balance = oldState.cashSol ?? 10;
+          newState.session.equity = oldState.equitySol ?? 10;
+          newState.session.realized = oldState.realizedSol ?? 0;
+          newState.session.winStreak = oldState.winStreak ?? 0;
+          newState.session.lossStreak = oldState.lossStreak ?? 0;
+          newState.session.disciplineScore = oldState.disciplineScore ?? 100;
+          if (Array.isArray(oldState.trades)) {
+            oldState.trades.forEach((t, idx) => {
+              const id = t.id || `legacy_${idx}_${Date.now()}`;
+              newState.trades[id] = t;
+              newState.session.trades.push(id);
+            });
+          }
+          newState.positions = oldState.positions || {};
+          return newState;
+        },
+        validateState() {
+          if (this.state) {
+            this.state.settings.startSol = parseFloat(this.state.settings.startSol) || 10;
+          }
+        }
+      };
+    }
+  });
+
   // src/modules/featureManager.js
   var TIERS, FEATURES, FeatureManager;
   var init_featureManager = __esm({
@@ -113,6 +309,148 @@
     }
   });
 
+  // src/modules/core/market.js
+  var Market;
+  var init_market = __esm({
+    "src/modules/core/market.js"() {
+      Market = {
+        price: 0,
+        marketCap: 0,
+        lastPriceTs: 0,
+        context: null,
+        // { vol24h, priceChange24h, liquidity, fdv }
+        lastContextFetch: 0,
+        listeners: [],
+        init() {
+          this.startPolling();
+          window.addEventListener("message", (event) => {
+            if (event.source !== window || !event.data?.__paper)
+              return;
+            if (event.data.type === "PRICE_TICK") {
+              this.updatePrice(event.data.price);
+            }
+          });
+        },
+        subscribe(callback) {
+          this.listeners.push(callback);
+        },
+        startPolling() {
+          setInterval(() => {
+            if (!window.location.pathname.includes("/trade/"))
+              return;
+            this.pollDOM();
+          }, 1e3);
+        },
+        pollDOM() {
+          let candidates = [];
+          const isPadre = window.location.hostname.includes("padre.gg");
+          if (isPadre) {
+            candidates = Array.from(document.querySelectorAll("h2")).filter((el) => {
+              const txt = el.textContent || "";
+              return txt.includes("$") && /\d/.test(txt) && !txt.includes("SOL") && !txt.includes("%") && txt.length < 30;
+            });
+          } else {
+            candidates = Array.from(document.querySelectorAll("h1, h2, .price")).filter((el) => {
+              const txt = el.textContent || "";
+              return txt.includes("$") && /\d/.test(txt) && !txt.includes("%") && txt.length < 30;
+            });
+          }
+          for (const el of candidates) {
+            const raw = el.textContent.trim();
+            const val = this.parsePriceStr(raw);
+            const hasUnit = /[KMB]/.test(raw.toUpperCase());
+            if (hasUnit || val > 1e4) {
+              if (val > 0)
+                this.marketCap = val;
+            } else if (val > 0 && val < 1e4) {
+              if (val >= 50 && val <= 500) {
+                continue;
+              }
+              if (this.price > 0) {
+                const ratio = val / this.price;
+                if (ratio > 100 || ratio < 0.01) {
+                  console.warn(`[Market] SPIKE REJECTED: $${val} (${(ratio * 100).toFixed(0)}x change from $${this.price})`);
+                  continue;
+                }
+              }
+              this.updatePrice(val);
+              this.fetchMarketContext();
+            }
+          }
+        },
+        async fetchMarketContext() {
+          const url = window.location.href;
+          const mintMatch = url.match(/\/trade\/([a-zA-Z0-9]+)/);
+          const mint = mintMatch ? mintMatch[1] : null;
+          if (!mint || this.lastContextFetch && Date.now() - this.lastContextFetch < 3e4)
+            return;
+          this.lastContextFetch = Date.now();
+          try {
+            console.log(`[Market] Fetching context for ${mint}...`);
+            const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${mint}`);
+            const data = await response.json();
+            const pair = data.pairs?.[0];
+            if (pair) {
+              this.context = {
+                vol24h: pair.volume?.h24 || 0,
+                priceChange24h: pair.priceChange?.h24 || 0,
+                liquidity: pair.liquidity?.usd || 0,
+                fdv: pair.fdv || 0,
+                ts: Date.now()
+              };
+              console.log(`[Market] Context: Vol=$${(this.context.vol24h / 1e6).toFixed(1)}M, Chg=${this.context.priceChange24h}%`);
+            }
+          } catch (e) {
+            console.error("[Market] Context fetch failed:", e);
+          }
+        },
+        parsePriceStr(text) {
+          if (!text)
+            return 0;
+          let clean = text.trim();
+          const subscriptMap = {
+            "\u2080": 0,
+            "\u2081": 1,
+            "\u2082": 2,
+            "\u2083": 3,
+            "\u2084": 4,
+            "\u2085": 5,
+            "\u2086": 6,
+            "\u2087": 7,
+            "\u2088": 8,
+            "\u2089": 9
+          };
+          let processed = clean.replace(/[$,]/g, "");
+          const match = processed.match(/0\.0([₀₁₂₃₄₅₆₇₈₉])(\d+)/);
+          if (match) {
+            const numZeros = subscriptMap[match[1]];
+            const digits = match[2];
+            processed = "0.0" + "0".repeat(numZeros) + digits;
+          }
+          let val = parseFloat(processed);
+          const low = processed.toLowerCase();
+          if (low.includes("k"))
+            val *= 1e3;
+          else if (low.includes("m"))
+            val *= 1e6;
+          else if (low.includes("b"))
+            val *= 1e9;
+          return isNaN(val) ? 0 : val;
+        },
+        updatePrice(val) {
+          if (!val || val <= 1e-12)
+            return;
+          if (val !== this.price) {
+            console.log(`[Market] Price updated: $${val.toFixed(8)} (MC: $${this.marketCap.toFixed(0)})`);
+            this.price = val;
+            this.lastPriceTs = Date.now();
+            this.listeners.forEach((cb) => cb(val));
+          }
+        }
+      };
+    }
+  });
+
   // src/modules/core/analytics.js
   var analytics_exports = {};
   __export(analytics_exports, {
@@ -121,7 +459,9 @@
   var Analytics;
   var init_analytics = __esm({
     "src/modules/core/analytics.js"() {
+      init_store();
       init_featureManager();
+      init_market();
       Analytics = {
         analyzeRecentTrades(state) {
           const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
@@ -426,198 +766,8 @@
     }
   });
 
-  // src/modules/store.js
-  var EXT_KEY = "sol_paper_trader_v1";
-  var DEFAULTS = {
-    settings: {
-      tier: "free",
-      enabled: true,
-      buyHudDocked: true,
-      pnlDocked: true,
-      buyHudPos: { x: 20, y: 120 },
-      pnlPos: { x: 20, y: 60 },
-      startSol: 10,
-      quickBuySols: [0.01, 0.05, 0.1, 0.25, 0.5, 1],
-      quickSellPcts: [10, 25, 50, 75, 100],
-      strategies: ["Trend", "Breakout", "Reversal", "Scalp", "News", "Other"],
-      // Phase 2: Context
-      tokenDisplayUsd: false,
-      sessionDisplayUsd: false,
-      tutorialCompleted: false,
-      tradingMode: "paper",
-      // 'paper' | 'shadow'
-      showProfessor: true,
-      // Show trade analysis popup
-      rolloutPhase: "full",
-      // 'beta' | 'preview' | 'full'
-      featureOverrides: {},
-      // For remote kill-switches
-      behavioralAlerts: true
-      // Phase 9: Elite Guardrails
-    },
-    // Runtime state (not always persisted fully, but structure is here)
-    session: {
-      balance: 10,
-      equity: 10,
-      realized: 0,
-      trades: [],
-      // IDs
-      equityHistory: [],
-      // [{ts, equity}]
-      winStreak: 0,
-      lossStreak: 0,
-      startTime: 0,
-      tradeCount: 0,
-      disciplineScore: 100,
-      activeAlerts: []
-      // {type, message, ts}
-    },
-    trades: {},
-    // Map ID -> Trade Object { id, strategy, emotion, ... }
-    positions: {},
-    behavior: {
-      tiltFrequency: 0,
-      panicSells: 0,
-      fomoTrades: 0,
-      sunkCostFrequency: 0,
-      overtradingFrequency: 0,
-      profitNeglectFrequency: 0,
-      strategyDriftFrequency: 0,
-      profile: "Disciplined"
-    },
-    schemaVersion: 2,
-    version: "1.10.5"
-  };
-  function deepMerge(base, patch) {
-    if (!patch || typeof patch !== "object")
-      return base;
-    const out = Array.isArray(base) ? [...base] : { ...base };
-    for (const [k, v] of Object.entries(patch)) {
-      if (v && typeof v === "object" && !Array.isArray(v) && base[k] && typeof base[k] === "object") {
-        out[k] = deepMerge(base[k], v);
-      } else {
-        out[k] = v;
-      }
-    }
-    return out;
-  }
-  function isChromeStorageAvailable() {
-    try {
-      return typeof chrome !== "undefined" && chrome.storage && chrome.storage.local;
-    } catch {
-      return false;
-    }
-  }
-  var Store = {
-    state: null,
-    async load() {
-      let timeoutId;
-      const loadLogic = new Promise((resolve) => {
-        try {
-          if (!isChromeStorageAvailable()) {
-            this.state = JSON.parse(JSON.stringify(DEFAULTS));
-            if (timeoutId)
-              clearTimeout(timeoutId);
-            resolve(this.state);
-            return;
-          }
-          chrome.storage.local.get([EXT_KEY], (res) => {
-            if (timeoutId)
-              clearTimeout(timeoutId);
-            if (chrome.runtime.lastError) {
-              const msg = chrome.runtime.lastError.message;
-              if (msg && !msg.includes("context invalidated")) {
-                console.warn("[ZER\xD8] Storage load error:", msg);
-              }
-              this.state = JSON.parse(JSON.stringify(DEFAULTS));
-              resolve(this.state);
-              return;
-            }
-            const saved = res[EXT_KEY];
-            if (!saved) {
-              this.state = JSON.parse(JSON.stringify(DEFAULTS));
-            } else if (!saved.schemaVersion || saved.schemaVersion < 2) {
-              console.log("[ZER\xD8] Migrating storage schema v1 -> v2");
-              this.state = this.migrateV1toV2(saved);
-              this.save();
-            } else {
-              this.state = deepMerge(DEFAULTS, saved);
-            }
-            this.validateState();
-            resolve(this.state);
-          });
-        } catch (e) {
-          console.error("[ZER\xD8] Storage load exception:", e);
-          if (timeoutId)
-            clearTimeout(timeoutId);
-          resolve(JSON.parse(JSON.stringify(DEFAULTS)));
-        }
-      });
-      const timeout = new Promise((resolve) => {
-        timeoutId = setTimeout(() => {
-          console.warn("[ZER\xD8] Storage load timed out, using defaults.");
-          if (!this.state)
-            this.state = JSON.parse(JSON.stringify(DEFAULTS));
-          resolve(this.state);
-        }, 1e3);
-      });
-      return Promise.race([loadLogic, timeout]);
-    },
-    async save() {
-      if (!isChromeStorageAvailable() || !this.state)
-        return;
-      return new Promise((resolve) => {
-        try {
-          chrome.storage.local.set({ [EXT_KEY]: this.state }, () => {
-            if (chrome.runtime.lastError) {
-              const msg = chrome.runtime.lastError.message;
-              if (msg && !msg.includes("context invalidated")) {
-                console.warn("[ZER\xD8] Storage save error:", msg);
-              }
-            }
-            resolve();
-          });
-        } catch (e) {
-          if (!e.message.includes("context invalidated")) {
-            console.error("[ZER\xD8] Storage save exception:", e);
-          }
-          resolve();
-        }
-      });
-    },
-    migrateV1toV2(oldState) {
-      const newState = JSON.parse(JSON.stringify(DEFAULTS));
-      newState.settings.enabled = oldState.enabled ?? true;
-      newState.settings.buyHudDocked = oldState.buyHudDocked ?? true;
-      newState.settings.pnlDocked = oldState.pnlDocked ?? true;
-      newState.settings.buyHudPos = oldState.buyHudPos ?? { x: 20, y: 120 };
-      newState.settings.pnlPos = oldState.pnlPos ?? { x: 20, y: 60 };
-      newState.settings.startSol = oldState.startSol ?? 10;
-      newState.settings.tutorialCompleted = oldState.tutorialCompleted ?? false;
-      newState.session.balance = oldState.cashSol ?? 10;
-      newState.session.equity = oldState.equitySol ?? 10;
-      newState.session.realized = oldState.realizedSol ?? 0;
-      newState.session.winStreak = oldState.winStreak ?? 0;
-      newState.session.lossStreak = oldState.lossStreak ?? 0;
-      newState.session.disciplineScore = oldState.disciplineScore ?? 100;
-      if (Array.isArray(oldState.trades)) {
-        oldState.trades.forEach((t, idx) => {
-          const id = t.id || `legacy_${idx}_${Date.now()}`;
-          newState.trades[id] = t;
-          newState.session.trades.push(id);
-        });
-      }
-      newState.positions = oldState.positions || {};
-      return newState;
-    },
-    validateState() {
-      if (this.state) {
-        this.state.settings.startSol = parseFloat(this.state.settings.startSol) || 10;
-      }
-    }
-  };
-
   // src/content.boot.js
+  init_store();
   init_featureManager();
 
   // src/modules/ui/ids.js
@@ -1245,6 +1395,48 @@
   font-weight: 600;
   min-height: 40px;
   font-size: 11px;
+}
+
+/* Market Context HUD Styles */
+.market-context-container {
+    padding: 2px 0;
+}
+
+.market-badge {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(13, 17, 23, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 11px;
+}
+
+.market-badge.gated {
+    background: linear-gradient(90deg, rgba(168, 85, 247, 0.1), rgba(139, 92, 246, 0.1));
+    border: 1px dashed rgba(168, 85, 247, 0.3);
+    color: #a855f7;
+    justify-content: center;
+    gap: 8px;
+    font-weight: 700;
+}
+
+.market-badge.loading {
+    justify-content: center;
+    color: #64748b;
+    font-style: italic;
+}
+
+.market-badge .mitem {
+    color: #64748b;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.market-badge .mitem span {
+    color: #f8fafc;
+    margin-left: 4px;
 }
 `;
 
@@ -2120,144 +2312,15 @@ input:checked + .slider:before {
     }
   };
 
-  // src/modules/core/market.js
-  var Market2 = {
-    price: 0,
-    marketCap: 0,
-    lastPriceTs: 0,
-    context: null,
-    // { vol24h, priceChange24h, liquidity, fdv }
-    lastContextFetch: 0,
-    listeners: [],
-    init() {
-      this.startPolling();
-      window.addEventListener("message", (event) => {
-        if (event.source !== window || !event.data?.__paper)
-          return;
-        if (event.data.type === "PRICE_TICK") {
-          this.updatePrice(event.data.price);
-        }
-      });
-    },
-    subscribe(callback) {
-      this.listeners.push(callback);
-    },
-    startPolling() {
-      setInterval(() => {
-        if (!window.location.pathname.includes("/trade/"))
-          return;
-        this.pollDOM();
-      }, 1e3);
-    },
-    pollDOM() {
-      let candidates = [];
-      const isPadre = window.location.hostname.includes("padre.gg");
-      if (isPadre) {
-        candidates = Array.from(document.querySelectorAll("h2")).filter((el) => {
-          const txt = el.textContent || "";
-          return txt.includes("$") && /\d/.test(txt) && !txt.includes("SOL") && !txt.includes("%") && txt.length < 30;
-        });
-      } else {
-        candidates = Array.from(document.querySelectorAll("h1, h2, .price")).filter((el) => {
-          const txt = el.textContent || "";
-          return txt.includes("$") && /\d/.test(txt) && !txt.includes("%") && txt.length < 30;
-        });
-      }
-      for (const el of candidates) {
-        const raw = el.textContent.trim();
-        const val = this.parsePriceStr(raw);
-        const hasUnit = /[KMB]/.test(raw.toUpperCase());
-        if (hasUnit || val > 1e4) {
-          if (val > 0)
-            this.marketCap = val;
-        } else if (val > 0 && val < 1e4) {
-          if (val >= 50 && val <= 500) {
-            continue;
-          }
-          if (this.price > 0) {
-            const ratio = val / this.price;
-            if (ratio > 100 || ratio < 0.01) {
-              console.warn(`[Market] SPIKE REJECTED: $${val} (${(ratio * 100).toFixed(0)}x change from $${this.price})`);
-              continue;
-            }
-          }
-          this.updatePrice(val);
-          this.fetchMarketContext();
-        }
-      }
-    },
-    async fetchMarketContext() {
-      const url = window.location.href;
-      const mintMatch = url.match(/\/trade\/([a-zA-Z0-9]+)/);
-      const mint = mintMatch ? mintMatch[1] : null;
-      if (!mint || this.lastContextFetch && Date.now() - this.lastContextFetch < 3e4)
-        return;
-      this.lastContextFetch = Date.now();
-      try {
-        console.log(`[Market] Fetching context for ${mint}...`);
-        const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${mint}`);
-        const data = await response.json();
-        const pair = data.pairs?.[0];
-        if (pair) {
-          this.context = {
-            vol24h: pair.volume?.h24 || 0,
-            priceChange24h: pair.priceChange?.h24 || 0,
-            liquidity: pair.liquidity?.usd || 0,
-            fdv: pair.fdv || 0,
-            ts: Date.now()
-          };
-          console.log(`[Market] Context: Vol=$${(this.context.vol24h / 1e6).toFixed(1)}M, Chg=${this.context.priceChange24h}%`);
-        }
-      } catch (e) {
-        console.error("[Market] Context fetch failed:", e);
-      }
-    },
-    parsePriceStr(text) {
-      if (!text)
-        return 0;
-      let clean = text.trim();
-      const subscriptMap = {
-        "\u2080": 0,
-        "\u2081": 1,
-        "\u2082": 2,
-        "\u2083": 3,
-        "\u2084": 4,
-        "\u2085": 5,
-        "\u2086": 6,
-        "\u2087": 7,
-        "\u2088": 8,
-        "\u2089": 9
-      };
-      let processed = clean.replace(/[$,]/g, "");
-      const match = processed.match(/0\.0([₀₁₂₃₄₅₆₇₈₉])(\d+)/);
-      if (match) {
-        const numZeros = subscriptMap[match[1]];
-        const digits = match[2];
-        processed = "0.0" + "0".repeat(numZeros) + digits;
-      }
-      let val = parseFloat(processed);
-      const low = processed.toLowerCase();
-      if (low.includes("k"))
-        val *= 1e3;
-      else if (low.includes("m"))
-        val *= 1e6;
-      else if (low.includes("b"))
-        val *= 1e9;
-      return isNaN(val) ? 0 : val;
-    },
-    updatePrice(val) {
-      if (!val || val <= 1e-12)
-        return;
-      if (val !== this.price) {
-        console.log(`[Market] Price updated: $${val.toFixed(8)} (MC: $${this.marketCap.toFixed(0)})`);
-        this.price = val;
-        this.lastPriceTs = Date.now();
-        this.listeners.forEach((cb) => cb(val));
-      }
-    }
-  };
+  // src/content.boot.js
+  init_market();
+
+  // src/modules/ui/hud.js
+  init_store();
+  init_market();
 
   // src/modules/ui/banner.js
+  init_store();
   init_featureManager();
 
   // src/modules/ui/icons.js
@@ -2373,9 +2436,12 @@ input:checked + .slider:before {
   };
 
   // src/modules/ui/pnl-hud.js
+  init_store();
   init_featureManager();
 
   // src/modules/core/pnl-calculator.js
+  init_market();
+  init_store();
   var PnlCalculator = {
     cachedSolPrice: 200,
     // Default fallback
@@ -2456,11 +2522,11 @@ input:checked + .slider:before {
           return;
         }
         let currentPrice = pos.lastPriceUsd || pos.entryPriceUsd;
-        if (currentTokenMint && pos.mint === currentTokenMint && Market2.price > 0 && Market2.price < 1e4) {
-          currentPrice = Market2.price;
+        if (currentTokenMint && pos.mint === currentTokenMint && Market.price > 0 && Market.price < 1e4) {
+          currentPrice = Market.price;
           const oldPrice = pos.lastPriceUsd || pos.entryPriceUsd;
-          if (!pos.lastPriceUsd || Math.abs(oldPrice - Market2.price) / oldPrice > 1e-3) {
-            pos.lastPriceUsd = Market2.price;
+          if (!pos.lastPriceUsd || Math.abs(oldPrice - Market.price) / oldPrice > 1e-3) {
+            pos.lastPriceUsd = Market.price;
             priceWasUpdated = true;
           }
         }
@@ -2493,6 +2559,8 @@ input:checked + .slider:before {
   init_analytics();
 
   // src/modules/core/order-execution.js
+  init_store();
+  init_market();
   init_analytics();
   init_featureManager();
   var OrderExecution = {
@@ -2504,8 +2572,8 @@ input:checked + .slider:before {
         return { success: false, error: "Invalid amount" };
       if (amountSol > state.session.balance)
         return { success: false, error: "Insufficient funds" };
-      let price = Market2.price || 1e-6;
-      let marketCap = Market2.marketCap || 0;
+      let price = Market.price || 1e-6;
+      let marketCap = Market.marketCap || 0;
       if (price > 1e4 && marketCap > 0 && marketCap < 1e4) {
         console.warn(`[Trading] SWAP DETECTED! Price=${price} MarketCap=${marketCap}. Swapping...`);
         [price, marketCap] = [marketCap, price];
@@ -2570,7 +2638,7 @@ input:checked + .slider:before {
       const state = Store.state;
       if (!state.settings.enabled)
         return { success: false, error: "Paper trading disabled" };
-      let currentPrice = Market2.price || 0;
+      let currentPrice = Market.price || 0;
       if (currentPrice <= 0)
         return { success: false, error: "No price data" };
       if (currentPrice > 1e4) {
@@ -2609,7 +2677,7 @@ input:checked + .slider:before {
         solAmount: solReceived,
         tokenQty: qtyToSell,
         priceUsd: currentPrice,
-        marketCap: Market2.marketCap || 0,
+        marketCap: Market.marketCap || 0,
         realizedPnlSol,
         strategy: strategy || "Unknown",
         mode: state.settings.tradingMode || "paper"
@@ -2707,6 +2775,7 @@ input:checked + .slider:before {
   };
 
   // src/modules/ui/paywall.js
+  init_store();
   init_featureManager();
   var Paywall = {
     showUpgradeModal(lockedFeature = null) {
@@ -2879,6 +2948,7 @@ input:checked + .slider:before {
   init_analytics();
 
   // src/modules/ui/dashboard.js
+  init_store();
   init_analytics();
 
   // src/modules/ui/dashboard-styles.js
@@ -3757,7 +3827,9 @@ canvas#equity-canvas {
   };
 
   // src/modules/ui/buy-hud.js
+  init_store();
   init_featureManager();
+  init_market();
   function px2(n) {
     return n + "px";
   }
@@ -4067,7 +4139,7 @@ canvas#equity-canvas {
       const flags = FeatureManager.resolveFlags(Store.state, "MARKET_CONTEXT");
       if (!flags.visible)
         return "";
-      const ctx = Market2.context;
+      const ctx = Market.context;
       const isGated = flags.gated;
       let content = "";
       if (isGated) {
@@ -4113,7 +4185,7 @@ canvas#equity-canvas {
           window.postMessage({ __paper: true, type: "PAPER_DRAW_ALL", trades }, "*");
         }, 2e3);
       }
-      Market2.subscribe(async () => {
+      Market.subscribe(async () => {
         await PnlHud.updatePnlHud();
       });
     },
@@ -4216,7 +4288,7 @@ canvas#equity-canvas {
     }
     try {
       console.log("[ZER\xD8] Init Market...");
-      Market2.init();
+      Market.init();
     } catch (e) {
       console.error("[ZER\xD8] Market Init Failed:", e);
     }

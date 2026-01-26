@@ -1,4 +1,7 @@
+import { Store } from '../store.js';
 import { FeatureManager } from '../featureManager.js';
+import { Market } from './market.js';
+
 export const Analytics = {
     analyzeRecentTrades(state) {
         const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
