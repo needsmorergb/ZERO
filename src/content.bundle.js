@@ -325,7 +325,7 @@
   });
 
   // src/modules/featureManager.js
-  var TIERS, FEATURES, FeatureManager;
+  var TIERS, FEATURES, TEASED_FEATURES, FeatureManager;
   var init_featureManager = __esm({
     "src/modules/featureManager.js"() {
       TIERS = {
@@ -356,8 +356,35 @@
         ADVANCED_COACHING: "elite",
         BEHAVIOR_BASELINE: "elite",
         MARKET_CONTEXT: "elite",
-        TRADER_PROFILE: "elite"
+        TRADER_PROFILE: "elite",
         // Personal Trader Profile dashboard
+        // Explicit tease-card keys (alias existing features for Settings UI)
+        PRO_TRADE_PLAN: "pro",
+        PRO_DISCIPLINE: "pro",
+        PRO_STRATEGY_ANALYTICS: "pro",
+        PRO_EMOTION_ANALYTICS: "pro",
+        PRO_AI_DEBRIEF: "pro",
+        ELITE_TILT_DETECTION: "elite",
+        ELITE_RISK_METRICS: "elite",
+        ELITE_SESSION_REPLAY: "elite",
+        ELITE_TRADER_PROFILE: "elite",
+        ELITE_MARKET_CONTEXT: "elite"
+      };
+      TEASED_FEATURES = {
+        PRO: [
+          { id: "PRO_TRADE_PLAN", name: "Trade Planning", desc: "Set stop losses, targets, and capture your thesis before every trade." },
+          { id: "PRO_DISCIPLINE", name: "Discipline Scoring", desc: "Track how well you stick to your trading rules with an objective score." },
+          { id: "PRO_STRATEGY_ANALYTICS", name: "Strategy Analytics", desc: "See which strategies perform best and refine your edge." },
+          { id: "PRO_EMOTION_ANALYTICS", name: "Emotion Analytics", desc: "Understand how your emotional state affects your trading outcomes." },
+          { id: "PRO_AI_DEBRIEF", name: "AI Trade Debrief", desc: "Get AI-powered post-trade analysis to accelerate your learning." }
+        ],
+        ELITE: [
+          { id: "ELITE_TILT_DETECTION", name: "Tilt Detection", desc: "Real-time alerts when your behavior signals emotional trading." },
+          { id: "ELITE_RISK_METRICS", name: "Risk Metrics", desc: "Advanced risk-adjusted performance metrics for serious traders." },
+          { id: "ELITE_SESSION_REPLAY", name: "Session Replay", desc: "Replay your sessions to review decisions and improve execution." },
+          { id: "ELITE_TRADER_PROFILE", name: "Trader Profile", desc: "Your personal trading identity \u2014 strengths, weaknesses, and growth." },
+          { id: "ELITE_MARKET_CONTEXT", name: "Market Context", desc: "Overlay market conditions to see how context affected your trades." }
+        ]
       };
       FeatureManager = {
         TIERS,
@@ -1647,7 +1674,8 @@
     banner: "paper-mode-banner",
     pnlHud: "paper-pnl-hud",
     buyHud: "paper-buyhud-root",
-    style: "paper-overlay-style"
+    style: "paper-overlay-style",
+    positionsPanel: "paper-positions-panel"
   };
 
   // src/modules/ui/common-styles.js
@@ -2040,6 +2068,147 @@
 .paper-trade-marker.sell::after {
   top: -12px;
   border-bottom-color: #ef4444;
+}
+
+/* Positions Panel */
+#${IDS.pnlHud} .positionsPanel {
+  border-top: 1px solid rgba(20,184,166,0.1);
+}
+
+#${IDS.pnlHud} .positionsHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  cursor: pointer;
+  background: rgba(20,184,166,0.03);
+  transition: background 0.2s;
+}
+
+#${IDS.pnlHud} .positionsHeader:hover {
+  background: rgba(20,184,166,0.08);
+}
+
+#${IDS.pnlHud} .positionsTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+#${IDS.pnlHud} .positionCount {
+  color: #14b8a6;
+  font-weight: 800;
+}
+
+#${IDS.pnlHud} .positionsToggle {
+  color: #64748b;
+  transition: transform 0.2s;
+}
+
+#${IDS.pnlHud} .positionsToggle.expanded {
+  transform: rotate(180deg);
+}
+
+#${IDS.pnlHud} .positionsList {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+#${IDS.pnlHud} .positionRow {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 16px;
+  align-items: center;
+  padding: 14px 20px;
+  border-bottom: 1px solid rgba(20,184,166,0.05);
+  transition: background 0.15s;
+}
+
+#${IDS.pnlHud} .positionRow:hover {
+  background: rgba(20,184,166,0.05);
+}
+
+#${IDS.pnlHud} .positionRow:last-child {
+  border-bottom: none;
+}
+
+#${IDS.pnlHud} .positionInfo {
+  min-width: 0;
+}
+
+#${IDS.pnlHud} .positionSymbol {
+  font-size: 14px;
+  font-weight: 700;
+  color: #f8fafc;
+  margin-bottom: 2px;
+}
+
+#${IDS.pnlHud} .positionDetails {
+  display: flex;
+  gap: 12px;
+  font-size: 10px;
+  color: #64748b;
+}
+
+#${IDS.pnlHud} .positionPnl {
+  text-align: right;
+  min-width: 100px;
+}
+
+#${IDS.pnlHud} .positionPnl .pnlValue {
+  font-size: 13px;
+  font-weight: 700;
+  color: #64748b;
+}
+
+#${IDS.pnlHud} .positionPnl .pnlPct {
+  font-size: 10px;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+#${IDS.pnlHud} .positionPnl.positive .pnlValue,
+#${IDS.pnlHud} .positionPnl.positive .pnlPct {
+  color: #10b981;
+}
+
+#${IDS.pnlHud} .positionPnl.negative .pnlValue,
+#${IDS.pnlHud} .positionPnl.negative .pnlPct {
+  color: #ef4444;
+}
+
+#${IDS.pnlHud} .quickSellBtns {
+  display: flex;
+  gap: 6px;
+}
+
+#${IDS.pnlHud} .qSellBtn {
+  background: rgba(239,68,68,0.1);
+  border: 1px solid rgba(239,68,68,0.2);
+  color: #ef4444;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+#${IDS.pnlHud} .qSellBtn:hover {
+  background: rgba(239,68,68,0.2);
+  border-color: rgba(239,68,68,0.4);
+}
+
+#${IDS.pnlHud} .noPositions {
+  padding: 20px;
+  text-align: center;
+  color: #64748b;
+  font-size: 12px;
 }
 `;
 
@@ -3344,8 +3513,211 @@ input:checked + .slider:before {
 .behavior-stat-item .v { font-size: 16px; font-weight: 800; color: #f8fafc; }
 `;
 
+  // src/modules/ui/settings-panel-styles.js
+  var SETTINGS_PANEL_CSS = `
+/* Section titles */
+.settings-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 20px 0 12px 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(20,184,166,0.08);
+}
+
+/* Tier badges */
+.tier-badge {
+  font-size: 9px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+}
+
+.tier-badge.pro {
+  background: rgba(99,102,241,0.15);
+  color: #818cf8;
+}
+
+.tier-badge.elite {
+  background: rgba(245,158,11,0.15);
+  color: #f59e0b;
+}
+
+/* Privacy info box */
+.privacy-info-box {
+  background: rgba(20,184,166,0.03);
+  border: 1px solid rgba(20,184,166,0.08);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+}
+
+.privacy-info-box p {
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.5;
+  margin: 0 0 6px 0;
+}
+
+.privacy-info-box p:last-child {
+  margin-bottom: 0;
+}
+
+/* Diagnostics status */
+.diag-status {
+  background: #0d1117;
+  border: 1px solid rgba(20,184,166,0.08);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+}
+
+.diag-status-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+}
+
+.diag-label {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.diag-value {
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+.diag-value.enabled {
+  color: #10b981;
+}
+
+.diag-value.disabled {
+  color: #64748b;
+}
+
+.diag-value.error {
+  color: #ef4444;
+  font-size: 10px;
+  max-width: 200px;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Settings action buttons */
+.settings-btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.settings-action-btn {
+  flex: 1;
+  min-width: 120px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid rgba(20,184,166,0.15);
+  background: rgba(20,184,166,0.05);
+  color: #94a3b8;
+  transition: all 0.2s;
+}
+
+.settings-action-btn:hover {
+  background: rgba(20,184,166,0.1);
+  border-color: rgba(20,184,166,0.3);
+  color: #14b8a6;
+}
+
+.settings-action-btn.danger {
+  border-color: rgba(239,68,68,0.15);
+  background: rgba(239,68,68,0.05);
+}
+
+.settings-action-btn.danger:hover {
+  background: rgba(239,68,68,0.1);
+  border-color: rgba(239,68,68,0.3);
+  color: #ef4444;
+}
+
+/* Feature cards */
+.feature-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.feature-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: #0d1117;
+  border: 1px solid rgba(100,116,139,0.12);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.feature-card:hover {
+  background: rgba(20,184,166,0.03);
+  border-color: rgba(20,184,166,0.15);
+  transform: translateX(2px);
+}
+
+.feature-card-lock {
+  font-size: 16px;
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+.feature-card-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.feature-card-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #e2e8f0;
+  margin-bottom: 2px;
+}
+
+.feature-card-desc {
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+.feature-card-badge {
+  font-size: 9px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: rgba(100,116,139,0.1);
+}
+`;
+
   // src/modules/ui/styles.js
-  var CSS = COMMON_CSS + BANNER_CSS + PNL_HUD_CSS + BUY_HUD_CSS + MODALS_CSS + PROFESSOR_CSS + THEME_OVERRIDES_CSS + ELITE_CSS;
+  var CSS = COMMON_CSS + BANNER_CSS + PNL_HUD_CSS + BUY_HUD_CSS + MODALS_CSS + PROFESSOR_CSS + THEME_OVERRIDES_CSS + ELITE_CSS + SETTINGS_PANEL_CSS;
 
   // src/modules/ui/overlay.js
   var OverlayManager = {
@@ -6058,6 +6430,680 @@ canvas#equity-canvas {
     }
   };
 
+  // src/modules/ui/settings-panel.js
+  init_store();
+
+  // src/modules/schemas.js
+  function uuid() {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+      const r = Math.random() * 16 | 0;
+      return (c === "x" ? r : r & 3 | 8).toString(16);
+    });
+  }
+  var Platform = {
+    AXIOM: "AXIOM",
+    PADRE: "PADRE",
+    UNKNOWN: "UNKNOWN"
+  };
+  function createEvent(type, payload = {}, overrides = {}) {
+    return {
+      eventId: uuid(),
+      ts: Date.now(),
+      sessionId: void 0,
+      tradeId: void 0,
+      platform: Platform.UNKNOWN,
+      type,
+      payload,
+      ...overrides
+    };
+  }
+  var SCHEMA_VERSION = 3;
+
+  // src/modules/diagnostics-store.js
+  var STORAGE_KEY = "zero_state";
+  var EVENTS_CAP = 2e4;
+  var UPLOAD_QUEUE_CAP = 200;
+  var DEBOUNCE_MS = 400;
+  var ERROR_COOLDOWN_MS = 5e3;
+  function defaultState() {
+    return {
+      schemaVersion: SCHEMA_VERSION,
+      clientId: uuid(),
+      events: [],
+      settings: {
+        privacy: {
+          autoSendDiagnostics: false,
+          diagnosticsConsentAcceptedAt: null,
+          includeFeatureClicks: true
+        },
+        diagnostics: {
+          endpointUrl: "https://zerodata1.workers.dev/v1/zero/ingest",
+          lastUploadedEventTs: 0
+        }
+      },
+      upload: {
+        queue: [],
+        backoffUntilTs: 0,
+        lastError: null
+      }
+    };
+  }
+  function isStorageAvailable() {
+    try {
+      return typeof chrome !== "undefined" && chrome.storage && chrome.storage.local;
+    } catch {
+      return false;
+    }
+  }
+  async function chromeStorageGet(key) {
+    if (!isStorageAvailable())
+      return null;
+    return new Promise((resolve) => {
+      try {
+        chrome.storage.local.get([key], (res) => {
+          if (chrome.runtime.lastError) {
+            const msg = chrome.runtime.lastError.message || "";
+            if (!msg.includes("context invalidated")) {
+              console.warn("[DiagStore] get error:", msg);
+            }
+            resolve(null);
+            return;
+          }
+          resolve(res[key] || null);
+        });
+      } catch (e) {
+        if (!String(e).includes("context invalidated")) {
+          console.error("[DiagStore] get exception:", e);
+        }
+        resolve(null);
+      }
+    });
+  }
+  async function chromeStorageSet(key, value) {
+    if (!isStorageAvailable())
+      return;
+    return new Promise((resolve) => {
+      try {
+        chrome.storage.local.set({ [key]: value }, () => {
+          if (chrome.runtime.lastError) {
+            const msg = chrome.runtime.lastError.message || "";
+            if (!msg.includes("context invalidated")) {
+              console.warn("[DiagStore] set error:", msg);
+            }
+          }
+          resolve();
+        });
+      } catch (e) {
+        if (!String(e).includes("context invalidated")) {
+          console.error("[DiagStore] set exception:", e);
+        }
+        resolve();
+      }
+    });
+  }
+  async function chromeStorageRemove(key) {
+    if (!isStorageAvailable())
+      return;
+    return new Promise((resolve) => {
+      try {
+        chrome.storage.local.remove(key, () => resolve());
+      } catch {
+        resolve();
+      }
+    });
+  }
+  var DiagnosticsStore = {
+    /** @type {ReturnType<typeof defaultState>|null} */
+    state: null,
+    _saveTimer: null,
+    _lastErrorTs: 0,
+    // ------ Lifecycle ------
+    async load() {
+      const saved = await chromeStorageGet(STORAGE_KEY);
+      if (!saved) {
+        this.state = defaultState();
+        await this._persist();
+      } else {
+        this.state = this._migrate(saved);
+      }
+      return this.state;
+    },
+    _migrate(saved) {
+      const s = { ...defaultState(), ...saved };
+      s.settings = { ...defaultState().settings, ...s.settings };
+      s.settings.privacy = { ...defaultState().settings.privacy, ...s.settings?.privacy };
+      s.settings.diagnostics = { ...defaultState().settings.diagnostics, ...s.settings?.diagnostics };
+      s.upload = { ...defaultState().upload, ...s.upload };
+      if (!s.clientId)
+        s.clientId = uuid();
+      if (!Array.isArray(s.events))
+        s.events = [];
+      if (!Array.isArray(s.upload.queue))
+        s.upload.queue = [];
+      s.schemaVersion = SCHEMA_VERSION;
+      return s;
+    },
+    // ------ Debounced persist ------
+    save() {
+      if (this._saveTimer)
+        return;
+      this._saveTimer = setTimeout(() => {
+        this._saveTimer = null;
+        this._persist();
+      }, DEBOUNCE_MS);
+    },
+    async _persist() {
+      if (!this.state)
+        return;
+      await chromeStorageSet(STORAGE_KEY, this.state);
+    },
+    async forceSave() {
+      if (this._saveTimer) {
+        clearTimeout(this._saveTimer);
+        this._saveTimer = null;
+      }
+      await this._persist();
+    },
+    // ------ Events ring buffer ------
+    /**
+     * Append an event to the ring buffer.
+     * @param {string} type - EventType value
+     * @param {Record<string, any>} payload
+     * @param {{ sessionId?: string, tradeId?: string, platform?: string }} ctx
+     */
+    logEvent(type, payload = {}, ctx = {}) {
+      if (!this.state)
+        return;
+      if (type === "ERROR") {
+        const now = Date.now();
+        if (now - this._lastErrorTs < ERROR_COOLDOWN_MS)
+          return;
+        this._lastErrorTs = now;
+      }
+      const evt = createEvent(type, payload, {
+        sessionId: ctx.sessionId,
+        tradeId: ctx.tradeId,
+        platform: ctx.platform || "UNKNOWN"
+      });
+      this.state.events.push(evt);
+      if (this.state.events.length > EVENTS_CAP) {
+        this.state.events = this.state.events.slice(-EVENTS_CAP);
+      }
+      this.save();
+    },
+    // ------ Upload queue ------
+    enqueuePacket(packet) {
+      if (!this.state)
+        return;
+      this.state.upload.queue.push({
+        uploadId: packet.uploadId,
+        createdAt: packet.createdAt,
+        eventCount: (packet.eventsDelta || []).length,
+        payload: packet
+      });
+      if (this.state.upload.queue.length > UPLOAD_QUEUE_CAP) {
+        this.state.upload.queue = this.state.upload.queue.slice(-UPLOAD_QUEUE_CAP);
+      }
+      this.logEvent("UPLOAD_PACKET_ENQUEUED", { uploadId: packet.uploadId });
+      this.save();
+    },
+    dequeuePacket() {
+      if (!this.state || !this.state.upload.queue.length)
+        return null;
+      const item = this.state.upload.queue.shift();
+      this.save();
+      return item;
+    },
+    peekPacket() {
+      if (!this.state || !this.state.upload.queue.length)
+        return null;
+      return this.state.upload.queue[0];
+    },
+    // ------ Privacy settings ------
+    isAutoSendEnabled() {
+      return !!this.state?.settings?.privacy?.autoSendDiagnostics;
+    },
+    enableAutoSend() {
+      if (!this.state)
+        return;
+      this.state.settings.privacy.autoSendDiagnostics = true;
+      this.state.settings.privacy.diagnosticsConsentAcceptedAt = Date.now();
+      this.save();
+    },
+    disableAutoSend() {
+      if (!this.state)
+        return;
+      this.state.settings.privacy.autoSendDiagnostics = false;
+      this.save();
+    },
+    getEndpointUrl() {
+      return this.state?.settings?.diagnostics?.endpointUrl || "";
+    },
+    setEndpointUrl(url) {
+      if (!this.state)
+        return;
+      this.state.settings.diagnostics.endpointUrl = url;
+      this.save();
+    },
+    getLastUploadedEventTs() {
+      return this.state?.settings?.diagnostics?.lastUploadedEventTs || 0;
+    },
+    setLastUploadedEventTs(ts) {
+      if (!this.state)
+        return;
+      this.state.settings.diagnostics.lastUploadedEventTs = ts;
+      this.save();
+    },
+    // ------ Backoff ------
+    isInBackoff() {
+      return Date.now() < (this.state?.upload?.backoffUntilTs || 0);
+    },
+    setBackoff(delayMs) {
+      if (!this.state)
+        return;
+      this.state.upload.backoffUntilTs = Date.now() + delayMs;
+      this.save();
+    },
+    clearBackoff() {
+      if (!this.state)
+        return;
+      this.state.upload.backoffUntilTs = 0;
+      this.state.upload.lastError = null;
+      this.save();
+    },
+    setLastError(msg) {
+      if (!this.state)
+        return;
+      this.state.upload.lastError = msg;
+      this.save();
+    },
+    // ------ Data management ------
+    async clearAllData() {
+      await chromeStorageRemove(STORAGE_KEY);
+      this.state = defaultState();
+      await this._persist();
+    },
+    async clearUploadQueue() {
+      if (!this.state)
+        return;
+      this.state.upload.queue = [];
+      this.state.upload.backoffUntilTs = 0;
+      this.state.upload.lastError = null;
+      await this.forceSave();
+    },
+    // ------ Delta query ------
+    getEventsDelta() {
+      if (!this.state)
+        return [];
+      const lastTs = this.getLastUploadedEventTs();
+      return this.state.events.filter((e) => e.ts > lastTs);
+    },
+    getClientId() {
+      return this.state?.clientId || "";
+    }
+  };
+
+  // src/modules/ui/settings-panel.js
+  init_featureManager();
+  var SettingsPanel = {
+    /**
+     * Show the full settings modal (replaces old mini-settings).
+     */
+    show() {
+      const container = OverlayManager.getContainer();
+      const existing = container.querySelector(".zero-settings-overlay");
+      if (existing)
+        existing.remove();
+      const overlay = document.createElement("div");
+      overlay.className = "confirm-modal-overlay zero-settings-overlay";
+      const isShadow = Store.state.settings.tradingMode === "shadow";
+      const diagState = DiagnosticsStore.state || {};
+      const isAutoSend = diagState.settings?.privacy?.autoSendDiagnostics || false;
+      const lastUpload = diagState.settings?.diagnostics?.lastUploadedEventTs || 0;
+      const lastError = diagState.upload?.lastError || null;
+      const queueLen = (diagState.upload?.queue || []).length;
+      overlay.innerHTML = `
+            <div class="settings-modal" style="width:440px; max-height:85vh; overflow-y:auto;">
+                <div class="settings-header">
+                    <div class="settings-title"><span>\u2699\uFE0F</span> Settings</div>
+                    <button class="settings-close">\xD7</button>
+                </div>
+
+                <!-- General -->
+                <div class="settings-section-title">General</div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <div class="setting-name">Shadow Real Mode</div>
+                        <div class="setting-desc">Tag trades as "Real" for journaling.</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" data-setting="shadow" ${isShadow ? "checked" : ""}>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <!-- Privacy & Data -->
+                <div class="settings-section-title">Privacy & Data</div>
+
+                <div class="privacy-info-box">
+                    <p>ZER\xD8 stores simulated trades and session data locally on your device by default.</p>
+                    <p>ZER\xD8 does not sell your data.</p>
+                    <p>Diagnostics uploads are optional and off by default. If enabled, ZER\xD8 automatically sends anonymized diagnostics (simulated trades, session logs, feature interaction events, and errors) to help improve the product.</p>
+                    <p>You can disable diagnostics and delete local data at any time.</p>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <div class="setting-name">Auto-send diagnostics</div>
+                        <div class="setting-desc">Help improve ZER\xD8 by sending anonymized data.</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" data-setting="autoSend" ${isAutoSend ? "checked" : ""}>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <div class="diag-status">
+                    <div class="diag-status-row">
+                        <span class="diag-label">Uploads</span>
+                        <span class="diag-value ${isAutoSend ? "enabled" : "disabled"}">${isAutoSend ? "Enabled" : "Disabled"}</span>
+                    </div>
+                    ${lastUpload > 0 ? `
+                    <div class="diag-status-row">
+                        <span class="diag-label">Last upload</span>
+                        <span class="diag-value">${new Date(lastUpload).toLocaleString()}</span>
+                    </div>` : ""}
+                    ${lastError ? `
+                    <div class="diag-status-row">
+                        <span class="diag-label">Last error</span>
+                        <span class="diag-value error">${lastError}</span>
+                    </div>` : ""}
+                    ${queueLen > 0 ? `
+                    <div class="diag-status-row">
+                        <span class="diag-label">Queued packets</span>
+                        <span class="diag-value">${queueLen}</span>
+                    </div>` : ""}
+                </div>
+
+                <div class="settings-btn-row">
+                    <button class="settings-action-btn" data-setting-act="viewPayload">View sample payload</button>
+                    <button class="settings-action-btn danger" data-setting-act="deleteQueue">Delete queued uploads</button>
+                    <button class="settings-action-btn danger" data-setting-act="deleteLocal">Delete local ZER\xD8 data</button>
+                </div>
+
+                <!-- Pro Features -->
+                <div class="settings-section-title">
+                    <span>PRO Features</span>
+                    <span class="tier-badge pro">PRO</span>
+                </div>
+                <div class="feature-cards">
+                    ${TEASED_FEATURES.PRO.map((f) => `
+                        <div class="feature-card locked" data-feature="${f.id}">
+                            <div class="feature-card-lock">\u{1F512}</div>
+                            <div class="feature-card-body">
+                                <div class="feature-card-name">${f.name}</div>
+                                <div class="feature-card-desc">${f.desc}</div>
+                            </div>
+                            <div class="feature-card-badge">Coming soon</div>
+                        </div>
+                    `).join("")}
+                </div>
+
+                <!-- Elite Features -->
+                <div class="settings-section-title">
+                    <span>ELITE Features</span>
+                    <span class="tier-badge elite">ELITE</span>
+                </div>
+                <div class="feature-cards">
+                    ${TEASED_FEATURES.ELITE.map((f) => `
+                        <div class="feature-card locked" data-feature="${f.id}">
+                            <div class="feature-card-lock">\u{1F512}</div>
+                            <div class="feature-card-body">
+                                <div class="feature-card-name">${f.name}</div>
+                                <div class="feature-card-desc">${f.desc}</div>
+                            </div>
+                            <div class="feature-card-badge">Coming soon</div>
+                        </div>
+                    `).join("")}
+                </div>
+
+                <div style="margin-top:20px; text-align:center; font-size:11px; color:#64748b;">
+                    ZER\xD8 v${Store.state.version || "1.11.6"}
+                </div>
+            </div>
+        `;
+      container.appendChild(overlay);
+      this._bind(overlay);
+    },
+    _bind(overlay) {
+      const close = () => {
+        overlay.remove();
+        if (window.ZeroHUD && window.ZeroHUD.updateAll)
+          window.ZeroHUD.updateAll();
+      };
+      overlay.querySelector(".settings-close").onclick = close;
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay)
+          close();
+      });
+      const shadowToggle = overlay.querySelector('[data-setting="shadow"]');
+      if (shadowToggle) {
+        shadowToggle.onchange = async (e) => {
+          Store.state.settings.tradingMode = e.target.checked ? "shadow" : "paper";
+          await Store.save();
+          const c = OverlayManager.getContainer();
+          c.classList.toggle("zero-shadow-mode", e.target.checked);
+        };
+      }
+      const autoSendToggle = overlay.querySelector('[data-setting="autoSend"]');
+      if (autoSendToggle) {
+        autoSendToggle.onchange = (e) => {
+          if (e.target.checked) {
+            this._showConsentModal(overlay, () => {
+              DiagnosticsStore.enableAutoSend();
+              this._refreshDiagStatus(overlay, true);
+            }, () => {
+              e.target.checked = false;
+            });
+          } else {
+            DiagnosticsStore.disableAutoSend();
+            this._refreshDiagStatus(overlay, false);
+          }
+        };
+      }
+      overlay.addEventListener("click", async (e) => {
+        const act = e.target.getAttribute("data-setting-act");
+        if (!act) {
+          const card = e.target.closest(".feature-card.locked");
+          if (card) {
+            const featureId = card.getAttribute("data-feature");
+            this._logFeatureClick(featureId);
+            this._showComingSoonModal(overlay, featureId);
+          }
+          return;
+        }
+        if (act === "viewPayload") {
+          this._showSamplePayload(overlay);
+        }
+        if (act === "deleteQueue") {
+          await DiagnosticsStore.clearUploadQueue();
+          this._refreshDiagStatus(overlay, DiagnosticsStore.isAutoSendEnabled());
+        }
+        if (act === "deleteLocal") {
+          this._showDeleteConfirm(overlay);
+        }
+      });
+    },
+    _refreshDiagStatus(overlay, isEnabled) {
+      const statusEl = overlay.querySelector(".diag-status");
+      if (!statusEl)
+        return;
+      const diagState = DiagnosticsStore.state || {};
+      const lastUpload = diagState.settings?.diagnostics?.lastUploadedEventTs || 0;
+      const lastError = diagState.upload?.lastError || null;
+      const queueLen = (diagState.upload?.queue || []).length;
+      statusEl.innerHTML = `
+            <div class="diag-status-row">
+                <span class="diag-label">Uploads</span>
+                <span class="diag-value ${isEnabled ? "enabled" : "disabled"}">${isEnabled ? "Enabled" : "Disabled"}</span>
+            </div>
+            ${lastUpload > 0 ? `<div class="diag-status-row"><span class="diag-label">Last upload</span><span class="diag-value">${new Date(lastUpload).toLocaleString()}</span></div>` : ""}
+            ${lastError ? `<div class="diag-status-row"><span class="diag-label">Last error</span><span class="diag-value error">${lastError}</span></div>` : ""}
+            ${queueLen > 0 ? `<div class="diag-status-row"><span class="diag-label">Queued packets</span><span class="diag-value">${queueLen}</span></div>` : ""}
+        `;
+    },
+    _showConsentModal(parent, onAccept, onDecline) {
+      const modal = document.createElement("div");
+      modal.className = "confirm-modal-overlay";
+      modal.style.zIndex = "2147483648";
+      modal.innerHTML = `
+            <div class="confirm-modal" style="max-width:420px;">
+                <h3>Enable diagnostics?</h3>
+                <p style="font-size:13px; line-height:1.6;">
+                    When enabled, ZER\xD8 will automatically send anonymized diagnostics including:
+                </p>
+                <ul style="color:#94a3b8; font-size:12px; line-height:1.8; margin:8px 0 16px 16px; padding:0;">
+                    <li>Simulated trade data (no real wallet data)</li>
+                    <li>Session summaries</li>
+                    <li>Feature interaction events</li>
+                    <li>Error logs</li>
+                </ul>
+                <p style="font-size:12px; color:#64748b; margin-bottom:16px;">
+                    No wallet addresses, private keys, passwords, or personal information is ever collected. You can disable this at any time.
+                </p>
+                <div class="confirm-modal-buttons">
+                    <button class="confirm-modal-btn cancel">Cancel</button>
+                    <button class="confirm-modal-btn confirm" style="background:rgba(20,184,166,0.8);">Enable</button>
+                </div>
+            </div>
+        `;
+      parent.appendChild(modal);
+      modal.querySelector(".cancel").onclick = () => {
+        modal.remove();
+        onDecline();
+      };
+      modal.querySelector(".confirm").onclick = () => {
+        modal.remove();
+        onAccept();
+      };
+      modal.addEventListener("click", (e) => {
+        if (e.target === modal) {
+          modal.remove();
+          onDecline();
+        }
+      });
+    },
+    _showComingSoonModal(parent, featureId) {
+      const allFeatures = [...TEASED_FEATURES.PRO, ...TEASED_FEATURES.ELITE];
+      const feat = allFeatures.find((f) => f.id === featureId);
+      const tier = featureId.startsWith("ELITE") ? "Elite" : "Pro";
+      const modal = document.createElement("div");
+      modal.className = "confirm-modal-overlay";
+      modal.style.zIndex = "2147483648";
+      modal.innerHTML = `
+            <div class="confirm-modal" style="max-width:380px; text-align:center;">
+                <h3 style="color:#14b8a6;">Coming Soon</h3>
+                <p style="font-size:14px; font-weight:600; color:#f8fafc; margin-bottom:6px;">
+                    ${feat ? feat.name : featureId}
+                </p>
+                <p style="font-size:13px; color:#94a3b8; margin-bottom:16px;">
+                    ${feat ? feat.desc : ""} This feature is part of <strong style="color:${tier === "Elite" ? "#f59e0b" : "#6366f1"}">${tier}</strong>.
+                </p>
+                <div class="confirm-modal-buttons" style="justify-content:center;">
+                    <button class="confirm-modal-btn" style="background:rgba(20,184,166,0.2); color:#14b8a6;" data-act="waitlist">Join waitlist</button>
+                    <button class="confirm-modal-btn cancel">Close</button>
+                </div>
+            </div>
+        `;
+      parent.appendChild(modal);
+      modal.querySelector(".cancel").onclick = () => modal.remove();
+      modal.querySelector('[data-act="waitlist"]').onclick = () => {
+        const subject = encodeURIComponent(`ZER\xD8 ${tier} Waitlist - ${feat ? feat.name : featureId}`);
+        const body = encodeURIComponent(`I'm interested in ${feat ? feat.name : featureId} for ZER\xD8 ${tier}.
+
+Please add me to the waitlist.`);
+        const mailTo = `mailto:?subject=${subject}&body=${body}`;
+        try {
+          navigator.clipboard.writeText(`I'm interested in ZER\xD8 ${tier}: ${feat ? feat.name : featureId}. Please add me to the waitlist.`);
+        } catch {
+        }
+        window.open(mailTo);
+        modal.remove();
+      };
+      modal.addEventListener("click", (e) => {
+        if (e.target === modal)
+          modal.remove();
+      });
+    },
+    _showSamplePayload(parent) {
+      const sample = {
+        uploadId: "sample-xxxxx",
+        clientId: "<redacted>",
+        createdAt: Date.now(),
+        schemaVersion: 3,
+        extensionVersion: Store.state.version || "1.11.6",
+        eventsDelta: [
+          { eventId: "evt_sample1", ts: Date.now() - 6e4, type: "SESSION_STARTED", platform: "AXIOM", payload: {} },
+          { eventId: "evt_sample2", ts: Date.now() - 3e4, type: "TRADE_OPENED", platform: "AXIOM", payload: { side: "BUY", symbol: "TOKEN" } },
+          { eventId: "evt_sample3", ts: Date.now(), type: "TRADE_CLOSED", platform: "AXIOM", payload: { side: "SELL", pnl: 0.05 } }
+        ]
+      };
+      const modal = document.createElement("div");
+      modal.className = "confirm-modal-overlay";
+      modal.style.zIndex = "2147483648";
+      modal.innerHTML = `
+            <div class="confirm-modal" style="max-width:500px;">
+                <h3>Sample upload payload</h3>
+                <pre style="background:#0d1117; border:1px solid rgba(20,184,166,0.15); border-radius:8px; padding:12px; font-size:11px; color:#94a3b8; overflow-x:auto; max-height:300px; white-space:pre-wrap; word-break:break-all;">${JSON.stringify(sample, null, 2)}</pre>
+                <p style="font-size:11px; color:#64748b; margin-top:8px;">
+                    This is a sample of what would be sent. Real payloads contain only event IDs, timestamps, types, and small scalar values. No DOM content, keystrokes, wallet data, or personal information.
+                </p>
+                <div class="confirm-modal-buttons">
+                    <button class="confirm-modal-btn cancel">Close</button>
+                </div>
+            </div>
+        `;
+      parent.appendChild(modal);
+      modal.querySelector(".cancel").onclick = () => modal.remove();
+      modal.addEventListener("click", (e) => {
+        if (e.target === modal)
+          modal.remove();
+      });
+    },
+    _showDeleteConfirm(parent) {
+      const modal = document.createElement("div");
+      modal.className = "confirm-modal-overlay";
+      modal.style.zIndex = "2147483648";
+      modal.innerHTML = `
+            <div class="confirm-modal">
+                <h3>Delete all local data?</h3>
+                <p>This will permanently delete all ZER\xD8 diagnostics data, event logs, and upload queue from your browser. Your trading session data (stored under a separate key) is unaffected.</p>
+                <div class="confirm-modal-buttons">
+                    <button class="confirm-modal-btn cancel">Cancel</button>
+                    <button class="confirm-modal-btn confirm">Delete</button>
+                </div>
+            </div>
+        `;
+      parent.appendChild(modal);
+      modal.querySelector(".cancel").onclick = () => modal.remove();
+      modal.querySelector(".confirm").onclick = async () => {
+        await DiagnosticsStore.clearAllData();
+        modal.remove();
+      };
+      modal.addEventListener("click", (e) => {
+        if (e.target === modal)
+          modal.remove();
+      });
+    },
+    _logFeatureClick(featureId) {
+      DiagnosticsStore.logEvent("UI_LOCKED_FEATURE_CLICKED", { featureId });
+    }
+  };
+
   // src/modules/ui/pnl-hud.js
   function px(n) {
     return n + "px";
@@ -6065,6 +7111,7 @@ canvas#equity-canvas {
   function clamp(v, min, max) {
     return Math.max(min, Math.min(max, v));
   }
+  var positionsExpanded = false;
   var PnlHud = {
     mountPnlHud(makeDraggable) {
       const container = OverlayManager.getContainer();
@@ -6090,7 +7137,7 @@ canvas#equity-canvas {
         container.appendChild(root);
         this.bindPnlEvents(root);
       }
-      const CURRENT_UI_VERSION = "1.10.3";
+      const CURRENT_UI_VERSION = "1.12.0";
       const renderedVersion = root.dataset.uiVersion;
       if (isNew || renderedVersion !== CURRENT_UI_VERSION) {
         this.renderPnlHudContent(root, makeDraggable);
@@ -6137,6 +7184,16 @@ canvas#equity-canvas {
                     <div class="k">DISCIPLINE <span class="pro-tag" style="display:none;" id="discipline-pro-tag">PRO</span></div>
                     <div class="v" data-k="discipline">100</div>
                 </div>
+              </div>
+              <div class="positionsPanel">
+                <div class="positionsHeader" data-act="togglePositions">
+                  <div class="positionsTitle">
+                    <span>POSITIONS</span>
+                    <span class="positionCount" data-k="positionCount">(0)</span>
+                  </div>
+                  <span class="positionsToggle">\u25BC</span>
+                </div>
+                <div class="positionsList" style="display:none;" data-k="positionsList"></div>
               </div>
               <div class="tradeList" style="display:none;"></div>
             </div>
@@ -6222,6 +7279,15 @@ canvas#equity-canvas {
         }
         if (act === "getPro") {
           Paywall.showUpgradeModal();
+        }
+        if (act === "togglePositions") {
+          positionsExpanded = !positionsExpanded;
+          this.updatePositionsPanel(root);
+        }
+        if (act === "quickSell") {
+          const mint = actEl.getAttribute("data-mint");
+          const pct = parseFloat(actEl.getAttribute("data-pct"));
+          await this.executeQuickSell(mint, pct);
         }
       });
     },
@@ -6348,6 +7414,7 @@ canvas#equity-canvas {
         const symbol = currentToken?.symbol || "TOKEN";
         tokenSymbolEl.textContent = symbol;
       }
+      this.updatePositionsPanel(root);
     },
     showResetModal() {
       const overlay = document.createElement("div");
@@ -6397,69 +7464,7 @@ canvas#equity-canvas {
       };
     },
     showSettingsModal() {
-      const overlay = document.createElement("div");
-      overlay.className = "confirm-modal-overlay";
-      const isShadow = Store.state.settings.tradingMode === "shadow";
-      overlay.innerHTML = `
-            <div class="settings-modal">
-                <div class="settings-header">
-                    <div class="settings-title">
-                        <span>\u2699\uFE0F</span> Settings
-                    </div>
-                    <button class="settings-close">\xD7</button>
-                </div>
-
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <div class="setting-name">Shadow Real Mode</div>
-                        <div class="setting-desc">Tag trades as "Real" for journaling. Changes UI theme.</div>
-                    </div>
-                    <label class="toggle-switch">
-                        <input type="checkbox" id="toggle-shadow" ${isShadow ? "checked" : ""}>
-                        <span class="slider"></span>
-                    </label>
-                </div>
-
-                <div class="setting-row" style="opacity:0.5; pointer-events:none;">
-                    <div class="setting-info">
-                        <div class="setting-name">Discipline Score</div>
-                        <div class="setting-desc">Track rule adherence (Coming Soon).</div>
-                    </div>
-                    <label class="toggle-switch">
-                        <input type="checkbox">
-                        <span class="slider"></span>
-                    </label>
-                </div>
-
-                <div style="margin-top:20px; text-align:center; font-size:11px; color:#64748b;">
-                    ZER\xD8 v${Store.state.version || "0.9.9"}
-                </div>
-            </div>
-        `;
-      OverlayManager.getContainer().appendChild(overlay);
-      const close = () => {
-        overlay.remove();
-        if (window.ZeroHUD && window.ZeroHUD.updateAll) {
-          window.ZeroHUD.updateAll();
-        }
-      };
-      overlay.querySelector(".settings-close").onclick = close;
-      const bg = overlay;
-      bg.addEventListener("click", (e) => {
-        if (e.target === bg)
-          close();
-      });
-      const shadowToggle = overlay.querySelector("#toggle-shadow");
-      shadowToggle.onchange = async (e) => {
-        const val = e.target.checked;
-        Store.state.settings.tradingMode = val ? "shadow" : "paper";
-        await Store.save();
-        const container = OverlayManager.getContainer();
-        if (val)
-          container.classList.add("zero-shadow-mode");
-        else
-          container.classList.remove("zero-shadow-mode");
-      };
+      SettingsPanel.show();
     },
     updateTradeList(container) {
       const trades = Store.state.session.trades || [];
@@ -6501,6 +7506,102 @@ canvas#equity-canvas {
             `;
       });
       container.innerHTML = html || '<div style="padding:10px;color:#64748b;text-align:center;">No trades yet</div>';
+    },
+    updatePositionsPanel(root) {
+      const s = Store.state;
+      const positions = Object.values(s.positions || {});
+      const listEl = root.querySelector('[data-k="positionsList"]');
+      const toggleIcon = root.querySelector(".positionsToggle");
+      const countEl = root.querySelector('[data-k="positionCount"]');
+      if (countEl) {
+        countEl.textContent = `(${positions.length})`;
+      }
+      if (toggleIcon) {
+        toggleIcon.textContent = positionsExpanded ? "\u25B2" : "\u25BC";
+        toggleIcon.classList.toggle("expanded", positionsExpanded);
+      }
+      if (listEl) {
+        listEl.style.display = positionsExpanded ? "block" : "none";
+        if (positionsExpanded) {
+          listEl.innerHTML = this.renderPositionRows(positions);
+        }
+      }
+    },
+    renderPositionRows(positions) {
+      if (positions.length === 0) {
+        return '<div class="noPositions">No open positions</div>';
+      }
+      const solUsd = Trading.getSolPrice();
+      const currentToken = TokenDetector.getCurrentToken();
+      return positions.map((pos) => {
+        let currentPrice = pos.lastPriceUsd || pos.entryPriceUsd;
+        if (pos.mint === currentToken?.mint && currentPrice > 0) {
+        }
+        const valueUsd = pos.tokenQty * currentPrice;
+        const valueSol = valueUsd / solUsd;
+        const pnl = valueSol - pos.totalSolSpent;
+        const pnlPct = pos.totalSolSpent > 0 ? pnl / pos.totalSolSpent * 100 : 0;
+        const isPositive = pnl >= 0;
+        return `
+                <div class="positionRow">
+                    <div class="positionInfo">
+                        <div class="positionSymbol">${pos.symbol || "UNKNOWN"}</div>
+                        <div class="positionDetails">
+                            <span class="positionQty">${this.formatQty(pos.tokenQty)}</span>
+                            <span class="positionPrices">Entry: $${this.formatPrice(pos.entryPriceUsd)} \u2192 $${this.formatPrice(currentPrice)}</span>
+                        </div>
+                    </div>
+                    <div class="positionPnl ${isPositive ? "positive" : "negative"}">
+                        <div class="pnlValue">${isPositive ? "+" : ""}${Trading.fmtSol(pnl)} SOL</div>
+                        <div class="pnlPct">${isPositive ? "+" : ""}${pnlPct.toFixed(1)}%</div>
+                    </div>
+                    <div class="quickSellBtns">
+                        <button class="qSellBtn" data-act="quickSell" data-mint="${pos.mint}" data-pct="25">25%</button>
+                        <button class="qSellBtn" data-act="quickSell" data-mint="${pos.mint}" data-pct="50">50%</button>
+                        <button class="qSellBtn" data-act="quickSell" data-mint="${pos.mint}" data-pct="100">100%</button>
+                    </div>
+                </div>
+            `;
+      }).join("");
+    },
+    formatQty(n) {
+      if (!n || n <= 0)
+        return "0";
+      if (n >= 1e9)
+        return (n / 1e9).toFixed(2) + "B";
+      if (n >= 1e6)
+        return (n / 1e6).toFixed(2) + "M";
+      if (n >= 1e3)
+        return (n / 1e3).toFixed(2) + "K";
+      if (n >= 1)
+        return n.toFixed(2);
+      return n.toFixed(6);
+    },
+    formatPrice(p) {
+      if (!p || p <= 0)
+        return "0.00";
+      if (p >= 1)
+        return p.toFixed(4);
+      if (p >= 1e-4)
+        return p.toFixed(6);
+      return p.toExponential(2);
+    },
+    async executeQuickSell(mint, pct) {
+      const pos = Store.state.positions[mint];
+      if (!pos) {
+        console.error("[PnlHud] Position not found for mint:", mint);
+        return;
+      }
+      const tokenInfo = { symbol: pos.symbol, mint: pos.mint };
+      const result = await Trading.sell(pct, "Quick Sell", tokenInfo);
+      if (result.success) {
+        console.log(`[PnlHud] Quick sell ${pct}% of ${pos.symbol} successful`);
+        if (window.ZeroHUD && window.ZeroHUD.updateAll) {
+          window.ZeroHUD.updateAll();
+        }
+      } else {
+        console.error("[PnlHud] Quick sell failed:", result.error);
+      }
     }
   };
 
@@ -7082,6 +8183,15 @@ canvas#equity-canvas {
       console.log("[ZER\xD8] Store loaded:", state.settings?.enabled ? "Enabled" : "Disabled");
     } catch (e) {
       console.error("[ZER\xD8] Store Load Failed:", e);
+    }
+    try {
+      console.log("[ZER\xD8] Loading DiagnosticsStore...");
+      await DiagnosticsStore.load();
+      DiagnosticsStore.logEvent("SESSION_STARTED", {
+        platform: PLATFORM.isAxiom ? "AXIOM" : PLATFORM.isPadre ? "PADRE" : "UNKNOWN"
+      }, { platform: PLATFORM.isAxiom ? "AXIOM" : PLATFORM.isPadre ? "PADRE" : "UNKNOWN" });
+    } catch (e) {
+      console.error("[ZER\xD8] DiagnosticsStore Init Failed:", e);
     }
     try {
       console.log("[ZER\xD8] Init Overlay...");

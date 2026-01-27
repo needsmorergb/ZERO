@@ -260,4 +260,145 @@ export const PNL_HUD_CSS = `
   top: -12px;
   border-bottom-color: #ef4444;
 }
+
+/* Positions Panel */
+#${IDS.pnlHud} .positionsPanel {
+  border-top: 1px solid rgba(20,184,166,0.1);
+}
+
+#${IDS.pnlHud} .positionsHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  cursor: pointer;
+  background: rgba(20,184,166,0.03);
+  transition: background 0.2s;
+}
+
+#${IDS.pnlHud} .positionsHeader:hover {
+  background: rgba(20,184,166,0.08);
+}
+
+#${IDS.pnlHud} .positionsTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+#${IDS.pnlHud} .positionCount {
+  color: #14b8a6;
+  font-weight: 800;
+}
+
+#${IDS.pnlHud} .positionsToggle {
+  color: #64748b;
+  transition: transform 0.2s;
+}
+
+#${IDS.pnlHud} .positionsToggle.expanded {
+  transform: rotate(180deg);
+}
+
+#${IDS.pnlHud} .positionsList {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+#${IDS.pnlHud} .positionRow {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 16px;
+  align-items: center;
+  padding: 14px 20px;
+  border-bottom: 1px solid rgba(20,184,166,0.05);
+  transition: background 0.15s;
+}
+
+#${IDS.pnlHud} .positionRow:hover {
+  background: rgba(20,184,166,0.05);
+}
+
+#${IDS.pnlHud} .positionRow:last-child {
+  border-bottom: none;
+}
+
+#${IDS.pnlHud} .positionInfo {
+  min-width: 0;
+}
+
+#${IDS.pnlHud} .positionSymbol {
+  font-size: 14px;
+  font-weight: 700;
+  color: #f8fafc;
+  margin-bottom: 2px;
+}
+
+#${IDS.pnlHud} .positionDetails {
+  display: flex;
+  gap: 12px;
+  font-size: 10px;
+  color: #64748b;
+}
+
+#${IDS.pnlHud} .positionPnl {
+  text-align: right;
+  min-width: 100px;
+}
+
+#${IDS.pnlHud} .positionPnl .pnlValue {
+  font-size: 13px;
+  font-weight: 700;
+  color: #64748b;
+}
+
+#${IDS.pnlHud} .positionPnl .pnlPct {
+  font-size: 10px;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+#${IDS.pnlHud} .positionPnl.positive .pnlValue,
+#${IDS.pnlHud} .positionPnl.positive .pnlPct {
+  color: #10b981;
+}
+
+#${IDS.pnlHud} .positionPnl.negative .pnlValue,
+#${IDS.pnlHud} .positionPnl.negative .pnlPct {
+  color: #ef4444;
+}
+
+#${IDS.pnlHud} .quickSellBtns {
+  display: flex;
+  gap: 6px;
+}
+
+#${IDS.pnlHud} .qSellBtn {
+  background: rgba(239,68,68,0.1);
+  border: 1px solid rgba(239,68,68,0.2);
+  color: #ef4444;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+#${IDS.pnlHud} .qSellBtn:hover {
+  background: rgba(239,68,68,0.2);
+  border-color: rgba(239,68,68,0.4);
+}
+
+#${IDS.pnlHud} .noPositions {
+  padding: 20px;
+  text-align: center;
+  color: #64748b;
+  font-size: 12px;
+}
 `;

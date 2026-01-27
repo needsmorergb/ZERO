@@ -1,0 +1,14 @@
+name = "zero-diagnostics"
+main = "src/index.js"
+compatibility_date = "2024-12-01"
+
+# R2 bucket binding – replace bucket_name with your existing bucket
+[[r2_buckets]]
+binding = "ZERO_R2"
+bucket_name = "zerodata"
+
+# Optional API key – leave empty string or remove for open ingest
+# Set via: wrangler secret put ZERO_API_KEY
+# Or define here for non-secret beta key:
+# [vars]
+# ZERO_API_KEY = ""

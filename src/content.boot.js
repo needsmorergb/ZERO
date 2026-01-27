@@ -4,6 +4,7 @@ import { OverlayManager } from './modules/ui/overlay.js';
 import { Market } from './modules/core/market.js';
 import { HUD } from './modules/ui/hud.js';
 import { PnlCalculator } from './modules/core/pnl-calculator.js';
+import { DiagnosticsStore } from './modules/diagnostics-store.js';
 
 (async () => {
     "use strict";
@@ -31,6 +32,17 @@ import { PnlCalculator } from './modules/core/pnl-calculator.js';
         console.log('[ZERØ] Store loaded:', state.settings?.enabled ? 'Enabled' : 'Disabled');
     } catch (e) {
         console.error('[ZERØ] Store Load Failed:', e);
+    }
+
+    // Initialize Diagnostics Store
+    try {
+        console.log('[ZERØ] Loading DiagnosticsStore...');
+        await DiagnosticsStore.load();
+        DiagnosticsStore.logEvent('SESSION_STARTED', {
+            platform: PLATFORM.isAxiom ? 'AXIOM' : PLATFORM.isPadre ? 'PADRE' : 'UNKNOWN',
+        }, { platform: PLATFORM.isAxiom ? 'AXIOM' : PLATFORM.isPadre ? 'PADRE' : 'UNKNOWN' });
+    } catch (e) {
+        console.error('[ZERØ] DiagnosticsStore Init Failed:', e);
     }
 
     // Initialize UI Overlay

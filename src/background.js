@@ -1,4 +1,8 @@
 const CACHE_MS = 5 * 60 * 1000;
+const ZERO_STATE_KEY = 'zero_state';
+const UPLOAD_ALARM = 'zero_upload';
+const UPLOAD_INTERVAL_MIN = 15;
+const BACKOFF_STEPS = [60000, 300000, 900000, 3600000]; // 1m, 5m, 15m, 60m
 
 let cache = { price: null, feedCount: 0, ts: 0 };
 
@@ -69,8 +73,11 @@ async function refreshSolUsd() {
 }
 
 chrome.alarms.create("sol_usd_refresh", { periodInMinutes: 5 });
+chrome.alarms.create(UPLOAD_ALARM, { periodInMinutes: UPLOAD_INTERVAL_MIN });
+
 chrome.alarms.onAlarm.addListener((a) => {
   if (a.name === "sol_usd_refresh") refreshSolUsd();
+  if (a.name === UPLOAD_ALARM) handleUploadAlarm();
 });
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -88,7 +95,208 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       });
       return;
     }
+
+    // Content script can trigger an upload attempt
+    if (msg?.type === "ZERO_TRIGGER_UPLOAD") {
+      const result = await handleUploadAlarm();
+      sendResponse({ ok: true, result });
+      return;
+    }
+
     sendResponse({ ok: false });
   })();
   return true;
 });
+
+// ---------------------------------------------------------------------------
+// Diagnostics Upload System
+// ---------------------------------------------------------------------------
+
+/**
+ * Read zero_state from chrome.storage.local.
+ * @returns {Promise<object|null>}
+ */
+async function readZeroState() {
+  return new Promise((resolve) => {
+    try {
+      chrome.storage.local.get([ZERO_STATE_KEY], (res) => {
+        if (chrome.runtime.lastError) {
+          resolve(null);
+          return;
+        }
+        resolve(res[ZERO_STATE_KEY] || null);
+      });
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+/**
+ * Write zero_state back to chrome.storage.local.
+ * @param {object} state
+ */
+async function writeZeroState(state) {
+  return new Promise((resolve) => {
+    try {
+      chrome.storage.local.set({ [ZERO_STATE_KEY]: state }, () => resolve());
+    } catch {
+      resolve();
+    }
+  });
+}
+
+/**
+ * Generate a UUID v4.
+ */
+function genUUID() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
+
+/**
+ * Main upload handler — called on alarm and on-demand.
+ */
+async function handleUploadAlarm() {
+  const state = await readZeroState();
+  if (!state) return 'no_state';
+
+  // Check opt-in
+  if (!state.settings?.privacy?.autoSendDiagnostics) return 'disabled';
+
+  // Check backoff
+  if (Date.now() < (state.upload?.backoffUntilTs || 0)) return 'backoff';
+
+  const endpointUrl = state.settings?.diagnostics?.endpointUrl;
+  if (!endpointUrl) return 'no_endpoint';
+
+  // Check queue — if empty, build a packet from delta events
+  if (!state.upload) state.upload = { queue: [], backoffUntilTs: 0, lastError: null };
+
+  if (state.upload.queue.length === 0) {
+    const lastTs = state.settings?.diagnostics?.lastUploadedEventTs || 0;
+    const events = (state.events || []).filter((e) => e.ts > lastTs);
+    if (events.length === 0) return 'no_data';
+
+    // Build packet
+    const packet = {
+      uploadId: genUUID(),
+      clientId: state.clientId || 'unknown',
+      createdAt: Date.now(),
+      schemaVersion: state.schemaVersion || 3,
+      extensionVersion: chrome.runtime.getManifest?.()?.version || '0.0.0',
+      eventsDelta: events.slice(-2000), // cap at 2000 events per packet
+    };
+
+    state.upload.queue.push({
+      uploadId: packet.uploadId,
+      createdAt: packet.createdAt,
+      eventCount: packet.eventsDelta.length,
+      payload: packet,
+    });
+
+    // Log enqueue event
+    state.events.push({
+      eventId: genUUID(),
+      ts: Date.now(),
+      type: 'UPLOAD_PACKET_ENQUEUED',
+      platform: 'UNKNOWN',
+      payload: { uploadId: packet.uploadId },
+    });
+
+    // Trim events ring buffer
+    if (state.events.length > 20000) {
+      state.events = state.events.slice(-20000);
+    }
+
+    await writeZeroState(state);
+  }
+
+  // Attempt to send first packet
+  const item = state.upload.queue[0];
+  if (!item || !item.payload) return 'empty_queue';
+
+  try {
+    const headers = {
+      'Content-Type': 'application/json',
+      'X-Zero-Client-Id': state.clientId || '',
+      'X-Zero-Version': chrome.runtime.getManifest?.()?.version || '',
+    };
+
+    // Add API key if configured (stored in payload or state)
+    // For beta, no key is needed unless explicitly set
+    // The endpoint URL is the full ingest URL
+
+    const ctrl = new AbortController();
+    const timeout = setTimeout(() => ctrl.abort(), 15000);
+
+    const response = await fetch(endpointUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(item.payload),
+      signal: ctrl.signal,
+    });
+
+    clearTimeout(timeout);
+
+    if (response.ok) {
+      // Success — dequeue
+      state.upload.queue.shift();
+
+      // Update last uploaded event timestamp
+      const maxTs = Math.max(...(item.payload.eventsDelta || []).map((e) => e.ts || 0));
+      if (maxTs > 0) {
+        if (!state.settings.diagnostics) state.settings.diagnostics = {};
+        state.settings.diagnostics.lastUploadedEventTs = maxTs;
+      }
+
+      // Clear backoff
+      state.upload.backoffUntilTs = 0;
+      state.upload.lastError = null;
+
+      // Log success
+      state.events.push({
+        eventId: genUUID(),
+        ts: Date.now(),
+        type: 'UPLOAD_SENT',
+        platform: 'UNKNOWN',
+        payload: { uploadId: item.uploadId },
+      });
+
+      await writeZeroState(state);
+      return 'sent';
+    } else {
+      throw new Error(`HTTP ${response.status}`);
+    }
+  } catch (err) {
+    const errMsg = err?.message || 'Unknown error';
+
+    // Calculate backoff step
+    const failCount = (state.upload._failCount || 0) + 1;
+    state.upload._failCount = failCount;
+    const stepIdx = Math.min(failCount - 1, BACKOFF_STEPS.length - 1);
+    const backoffMs = BACKOFF_STEPS[stepIdx];
+    state.upload.backoffUntilTs = Date.now() + backoffMs;
+    state.upload.lastError = errMsg;
+
+    // Log failure
+    state.events.push({
+      eventId: genUUID(),
+      ts: Date.now(),
+      type: 'UPLOAD_FAILED',
+      platform: 'UNKNOWN',
+      payload: { uploadId: item.uploadId, error: errMsg },
+    });
+
+    // Trim events ring buffer
+    if (state.events.length > 20000) {
+      state.events = state.events.slice(-20000);
+    }
+
+    await writeZeroState(state);
+    return 'failed';
+  }
+}

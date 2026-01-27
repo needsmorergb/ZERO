@@ -7,9 +7,13 @@ import { TokenDetector } from './token-detector.js';
 import { Paywall } from './paywall.js';
 import { Analytics } from '../core/analytics.js';
 import { Dashboard } from './dashboard.js';
+import { SettingsPanel } from './settings-panel.js';
 
 function px(n) { return n + 'px'; }
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+
+// Positions panel state
+let positionsExpanded = false;
 
 export const PnlHud = {
     mountPnlHud(makeDraggable) {
@@ -40,7 +44,7 @@ export const PnlHud = {
         }
 
         // Check if we need to re-render
-        const CURRENT_UI_VERSION = "1.10.3";
+        const CURRENT_UI_VERSION = "1.12.0";
         const renderedVersion = root.dataset.uiVersion;
 
         if (isNew || renderedVersion !== CURRENT_UI_VERSION) {
@@ -89,6 +93,16 @@ export const PnlHud = {
                     <div class="k">DISCIPLINE <span class="pro-tag" style="display:none;" id="discipline-pro-tag">PRO</span></div>
                     <div class="v" data-k="discipline">100</div>
                 </div>
+              </div>
+              <div class="positionsPanel">
+                <div class="positionsHeader" data-act="togglePositions">
+                  <div class="positionsTitle">
+                    <span>POSITIONS</span>
+                    <span class="positionCount" data-k="positionCount">(0)</span>
+                  </div>
+                  <span class="positionsToggle">▼</span>
+                </div>
+                <div class="positionsList" style="display:none;" data-k="positionsList"></div>
               </div>
               <div class="tradeList" style="display:none;"></div>
             </div>
@@ -180,6 +194,15 @@ export const PnlHud = {
             }
             if (act === 'getPro') {
                 Paywall.showUpgradeModal();
+            }
+            if (act === 'togglePositions') {
+                positionsExpanded = !positionsExpanded;
+                this.updatePositionsPanel(root);
+            }
+            if (act === 'quickSell') {
+                const mint = actEl.getAttribute('data-mint');
+                const pct = parseFloat(actEl.getAttribute('data-pct'));
+                await this.executeQuickSell(mint, pct);
             }
         });
     },
@@ -326,6 +349,9 @@ export const PnlHud = {
             const symbol = currentToken?.symbol || 'TOKEN';
             tokenSymbolEl.textContent = symbol;
         }
+
+        // Update positions panel
+        this.updatePositionsPanel(root);
     },
 
     showResetModal() {
@@ -384,74 +410,7 @@ export const PnlHud = {
     },
 
     showSettingsModal() {
-        const overlay = document.createElement('div');
-        overlay.className = 'confirm-modal-overlay';
-
-        const isShadow = Store.state.settings.tradingMode === 'shadow';
-
-        overlay.innerHTML = `
-            <div class="settings-modal">
-                <div class="settings-header">
-                    <div class="settings-title">
-                        <span>⚙️</span> Settings
-                    </div>
-                    <button class="settings-close">×</button>
-                </div>
-
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <div class="setting-name">Shadow Real Mode</div>
-                        <div class="setting-desc">Tag trades as "Real" for journaling. Changes UI theme.</div>
-                    </div>
-                    <label class="toggle-switch">
-                        <input type="checkbox" id="toggle-shadow" ${isShadow ? 'checked' : ''}>
-                        <span class="slider"></span>
-                    </label>
-                </div>
-
-                <div class="setting-row" style="opacity:0.5; pointer-events:none;">
-                    <div class="setting-info">
-                        <div class="setting-name">Discipline Score</div>
-                        <div class="setting-desc">Track rule adherence (Coming Soon).</div>
-                    </div>
-                    <label class="toggle-switch">
-                        <input type="checkbox">
-                        <span class="slider"></span>
-                    </label>
-                </div>
-
-                <div style="margin-top:20px; text-align:center; font-size:11px; color:#64748b;">
-                    ZERØ v${Store.state.version || '0.9.9'}
-                </div>
-            </div>
-        `;
-
-        OverlayManager.getContainer().appendChild(overlay);
-
-        // Close logic
-        const close = () => {
-            overlay.remove();
-            // Trigger update through HUD
-            if (window.ZeroHUD && window.ZeroHUD.updateAll) {
-                window.ZeroHUD.updateAll();
-            }
-        };
-        overlay.querySelector('.settings-close').onclick = close;
-        const bg = overlay;
-        bg.addEventListener('click', (e) => { if (e.target === bg) close(); });
-
-        // Toggle Logic
-        const shadowToggle = overlay.querySelector('#toggle-shadow');
-        shadowToggle.onchange = async (e) => {
-            const val = e.target.checked;
-            Store.state.settings.tradingMode = val ? 'shadow' : 'paper';
-            await Store.save();
-
-            // Apply visual class immediately
-            const container = OverlayManager.getContainer();
-            if (val) container.classList.add('zero-shadow-mode');
-            else container.classList.remove('zero-shadow-mode');
-        };
+        SettingsPanel.show();
     },
 
     updateTradeList(container) {
@@ -499,5 +458,117 @@ export const PnlHud = {
             `;
         });
         container.innerHTML = html || '<div style="padding:10px;color:#64748b;text-align:center;">No trades yet</div>';
+    },
+
+    updatePositionsPanel(root) {
+        const s = Store.state;
+        const positions = Object.values(s.positions || {});
+        const listEl = root.querySelector('[data-k="positionsList"]');
+        const toggleIcon = root.querySelector('.positionsToggle');
+        const countEl = root.querySelector('[data-k="positionCount"]');
+
+        // Update count badge
+        if (countEl) {
+            countEl.textContent = `(${positions.length})`;
+        }
+
+        // Update toggle icon
+        if (toggleIcon) {
+            toggleIcon.textContent = positionsExpanded ? '▲' : '▼';
+            toggleIcon.classList.toggle('expanded', positionsExpanded);
+        }
+
+        // Show/hide list
+        if (listEl) {
+            listEl.style.display = positionsExpanded ? 'block' : 'none';
+            if (positionsExpanded) {
+                listEl.innerHTML = this.renderPositionRows(positions);
+            }
+        }
+    },
+
+    renderPositionRows(positions) {
+        if (positions.length === 0) {
+            return '<div class="noPositions">No open positions</div>';
+        }
+
+        const solUsd = Trading.getSolPrice();
+        const currentToken = TokenDetector.getCurrentToken();
+
+        return positions.map(pos => {
+            // Calculate current price (use live if viewing this token)
+            let currentPrice = pos.lastPriceUsd || pos.entryPriceUsd;
+            if (pos.mint === currentToken?.mint && currentPrice > 0) {
+                // Use last known price, it gets updated when viewing the token
+            }
+
+            // Calculate PnL
+            const valueUsd = pos.tokenQty * currentPrice;
+            const valueSol = valueUsd / solUsd;
+            const pnl = valueSol - pos.totalSolSpent;
+            const pnlPct = pos.totalSolSpent > 0 ? (pnl / pos.totalSolSpent) * 100 : 0;
+            const isPositive = pnl >= 0;
+
+            return `
+                <div class="positionRow">
+                    <div class="positionInfo">
+                        <div class="positionSymbol">${pos.symbol || 'UNKNOWN'}</div>
+                        <div class="positionDetails">
+                            <span class="positionQty">${this.formatQty(pos.tokenQty)}</span>
+                            <span class="positionPrices">Entry: $${this.formatPrice(pos.entryPriceUsd)} → $${this.formatPrice(currentPrice)}</span>
+                        </div>
+                    </div>
+                    <div class="positionPnl ${isPositive ? 'positive' : 'negative'}">
+                        <div class="pnlValue">${isPositive ? '+' : ''}${Trading.fmtSol(pnl)} SOL</div>
+                        <div class="pnlPct">${isPositive ? '+' : ''}${pnlPct.toFixed(1)}%</div>
+                    </div>
+                    <div class="quickSellBtns">
+                        <button class="qSellBtn" data-act="quickSell" data-mint="${pos.mint}" data-pct="25">25%</button>
+                        <button class="qSellBtn" data-act="quickSell" data-mint="${pos.mint}" data-pct="50">50%</button>
+                        <button class="qSellBtn" data-act="quickSell" data-mint="${pos.mint}" data-pct="100">100%</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    },
+
+    formatQty(n) {
+        if (!n || n <= 0) return '0';
+        if (n >= 1000000000) return (n / 1000000000).toFixed(2) + 'B';
+        if (n >= 1000000) return (n / 1000000).toFixed(2) + 'M';
+        if (n >= 1000) return (n / 1000).toFixed(2) + 'K';
+        if (n >= 1) return n.toFixed(2);
+        return n.toFixed(6);
+    },
+
+    formatPrice(p) {
+        if (!p || p <= 0) return '0.00';
+        if (p >= 1) return p.toFixed(4);
+        if (p >= 0.0001) return p.toFixed(6);
+        return p.toExponential(2);
+    },
+
+    async executeQuickSell(mint, pct) {
+        const pos = Store.state.positions[mint];
+        if (!pos) {
+            console.error('[PnlHud] Position not found for mint:', mint);
+            return;
+        }
+
+        // Find the token info for this position
+        const tokenInfo = { symbol: pos.symbol, mint: pos.mint };
+
+        // Execute sell through Trading module
+        const result = await Trading.sell(pct, 'Quick Sell', tokenInfo);
+
+        if (result.success) {
+            console.log(`[PnlHud] Quick sell ${pct}% of ${pos.symbol} successful`);
+            // Update UI
+            if (window.ZeroHUD && window.ZeroHUD.updateAll) {
+                window.ZeroHUD.updateAll();
+            }
+        } else {
+            console.error('[PnlHud] Quick sell failed:', result.error);
+        }
     }
 };

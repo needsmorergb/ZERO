@@ -14,7 +14,8 @@
     "https://api.coinbase.com/*",
     "https://api.kraken.com/*",
     "https://api.dexscreener.com/*",
-    "https://api.coingecko.com/*"
+    "https://api.coingecko.com/*",
+    "https://zerodata1.workers.dev/*"
   ],
   "icons": {
     "16": "assets/zero-16.png",

@@ -3,4 +3,5 @@ export const IDS = {
   pnlHud: "paper-pnl-hud",
   buyHud: "paper-buyhud-root",
   style: "paper-overlay-style",
+  positionsPanel: "paper-positions-panel",
 };
