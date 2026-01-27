@@ -27,7 +27,7 @@ function defaultState() {
         includeFeatureClicks: true,
       },
       diagnostics: {
-        endpointUrl: 'https://zerodata1.workers.dev/v1/zero/ingest',
+        endpointUrl: 'https://zero-diagnostics.zerodata1.workers.dev/v1/zero/ingest',
         lastUploadedEventTs: 0,
       },
     },
