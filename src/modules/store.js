@@ -178,6 +178,12 @@ export const Store = {
         });
     },
 
+    // Immediate save for critical operations (trades)
+    // No debounce - saves immediately for data integrity
+    async saveImmediate() {
+        return this.save();
+    },
+
     async clear() {
         if (!isChromeStorageAvailable()) return;
         return new Promise((resolve) => {
