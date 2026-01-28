@@ -3,6 +3,10 @@ import { OverlayManager } from './overlay.js';
 import { Trading } from '../core/trading.js';
 import { TokenDetector } from './token-detector.js';
 import { IDS } from './ids.js';
+import { FeatureManager } from '../featureManager.js';
+import { Paywall } from './paywall.js';
+import { Market } from '../core/market.js';
+import { ICONS } from './icons.js';
 
 function px(n) { return n + 'px'; }
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
@@ -64,6 +68,7 @@ export const BuyHud = {
                     <div class="tab ${!isBuy ? 'active' : ''}" data-act="tab-sell">Sell</div>
                 </div>
                 <div class="body">
+                    ${this.renderMarketContext()}
                     <div class="fieldLabel">${label}</div>
                     <input class="field" type="text" inputmode="decimal" data-k="field" placeholder="0.0">
 
@@ -73,7 +78,7 @@ export const BuyHud = {
 
                     ${isBuy ? `
                     <div class="strategyRow">
-                         <div class="fieldLabel">Context / Strategy</div>
+                         <div class="fieldLabel">Strategy Tag</div>
                          <select class="strategySelect" data-k="strategy">
                             ${(Store.state.settings.strategies || ["Trend"]).map(s => `<option value="${s}">${s}</option>`).join('')}
                          </select>
@@ -159,7 +164,8 @@ export const BuyHud = {
                 const val = parseFloat(field?.value || '0');
                 const status = root.querySelector('[data-k="status"]');
                 const strategyEl = root.querySelector('select[data-k="strategy"]');
-                const strategy = strategyEl ? strategyEl.value : "Trend";
+                const strategyFlags = FeatureManager.resolveFlags(Store.state, 'STRATEGY_TAGGING');
+                const strategy = strategyEl && strategyFlags.interactive ? strategyEl.value : "Trend";
 
                 if (val <= 0) {
                     if (status) status.textContent = "Invalid amount";
@@ -185,7 +191,7 @@ export const BuyHud = {
                 }
 
                 if (res && res.success) {
-                    status.textContent = "Trade executed!";
+                    status.textContent = "Paper trade placed";
                     field.value = "";
                     // Trigger update through HUD
                     if (window.ZeroHUD && window.ZeroHUD.updateAll) {
@@ -209,7 +215,8 @@ export const BuyHud = {
     },
 
     showEmotionSelector(tradeId) {
-        if (Store.state.settings.showJournal === false) return;
+        const emoFlags = FeatureManager.resolveFlags(Store.state, 'EMOTION_TRACKING');
+        if (!emoFlags.enabled || Store.state.settings.showJournal === false) return;
 
         const container = OverlayManager.getContainer();
         const existing = container.querySelector('.emotion-modal-overlay');
@@ -240,8 +247,8 @@ export const BuyHud = {
 
         overlay.innerHTML = `
             <div class="emotion-modal" style="position:absolute; pointer-events:auto; box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 1px solid rgba(20,184,166,0.2); width:320px;">
-                <div class="emotion-title">TRADE EXECUTED</div>
-                <div class="emotion-subtitle">How are you feeling right now?</div>
+                <div class="emotion-title">PAPER TRADE PLACED</div>
+                <parameter name="emotion-subtitle">How are you feeling right now?</div>
                 <div class="emotion-grid">
                     ${emotions.map(e => `
                         <button class="emotion-btn" data-emo="${e.id}">
@@ -291,11 +298,19 @@ export const BuyHud = {
         });
 
         overlay.querySelector('.emotion-skip').onclick = close;
+        // Emotion tracking available for all free users
     },
 
     updateBuyHud() {
         const root = OverlayManager.getContainer().querySelector('#' + IDS.buyHud);
         if (!root || !Store.state) return;
+
+        // Visibility Toggle
+        if (!Store.state.settings.enabled) {
+            root.style.display = 'none';
+            return;
+        }
+        root.style.display = '';
 
         root.className = Store.state.settings.buyHudDocked ? "docked" : "floating";
         if (!Store.state.settings.buyHudDocked) {
@@ -319,5 +334,10 @@ export const BuyHud = {
             root.style.top = "";
             root.style.right = ""; // CSS class handles docked pos
         }
+    },
+
+    renderMarketContext() {
+        // Market context removed for Free production release
+        return '';
     }
 };

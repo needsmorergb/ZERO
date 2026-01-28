@@ -16,7 +16,10 @@ const DEFAULTS = {
         sessionDisplayUsd: false,
         tutorialCompleted: false,
         tradingMode: 'paper', // 'paper' | 'shadow'
-        showProfessor: true // Show trade analysis popup
+        showProfessor: true, // Show trade analysis popup
+        rolloutPhase: 'full', // 'beta' | 'preview' | 'full'
+        featureOverrides: {}, // For remote kill-switches
+        behavioralAlerts: true // Phase 9: Elite Guardrails
     },
     // Runtime state (not always persisted fully, but structure is here)
     session: {
@@ -24,19 +27,28 @@ const DEFAULTS = {
         equity: 10,
         realized: 0,
         trades: [], // IDs
+        equityHistory: [], // [{ts, equity}]
         winStreak: 0,
         lossStreak: 0,
         startTime: 0,
         tradeCount: 0,
-        disciplineScore: 100
+        disciplineScore: 100,
+        activeAlerts: [] // {type, message, ts}
     },
     trades: {}, // Map ID -> Trade Object { id, strategy, emotion, ... }
     positions: {},
     behavior: {
-        tiltFrequency: 0
+        tiltFrequency: 0,
+        panicSells: 0,
+        fomoTrades: 0,
+        sunkCostFrequency: 0,
+        overtradingFrequency: 0,
+        profitNeglectFrequency: 0,
+        strategyDriftFrequency: 0,
+        profile: 'Disciplined'
     },
     schemaVersion: 2,
-    version: '1.8.3'
+    version: '1.10.7'
 };
 
 // Helper utils
@@ -63,6 +75,7 @@ function isChromeStorageAvailable() {
 
 export const Store = {
     state: null,
+    _saveTimer: null,
 
     async load() {
         // Safety timeout to prevent hanging forever if storage callback dies
@@ -124,16 +137,23 @@ export const Store = {
         return Promise.race([loadLogic, timeout]);
     },
 
-    async save() {
+    /**
+     * Internal save implementation
+     */
+    async _doSave() {
         if (!isChromeStorageAvailable() || !this.state) return;
         return new Promise((resolve) => {
             try {
+                const startTime = Date.now();
                 chrome.storage.local.set({ [EXT_KEY]: this.state }, () => {
                     if (chrome.runtime.lastError) {
                         const msg = chrome.runtime.lastError.message;
                         if (msg && !msg.includes('context invalidated')) {
                             console.warn('[ZERØ] Storage save error:', msg);
                         }
+                    } else {
+                        const duration = Date.now() - startTime;
+                        console.log(`[ZERØ] State saved (${duration}ms)`);
                     }
                     resolve();
                 });
@@ -144,6 +164,39 @@ export const Store = {
                 resolve();
             }
         });
+    },
+
+    /**
+     * Immediate save - no debouncing
+     * Use for critical operations (trades, balance changes)
+     */
+    async saveImmediate() {
+        if (this._saveTimer) {
+            clearTimeout(this._saveTimer);
+            this._saveTimer = null;
+        }
+        return await this._doSave();
+    },
+
+    /**
+     * Debounced save - waits for quiet period
+     * Use for non-critical updates (price changes, UI state)
+     */
+    saveDebounced(delayMs = 2000) {
+        if (this._saveTimer) clearTimeout(this._saveTimer);
+
+        this._saveTimer = setTimeout(async () => {
+            this._saveTimer = null;
+            await this._doSave();
+        }, delayMs);
+    },
+
+    /**
+     * Legacy save method - defaults to immediate save
+     * Maintains backward compatibility
+     */
+    async save() {
+        return await this.saveImmediate();
     },
 
     migrateV1toV2(oldState) {

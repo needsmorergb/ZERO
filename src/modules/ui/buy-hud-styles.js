@@ -246,4 +246,46 @@ export const BUY_HUD_CSS = `
   min-height: 40px;
   font-size: 11px;
 }
+
+/* Market Context HUD Styles */
+.market-context-container {
+    padding: 2px 0;
+}
+
+.market-badge {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(13, 17, 23, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 11px;
+}
+
+.market-badge.gated {
+    background: linear-gradient(90deg, rgba(168, 85, 247, 0.1), rgba(139, 92, 246, 0.1));
+    border: 1px dashed rgba(168, 85, 247, 0.3);
+    color: #a855f7;
+    justify-content: center;
+    gap: 8px;
+    font-weight: 700;
+}
+
+.market-badge.loading {
+    justify-content: center;
+    color: #64748b;
+    font-style: italic;
+}
+
+.market-badge .mitem {
+    color: #64748b;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.market-badge .mitem span {
+    color: #f8fafc;
+    margin-left: 4px;
+}
 `;

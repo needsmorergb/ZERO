@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run build:*)",
+      "Bash(npm install:*)",
+      "Bash(git add:*)",
+      "Bash(git push:*)",
+      "Bash(git checkout:*)",
+      "Bash(CLOUDFLARE_API_TOKEN=iKimp4NOzV8Ce61OgRjQgP3bOEQLDzYWNI80UwVB npx wrangler:*)",
+      "Bash(CLOUDFLARE_API_TOKEN=ayGi7K2S50DAMsZtdM641G8ay25hj4veJ5lAy1Hm npx wrangler deploy:*)",
+      "Bash(CLOUDFLARE_API_TOKEN=yDvu_v9kusCFafdNhe60eNgVP6MnkhkThmuOcgCo npx wrangler deploy:*)",
+      "Bash(curl:*)",
+      "Bash(git log:*)"
+    ],
+    "additionalDirectories": [
+      "D:\\apaul\\Documents\\sol-paper-ext-beta\\src"
+    ]
+  }
+}

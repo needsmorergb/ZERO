@@ -2,6 +2,8 @@ import { Store } from '../store.js';
 import { Market } from './market.js';
 import { PnlCalculator } from './pnl-calculator.js';
 import { Analytics } from './analytics.js';
+import { FeatureManager } from '../featureManager.js';
+import { Precision } from './precision.js';
 
 export const OrderExecution = {
     async buy(amountSol, strategy = "Trend", tokenInfo = null) {
@@ -27,8 +29,8 @@ export const OrderExecution = {
         }
 
         const solUsd = PnlCalculator.getSolPrice();
-        const usdAmount = amountSol * solUsd;
-        const tokenQty = usdAmount / price;
+        const usdAmount = Precision.sol(amountSol) * solUsd;
+        const tokenQty = Precision.tokenQty(usdAmount / price);
 
         // Use passed token info or fallback
         const symbol = tokenInfo?.symbol || 'SOL';
@@ -53,14 +55,13 @@ export const OrderExecution = {
 
         const pos = state.positions[posKey];
 
-        const oldValue = pos.tokenQty * pos.entryPriceUsd;
-        const newValue = tokenQty * price;
-        const totalQty = pos.tokenQty + tokenQty;
+        const oldQty = pos.tokenQty;
+        const totalQty = Precision.tokenQty(pos.tokenQty + tokenQty);
 
         pos.tokenQty = totalQty;
-        pos.entryPriceUsd = totalQty > 0 ? (oldValue + newValue) / totalQty : price;
-        pos.lastPriceUsd = price;
-        pos.totalSolSpent += amountSol;
+        pos.entryPriceUsd = Precision.weightedAvg(pos.entryPriceUsd, oldQty, price, tokenQty);
+        pos.lastPriceUsd = Precision.usdPrice(price);
+        pos.totalSolSpent = Precision.sol(pos.totalSolSpent + amountSol);
 
         const tradeId = `trade_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
         const trade = {
@@ -73,7 +74,7 @@ export const OrderExecution = {
             tokenQty,
             priceUsd: price,
             marketCap,
-            strategy: strategy || "Unknown",
+            strategy: FeatureManager.resolveFlags(state, 'STRATEGY_TAGGING').interactive ? (strategy || "Trend") : "Trend",
             mode: state.settings.tradingMode || 'paper'
         };
 
@@ -89,7 +90,7 @@ export const OrderExecution = {
         // Draw Marker via Bridge
         window.postMessage({ __paper: true, type: "PAPER_DRAW_MARKER", trade }, "*");
 
-        await Store.save();
+        await Store.saveImmediate();
         return { success: true, trade, position: pos };
     },
 
@@ -115,21 +116,21 @@ export const OrderExecution = {
         const position = state.positions[posKey];
         if (!position || position.tokenQty <= 0) return { success: false, error: "No position" };
 
-        const qtyToSell = position.tokenQty * (pct / 100);
+        const qtyToSell = Precision.tokenQty(position.tokenQty * (pct / 100));
         if (qtyToSell <= 0) return { success: false, error: "Invalid qty" };
 
         const solUsd = PnlCalculator.getSolPrice();
-        const proceedsUsd = qtyToSell * currentPrice;
-        const solReceived = proceedsUsd / solUsd;
+        const proceedsUsd = Precision.tokenQty(qtyToSell) * Precision.usdPrice(currentPrice);
+        const solReceived = Precision.sol(proceedsUsd / solUsd);
 
-        const solSpentPortion = position.totalSolSpent * (qtyToSell / position.tokenQty);
-        const realizedPnlSol = solReceived - solSpentPortion;
+        const solSpentPortion = Precision.sol(position.totalSolSpent * (qtyToSell / position.tokenQty));
+        const realizedPnlSol = Precision.sol(solReceived - solSpentPortion);
 
-        position.tokenQty -= qtyToSell;
-        position.totalSolSpent = Math.max(0, position.totalSolSpent - solSpentPortion);
+        position.tokenQty = Precision.tokenQty(position.tokenQty - qtyToSell);
+        position.totalSolSpent = Precision.sol(Math.max(0, position.totalSolSpent - solSpentPortion));
 
-        state.session.balance += solReceived;
-        state.session.realized += realizedPnlSol;
+        state.session.balance = Precision.sol(state.session.balance + solReceived);
+        state.session.realized = Precision.sol(state.session.realized + realizedPnlSol);
 
         if (position.tokenQty < 0.000001) delete state.positions[posKey];
 
@@ -162,7 +163,7 @@ export const OrderExecution = {
         // Draw Marker via Bridge
         window.postMessage({ __paper: true, type: "PAPER_DRAW_MARKER", trade }, "*");
 
-        await Store.save();
+        await Store.saveImmediate();
         return { success: true, trade };
     },
 

@@ -1,8 +1,12 @@
 import { Store } from '../store.js';
 import { OverlayManager } from './overlay.js';
+import { FeatureManager } from '../featureManager.js';
 import { Trading } from '../core/trading.js';
 import { IDS } from './ids.js';
 import { TokenDetector } from './token-detector.js';
+import { Paywall } from './paywall.js';
+import { Analytics } from '../core/analytics.js';
+import { Dashboard } from './dashboard.js';
 
 function px(n) { return n + 'px'; }
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
@@ -36,7 +40,7 @@ export const PnlHud = {
         }
 
         // Check if we need to re-render
-        const CURRENT_UI_VERSION = "1.8.0";
+        const CURRENT_UI_VERSION = "1.10.3";
         const renderedVersion = root.dataset.uiVersion;
 
         if (isNew || renderedVersion !== CURRENT_UI_VERSION) {
@@ -49,13 +53,16 @@ export const PnlHud = {
         root.innerHTML = `
             <div class="card">
               <div class="header">
-                <div class="title"><span class="dot"></span> ZERØ PNL <span class="muted" data-k="tokenSymbol" style="font-weight:700;color:rgba(148,163,184,0.85);">TOKEN</span></div>
+                <div class="title" style="display:flex;align-items:center;justify-content:space-between;flex:1;"><div><span class="dot"></span> ZERØ PNL</div><span class="muted" data-k="tokenSymbol" style="font-weight:700;color:rgba(148,163,184,0.85);">TOKEN</span></div>
                 <div class="controls">
                   <div class="startSol">
                     <span style="font-weight:700;color:rgba(203,213,225,0.92);">Start SOL</span>
                     <input class="startSolInput" type="text" inputmode="decimal" />
                   </div>
+                  <button class="pillBtn" data-act="shareX" style="background:rgba(29,155,240,0.15);color:#1d9bf0;border:1px solid rgba(29,155,240,0.3);font-family:'Arial',sans-serif;font-weight:600;display:none;" id="pnl-share-btn">Share 𝕏</button>
+                  <button class="pillBtn" data-act="getPro" style="background:rgba(99,102,241,0.15);color:#6366f1;border:1px solid rgba(99,102,241,0.3);font-weight:700;display:none;align-items:center;gap:4px;" id="pnl-pro-btn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>PRO</button>
                   <button class="pillBtn" data-act="trades">Trades</button>
+                  <button class="pillBtn" data-act="dashboard" style="background:rgba(20,184,166,0.15);color:#14b8a6;border:1px solid rgba(20,184,166,0.3);font-weight:700;">Stats</button>
                   <button class="pillBtn" data-act="reset" style="color:#ef4444;">Reset</button>
                   <button class="pillBtn" data-act="settings" style="padding:6px 10px;font-size:16px;">⚙</button>
                   <button class="pillBtn" data-act="dock">Dock</button>
@@ -79,7 +86,7 @@ export const PnlHud = {
                     <div class="v" data-k="streak">0</div>
                 </div>
                 <div class="stat discipline">
-                    <div class="k">DISCIPLINE</div>
+                    <div class="k">DISCIPLINE <span class="pro-tag" style="display:none;" id="discipline-pro-tag">PRO</span></div>
                     <div class="v" data-k="discipline">100</div>
                 </div>
               </div>
@@ -145,6 +152,9 @@ export const PnlHud = {
             if (act === 'reset') {
                 this.showResetModal();
             }
+            if (act === 'dashboard') {
+                Dashboard.toggle();
+            }
             if (act === 'trades') {
                 const list = root.querySelector(".tradeList");
                 if (list) {
@@ -165,12 +175,40 @@ export const PnlHud = {
             if (act === 'settings') {
                 this.showSettingsModal();
             }
+            if (act === 'shareX') {
+                this.shareToX();
+            }
+            // Upgrade action removed for Free production
         });
+    },
+
+    shareToX() {
+        const shareText = Analytics.generateXShareText(Store.state);
+        const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}`;
+        window.open(url, '_blank', 'width=550,height=420');
+        console.log('[PNL HUD] Sharing session to X');
     },
 
     async updatePnlHud() {
         const root = OverlayManager.getContainer().querySelector('#' + IDS.pnlHud);
         if (!root || !Store.state) return;
+
+        const s = Store.state;
+        const shareFlags = FeatureManager.resolveFlags(s, 'SHARE_TO_X');
+        const proFlags = FeatureManager.resolveFlags(s, 'SHARE_TO_X'); // Combined check for now
+
+        const shareBtn = root.querySelector('#pnl-share-btn');
+        const proBtn = root.querySelector('#pnl-pro-btn');
+
+        if (shareBtn) shareBtn.style.display = shareFlags.visible && !shareFlags.gated ? '' : 'none';
+        if (proBtn) proBtn.style.display = (s.settings.tier === 'free') ? 'flex' : 'none';
+
+        // Visibility Toggle
+        if (!Store.state.settings.enabled) {
+            root.style.display = 'none';
+            return;
+        }
+        root.style.display = '';
 
         root.className = Store.state.settings.pnlDocked ? "docked" : "floating";
         if (!Store.state.settings.pnlDocked) {
@@ -182,7 +220,6 @@ export const PnlHud = {
             root.style.top = "";
         }
 
-        const s = Store.state;
         const solUsd = Trading.getSolPrice();
 
         // Detect current token to update its position price in real-time
@@ -247,6 +284,16 @@ export const PnlHud = {
             streakEl.parentElement.className = winStreak > 0 ? "stat streak win" : "stat streak";
         }
 
+        // Update Discipline visibility and gating
+        const discFlags = FeatureManager.resolveFlags(s, 'DISCIPLINE_SCORING');
+        const discStatEl = root.querySelector('.stat.discipline');
+        if (discStatEl) {
+            discStatEl.style.display = discFlags.visible ? '' : 'none';
+            discStatEl.style.opacity = '1';
+            discStatEl.style.cursor = 'default';
+            discStatEl.onclick = null;
+        }
+
         const discEl = root.querySelector('[data-k="discipline"]');
         if (discEl) {
             const score = s.session.disciplineScore !== undefined ? s.session.disciplineScore : 100;
@@ -259,6 +306,13 @@ export const PnlHud = {
             else if (score < 90) color = '#f59e0b'; // Orange
 
             discEl.style.color = color;
+        }
+
+        // Update token symbol in title
+        const tokenSymbolEl = root.querySelector('[data-k="tokenSymbol"]');
+        if (tokenSymbolEl) {
+            const symbol = currentToken?.symbol || 'TOKEN';
+            tokenSymbolEl.textContent = symbol;
         }
     },
 
@@ -385,7 +439,7 @@ export const PnlHud = {
             }
 
             // Format market cap
-            let mcStr = '';
+            let mcStr = '—';
             if (t.marketCap && t.marketCap > 0) {
                 if (t.marketCap >= 1000000000) {
                     mcStr = `$${(t.marketCap / 1000000000).toFixed(2)}B`;
@@ -402,11 +456,9 @@ export const PnlHud = {
                 <div class="tradeRow">
                     <div class="muted" style="font-size:9px;">${new Date(t.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                     <div class="tag ${t.side.toLowerCase()}">${t.side}</div>
-                    <div style="flex:1;">
-                        <div>${t.symbol}</div>
-                        ${mcStr ? `<div class="muted" style="font-size:9px;">${mcStr} MC</div>` : ''}
-                    </div>
-                    <div class="${pnlClass}">${valStr}</div>
+                    <div style="flex:1;">${t.symbol}</div>
+                    <div class="muted" style="font-size:9px;text-align:right;min-width:50px;">${mcStr}</div>
+                    <div class="${pnlClass}" style="text-align:right;min-width:70px;">${valStr}</div>
                 </div>
             `;
         });

@@ -4,10 +4,11 @@ import { OverlayManager } from './modules/ui/overlay.js';
 import { Market } from './modules/core/market.js';
 import { HUD } from './modules/ui/hud.js';
 import { PnlCalculator } from './modules/core/pnl-calculator.js';
+import { PositionPriceManager } from './modules/core/position-price-manager.js';
 
 (async () => {
     "use strict";
-    console.log('%c ZERØ v1.8.3 (Jupiter Removed, CoinGecko Primary)', 'color: #ef4444; font-weight: bold; font-size: 14px;');
+    console.log('%c ZERØ v1.10.7 (Market Context & Coaching)', 'color: #14b8a6; font-weight: bold; font-size: 14px;');
 
     const PLATFORM = {
         isAxiom: window.location.hostname.includes('axiom.trade'),
@@ -55,6 +56,14 @@ import { PnlCalculator } from './modules/core/pnl-calculator.js';
         PnlCalculator.init();
     } catch (e) {
         console.error('[ZERØ] PNL Calculator Init Failed:', e);
+    }
+
+    // Initialize Position Price Manager (Background position price updates)
+    try {
+        console.log('[ZERØ] Init Position Price Manager...');
+        PositionPriceManager.init();
+    } catch (e) {
+        console.error('[ZERØ] Position Price Manager Init Failed:', e);
     }
 
     // Initialize HUD (Render)

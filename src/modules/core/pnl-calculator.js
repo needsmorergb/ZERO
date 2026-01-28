@@ -1,5 +1,6 @@
 import { Market } from './market.js';
 import { Store } from '../store.js';
+import { Precision } from './precision.js';
 
 export const PnlCalculator = {
     cachedSolPrice: 200, // Default fallback
@@ -13,11 +14,11 @@ export const PnlCalculator = {
         // Fetch immediately on init
         this.fetchSolPriceBackground();
 
-        // Then fetch every 60 seconds in background
+        // Then fetch every 10 seconds in background
         if (!this.priceUpdateInterval) {
             this.priceUpdateInterval = setInterval(() => {
                 this.fetchSolPriceBackground();
-            }, 60000);
+            }, 10000);
         }
     },
 
@@ -25,9 +26,10 @@ export const PnlCalculator = {
     async fetchSolPriceBackground() {
         console.log('[PNL] Fetching SOL price from CoinGecko...');
 
+        // Try CoinGecko first (primary source)
         try {
             const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd', {
-                signal: AbortSignal.timeout(5000) // Increase timeout from 3s to 5s
+                signal: AbortSignal.timeout(5000)
             });
             const data = await response.json();
             const solPrice = data?.solana?.usd;
@@ -43,12 +45,33 @@ export const PnlCalculator = {
                 console.error(`[PNL] ✗ Invalid SOL price from CoinGecko: $${solPrice} (expected $50-$500)`);
             }
         } catch (e) {
-            console.error(`[PNL] ✗ CoinGecko failed: ${e.message}`);
+            console.warn(`[PNL] CoinGecko failed: ${e.message}`);
         }
 
-        // Fallback to last valid price if available, otherwise use $140
+        // Fallback: Try DexScreener for SOL/USDC pair
+        try {
+            console.log('[PNL] Trying DexScreener fallback...');
+            const response = await fetch('https://api.dexscreener.com/latest/dex/tokens/So11111111111111111111111111111111111111112', {
+                signal: AbortSignal.timeout(5000)
+            });
+            const data = await response.json();
+            const solPrice = parseFloat(data.pairs?.[0]?.priceUsd);
+
+            if (solPrice && solPrice > 50 && solPrice < 500) {
+                this.cachedSolPrice = solPrice;
+                this.lastValidSolPrice = solPrice;
+                this.lastSolPriceFetch = Date.now();
+                console.log(`[PNL] ✓ SOL price: $${solPrice.toFixed(2)} (DexScreener fallback)`);
+                return;
+            }
+        } catch (e) {
+            console.warn(`[PNL] DexScreener fallback failed: ${e.message}`);
+        }
+
+        // Last resort: Use last valid price or default
         if (this.lastValidSolPrice) {
-            console.warn(`[PNL] Using last valid price: $${this.lastValidSolPrice.toFixed(2)}`);
+            const age = (Date.now() - this.lastSolPriceFetch) / 1000;
+            console.warn(`[PNL] Using stale price: $${this.lastValidSolPrice.toFixed(2)} (${age.toFixed(0)}s old)`);
             this.cachedSolPrice = this.lastValidSolPrice;
         } else {
             console.error(`[PNL] ✗ No valid price available. Using safe default $140`);
@@ -108,20 +131,33 @@ export const PnlCalculator = {
 
             if (!currentPrice || currentPrice <= 0) return;
 
-            const valueUsd = pos.tokenQty * currentPrice;
-            const valueSol = valueUsd / solUsd;
-            const pnl = valueSol - pos.totalSolSpent;
+            const valueUsd = Precision.tokenQty(pos.tokenQty) * Precision.usdPrice(currentPrice);
+            const valueSol = Precision.sol(valueUsd / solUsd);
+            const pnl = Precision.sol(valueSol - pos.totalSolSpent);
+            const pnlPct = Precision.pct((pnl / pos.totalSolSpent) * 100);
 
-            console.log(`[PNL] ${pos.symbol}: qty=${pos.tokenQty.toFixed(2)}, price=$${currentPrice.toFixed(6)}, value=${valueSol.toFixed(4)} SOL, spent=${pos.totalSolSpent.toFixed(4)} SOL, pnl=${pnl.toFixed(4)} SOL`);
+            // Track Peak PNL Pct for Profit Overstay detection
+            if (pos.peakPnlPct === undefined || pnlPct > pos.peakPnlPct) {
+                pos.peakPnlPct = pnlPct;
+            }
 
-            totalUnrealized += pnl;
+            pos.pnlPct = pnlPct; // Store current pct for analytics
+
+            console.log(`[PNL] ${pos.symbol}: qty=${pos.tokenQty.toFixed(2)}, price=$${currentPrice.toFixed(6)}, pnl=${pnl.toFixed(4)} SOL (${pnlPct.toFixed(1)}%)`);
+
+            totalUnrealized = Precision.sol(totalUnrealized + pnl);
         });
 
-        // Debounced save - only save if price changed and it's been >5 seconds since last save
+        // Elite Phase 10: Trigger background monitors
+        const { Analytics } = require('./analytics.js');
+        Analytics.monitorProfitOverstay(state);
+        Analytics.detectOvertrading(state);
+
+        // Debounced save - only save if price changed and it's been >2 seconds since last save
         const now = Date.now();
-        if (priceWasUpdated && (now - this.lastPriceSave) > 5000) {
+        if (priceWasUpdated && (now - this.lastPriceSave) > 2000) {
             this.lastPriceSave = now;
-            Store.save();
+            Store.saveDebounced(2000);
         }
 
         return totalUnrealized;

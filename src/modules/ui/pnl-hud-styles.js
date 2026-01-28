@@ -179,7 +179,7 @@ export const PNL_HUD_CSS = `
 
 #${IDS.pnlHud} .tradeRow {
   display: grid;
-  grid-template-columns: 70px 70px 50px 100px 80px 70px;
+  grid-template-columns: 40px 35px 1fr 60px 70px;
   gap: 8px;
   padding: 10px 16px;
   border-bottom: 1px solid rgba(20,184,166,0.05);
