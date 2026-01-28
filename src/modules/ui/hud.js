@@ -24,9 +24,9 @@ export const HUD = {
             }, 2000); // Wait for TV to load
         }
 
-        // Listen for price updates to update HUDs
+        // Listen for price/context updates to update HUDs
         Market.subscribe(async () => {
-            await PnlHud.updatePnlHud();
+            this.scheduleRender();
         });
     },
 

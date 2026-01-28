@@ -69,29 +69,54 @@
           // 'beta' | 'preview' | 'full'
           featureOverrides: {},
           // For remote kill-switches
-          behavioralAlerts: true
+          behavioralAlerts: true,
           // Phase 9: Elite Guardrails
+          // Onboarding State
+          onboardingSeen: false,
+          onboardingVersion: null,
+          onboardingCompletedAt: null
         },
-        // Runtime state (not always persisted fully, but structure is here)
+        // Session as first-class object
         session: {
+          id: null,
+          // Unique session ID
+          startTime: 0,
+          // Session start timestamp
+          endTime: null,
+          // Session end timestamp (null if active)
           balance: 10,
           equity: 10,
           realized: 0,
           trades: [],
-          // IDs
+          // Trade IDs in this session
           equityHistory: [],
           // [{ts, equity}]
           winStreak: 0,
           lossStreak: 0,
-          startTime: 0,
           tradeCount: 0,
           disciplineScore: 100,
-          activeAlerts: []
+          activeAlerts: [],
           // {type, message, ts}
+          status: "active"
+          // 'active' | 'completed' | 'abandoned'
         },
+        // Session history (archived sessions)
+        sessionHistory: [],
+        // Array of completed session objects
         trades: {},
-        // Map ID -> Trade Object { id, strategy, emotion, ... }
+        // Map ID -> Trade Object { id, strategy, emotion, plannedStop, plannedTarget, entryThesis, riskDefined, ... }
         positions: {},
+        // Pending trade plan (cleared after trade execution)
+        pendingPlan: {
+          stopLoss: null,
+          // Price in USD or % below entry
+          target: null,
+          // Price in USD or % above entry
+          thesis: "",
+          // Entry reasoning
+          maxRiskPct: null
+          // Max % of balance to risk
+        },
         behavior: {
           tiltFrequency: 0,
           panicSells: 0,
@@ -102,8 +127,12 @@
           strategyDriftFrequency: 0,
           profile: "Disciplined"
         },
+        // Persistent Event Log (up to 100 events)
+        eventLog: [],
+        // { ts, type, category, message, data }
+        // Categories: TRADE, ALERT, DISCIPLINE, SYSTEM, MILESTONE
         schemaVersion: 2,
-        version: "1.10.5"
+        version: "1.11.8"
       };
       Store = {
         state: null,
@@ -182,6 +211,16 @@
             }
           });
         },
+        async clear() {
+          if (!isChromeStorageAvailable())
+            return;
+          return new Promise((resolve) => {
+            chrome.storage.local.remove(EXT_KEY, () => {
+              this.state = JSON.parse(JSON.stringify(DEFAULTS));
+              resolve();
+            });
+          });
+        },
         migrateV1toV2(oldState) {
           const newState = JSON.parse(JSON.stringify(DEFAULTS));
           newState.settings.enabled = oldState.enabled ?? true;
@@ -191,6 +230,9 @@
           newState.settings.pnlPos = oldState.pnlPos ?? { x: 20, y: 60 };
           newState.settings.startSol = oldState.startSol ?? 10;
           newState.settings.tutorialCompleted = oldState.tutorialCompleted ?? false;
+          newState.settings.onboardingSeen = oldState.onboardingSeen ?? false;
+          newState.settings.onboardingVersion = oldState.onboardingVersion ?? null;
+          newState.settings.onboardingCompletedAt = oldState.onboardingCompletedAt ?? null;
           newState.session.balance = oldState.cashSol ?? 10;
           newState.session.equity = oldState.equitySol ?? 10;
           newState.session.realized = oldState.realizedSol ?? 0;
@@ -210,14 +252,87 @@
         validateState() {
           if (this.state) {
             this.state.settings.startSol = parseFloat(this.state.settings.startSol) || 10;
+            if (!this.state.session.id) {
+              this.state.session.id = this.generateSessionId();
+              this.state.session.startTime = Date.now();
+            }
           }
+        },
+        generateSessionId() {
+          return `session_${Date.now()}_${Math.floor(Math.random() * 1e4)}`;
+        },
+        // Start a new session (archive current if it has trades)
+        async startNewSession() {
+          const currentSession = this.state.session;
+          if (currentSession.trades && currentSession.trades.length > 0) {
+            currentSession.endTime = Date.now();
+            currentSession.status = "completed";
+            if (!this.state.sessionHistory)
+              this.state.sessionHistory = [];
+            this.state.sessionHistory.push({ ...currentSession });
+            if (this.state.sessionHistory.length > 10) {
+              this.state.sessionHistory = this.state.sessionHistory.slice(-10);
+            }
+          }
+          const startSol = this.state.settings.startSol || 10;
+          this.state.session = {
+            id: this.generateSessionId(),
+            startTime: Date.now(),
+            endTime: null,
+            balance: startSol,
+            equity: startSol,
+            realized: 0,
+            trades: [],
+            equityHistory: [],
+            winStreak: 0,
+            lossStreak: 0,
+            tradeCount: 0,
+            disciplineScore: 100,
+            activeAlerts: [],
+            status: "active"
+          };
+          delete this.state._milestone_2x;
+          delete this.state._milestone_3x;
+          delete this.state._milestone_5x;
+          await this.save();
+          return this.state.session;
+        },
+        // Get current session duration in minutes
+        getSessionDuration() {
+          const session = this.state?.session;
+          if (!session || !session.startTime)
+            return 0;
+          const endTime = session.endTime || Date.now();
+          return Math.floor((endTime - session.startTime) / 6e4);
+        },
+        // Get session summary
+        getSessionSummary() {
+          const session = this.state?.session;
+          if (!session)
+            return null;
+          const trades = session.trades || [];
+          const sellTrades = trades.map((id) => this.state.trades[id]).filter((t) => t && t.side === "SELL");
+          const wins = sellTrades.filter((t) => (t.realizedPnlSol || 0) > 0).length;
+          const losses = sellTrades.filter((t) => (t.realizedPnlSol || 0) < 0).length;
+          const winRate = sellTrades.length > 0 ? (wins / sellTrades.length * 100).toFixed(1) : 0;
+          return {
+            id: session.id,
+            duration: this.getSessionDuration(),
+            tradeCount: trades.length,
+            wins,
+            losses,
+            winRate,
+            realized: session.realized,
+            disciplineScore: session.disciplineScore,
+            status: session.status
+          };
         }
       };
     }
   });
 
   // src/modules/featureManager.js
-  var TIERS, FEATURES, FeatureManager;
+  var TIERS, FEATURES, TEASED_FEATURES, FeatureManager;
   var init_featureManager = __esm({
     "src/modules/featureManager.js"() {
       TIERS = {
@@ -234,18 +349,49 @@
         EMOTION_TRACKING: "pro",
         DISCIPLINE_SCORING: "pro",
         AI_DEBRIEF: "pro",
+        TRADE_PLAN: "pro",
+        // Stop loss, targets, thesis capture
         // Phase 5-6: Advanced Pro
         EQUITY_CHARTS: "pro",
         DETAILED_LOGS: "pro",
         ADVANCED_ANALYTICS: "pro",
         RISK_ADJUSTED_METRICS: "pro",
-        SHARE_TO_X: "pro",
+        SHARE_TO_X: "free",
         // Phase 6+: Elite
         TILT_DETECTION: "elite",
         SESSION_REPLAY: "elite",
         ADVANCED_COACHING: "elite",
         BEHAVIOR_BASELINE: "elite",
-        MARKET_CONTEXT: "elite"
+        MARKET_CONTEXT: "elite",
+        TRADER_PROFILE: "elite",
+        // Personal Trader Profile dashboard
+        // Explicit tease-card keys (alias existing features for Settings UI)
+        PRO_TRADE_PLAN: "pro",
+        PRO_DISCIPLINE: "pro",
+        PRO_STRATEGY_ANALYTICS: "pro",
+        PRO_EMOTION_ANALYTICS: "pro",
+        PRO_AI_DEBRIEF: "pro",
+        ELITE_TILT_DETECTION: "elite",
+        ELITE_RISK_METRICS: "elite",
+        ELITE_SESSION_REPLAY: "elite",
+        ELITE_TRADER_PROFILE: "elite",
+        ELITE_MARKET_CONTEXT: "elite"
+      };
+      TEASED_FEATURES = {
+        PRO: [
+          { id: "PRO_TRADE_PLAN", name: "Trade Planning", desc: "Set stop losses, targets, and capture your thesis before every trade." },
+          { id: "PRO_DISCIPLINE", name: "Discipline Scoring", desc: "Track how well you stick to your trading rules with an objective score." },
+          { id: "PRO_STRATEGY_ANALYTICS", name: "Strategy Analytics", desc: "See which strategies perform best and refine your edge." },
+          { id: "PRO_EMOTION_ANALYTICS", name: "Emotion Analytics", desc: "Understand how your emotional state affects your trading outcomes." },
+          { id: "PRO_AI_DEBRIEF", name: "AI Trade Debrief", desc: "Get AI-powered post-trade analysis to accelerate your learning." }
+        ],
+        ELITE: [
+          { id: "ELITE_TILT_DETECTION", name: "Tilt Detection", desc: "Real-time alerts when your behavior signals emotional trading." },
+          { id: "ELITE_RISK_METRICS", name: "Risk Metrics", desc: "Advanced risk-adjusted performance metrics for serious traders." },
+          { id: "ELITE_SESSION_REPLAY", name: "Session Replay", desc: "Replay your sessions to review decisions and improve execution." },
+          { id: "ELITE_TRADER_PROFILE", name: "Trader Profile", desc: "Your personal trading identity \u2014 strengths, weaknesses, and growth." },
+          { id: "ELITE_MARKET_CONTEXT", name: "Market Context", desc: "Overlay market conditions to see how context affected your trades." }
+        ]
       };
       FeatureManager = {
         TIERS,
@@ -275,18 +421,9 @@
               flags.interactive = true;
               flags.gated = false;
             } else {
-              if (phase === "preview") {
-                flags.visible = true;
-                flags.interactive = true;
-                flags.gated = false;
-              } else if (phase === "beta") {
-                flags.visible = false;
-                flags.interactive = false;
-              } else {
-                flags.visible = true;
-                flags.interactive = false;
-                flags.gated = true;
-              }
+              flags.visible = false;
+              flags.interactive = false;
+              flags.gated = true;
             }
           }
           if (state.settings?.featureOverrides?.[featureName] === false) {
@@ -317,12 +454,20 @@
         price: 0,
         marketCap: 0,
         lastPriceTs: 0,
+        priceIsFresh: false,
+        // Tracks if price was updated recently (< 2s ago)
         context: null,
         // { vol24h, priceChange24h, liquidity, fdv }
+        currentMint: null,
         lastContextFetch: 0,
         listeners: [],
         init() {
           this.startPolling();
+          setInterval(() => {
+            if (Date.now() - this.lastPriceTs > 2e3) {
+              this.priceIsFresh = false;
+            }
+          }, 1e3);
           window.addEventListener("message", (event) => {
             if (event.source !== window || !event.data?.__paper)
               return;
@@ -336,25 +481,165 @@
         },
         startPolling() {
           setInterval(() => {
-            if (!window.location.pathname.includes("/trade/"))
+            const isTradePage = window.location.pathname.includes("/trade/") || window.location.pathname.includes("/token/") || window.location.pathname.includes("/meme/");
+            if (!isTradePage)
               return;
+            this.pollMint();
             this.pollDOM();
-          }, 1e3);
+          }, 250);
+        },
+        pollMint() {
+          const url = window.location.href;
+          let mintMatch = url.match(/\/trade\/(?:solana\/)?([a-zA-Z0-9]{32,44})/) || url.match(/\/token\/(?:solana\/)?([a-zA-Z0-9]{32,44})/);
+          if (!mintMatch) {
+            const allMints = url.match(/[1-9A-HJ-NP-Za-km-z]{32,44}/g);
+            if (allMints) {
+              const candidate = allMints[allMints.length - 1];
+              if (candidate && candidate.length > 30) {
+                mintMatch = [null, candidate];
+              }
+            }
+          }
+          const mint = mintMatch ? mintMatch[1] : null;
+          if (mint && mint !== this.currentMint) {
+            console.log(`[Market] New token detected: ${mint}`);
+            this.currentMint = mint;
+            this.context = null;
+            this.lastContextFetch = 0;
+            this.fetchMarketContext(mint);
+            this.notify();
+          } else if (mint && (!this.context || Date.now() - this.lastContextFetch > 6e4)) {
+            this.fetchMarketContext(mint);
+          }
         },
         pollDOM() {
-          let candidates = [];
-          const isPadre = window.location.hostname.includes("padre.gg");
-          if (isPadre) {
-            candidates = Array.from(document.querySelectorAll("h2")).filter((el) => {
+          if (window.location.hostname.includes("padre.gg")) {
+            const candidates2 = Array.from(document.querySelectorAll("h2")).filter((el) => {
               const txt = el.textContent || "";
-              return txt.includes("$") && /\d/.test(txt) && !txt.includes("SOL") && !txt.includes("%") && txt.length < 30;
+              return txt.includes("$") && /\d/.test(txt) && !txt.includes("SOL") && !txt.includes("%") && !txt.includes("+") && !txt.includes("-") && txt.length < 30;
             });
-          } else {
-            candidates = Array.from(document.querySelectorAll("h1, h2, .price")).filter((el) => {
-              const txt = el.textContent || "";
-              return txt.includes("$") && /\d/.test(txt) && !txt.includes("%") && txt.length < 30;
-            });
+            this.processCandidates(candidates2);
+            return;
           }
+          if (window.location.hostname.includes("axiom.trade")) {
+            const headers = document.querySelectorAll("div.flex.max-h-\\[64px\\]");
+            for (let i = 0; i < headers.length; i++) {
+              const header = headers[i];
+              const children = Array.from(header.children);
+              const priceContainer = children.find(
+                (child) => child.textContent.includes("Price") && Array.from(child.querySelectorAll("span, div")).some((el) => el.textContent.trim() === "Price")
+              );
+              if (priceContainer) {
+                const label = Array.from(priceContainer.querySelectorAll("span, div")).find((el) => el.textContent.trim() === "Price");
+                if (label) {
+                  const allSpans2 = Array.from(priceContainer.querySelectorAll("span"));
+                  const labelIndex = allSpans2.indexOf(label);
+                  const candidateSpans = allSpans2.slice(labelIndex + 1);
+                  const valueSpan = candidateSpans.find(
+                    (s) => (
+                      // Must contain digits
+                      /\d/.test(s.textContent) && // Must NOT be just "%" or "+" or "-"
+                      !s.textContent.includes("%") && // Exclude Timeframes (5d, 1h, 15m, 4H) and Time dates (Jan 24, 12:00)
+                      !/^\d+[dhm]$/i.test(s.textContent.trim()) && !s.textContent.includes(":") && // Avoids "Liquidity" values if container is wrong
+                      (s.textContent.includes("$") || /^[0-9.]+/.test(s.textContent))
+                    )
+                  );
+                  if (valueSpan) {
+                    let raw = valueSpan.textContent;
+                    if (/[₀-₉]/.test(raw)) {
+                      this.processCandidates([valueSpan], true);
+                      return;
+                    }
+                    if (valueSpan.innerHTML && valueSpan.innerHTML.includes("<sub")) {
+                      const subMatch = valueSpan.innerHTML.match(/<sub[^>]*>(\d+)<\/sub>/i);
+                      if (subMatch) {
+                        const zeros = parseInt(subMatch[1]);
+                        const parts = valueSpan.innerText.split("\n");
+                        const digits = valueSpan.textContent.replace(/[^\d]/g, "");
+                        const htmlParts = valueSpan.innerHTML.split(/<sub[^>]*>/i);
+                        if (htmlParts.length > 1) {
+                          const prefix = htmlParts[0].replace(/<[^>]+>/g, "").trim();
+                          const suffix = htmlParts[1].replace(/<\/sub>/i, "").trim();
+                          const subContent = subMatch[1];
+                          const afterSub = valueSpan.innerHTML.split("</sub>")[1] || "";
+                          const cleanPrefix = prefix.replace(/[^\d.]/g, "");
+                          const cleanSuffix = afterSub.replace(/[^\d]/g, "");
+                          const expanded = `${cleanPrefix}${"0".repeat(parseInt(subContent))}${cleanSuffix}`;
+                          const val = parseFloat(expanded);
+                          if (val > 0) {
+                            this.updatePrice(val);
+                            return;
+                          }
+                        }
+                      }
+                    }
+                    this.processCandidates([valueSpan], true);
+                    return;
+                  }
+                }
+                const rawText = priceContainer.textContent.replace("Price", "").trim();
+                if (rawText) {
+                  const val = this.parsePriceStr(rawText);
+                  const isTimeframe = /^\d+[dhm]$/i.test(rawText.replace(/[^\w]/g, ""));
+                  if (!isTimeframe && val > 0) {
+                    this.updatePrice(val);
+                    return;
+                  }
+                }
+              }
+              const mcContainer = children.find((child) => {
+                const text = child.textContent || "";
+                return (text.includes("MC") || text.includes("Market Cap")) && !text.includes("Price") && // Don't confuse with price container
+                !text.includes("Liquidity") && // Don't confuse with liquidity
+                Array.from(child.querySelectorAll("span, div")).some(
+                  (el) => ["MC", "Market Cap", "MarketCap"].includes(el.textContent.replace(/[^\w ]/g, "").trim())
+                );
+              });
+              if (mcContainer) {
+                const label = Array.from(mcContainer.querySelectorAll("span, div")).find(
+                  (el) => ["MC", "Market Cap", "MarketCap"].includes(el.textContent.replace(/[^\w ]/g, "").trim())
+                );
+                if (label) {
+                  const allSpans2 = Array.from(mcContainer.querySelectorAll("span"));
+                  const labelIndex = allSpans2.indexOf(label);
+                  const candidateSpans = allSpans2.slice(labelIndex + 1);
+                  const valSpan = candidateSpans.find(
+                    (s) => /\d/.test(s.textContent) && (/[KMB]/i.test(s.textContent) || parseFloat(s.textContent.replace(/[^0-9.]/g, "")) > 1e4)
+                  );
+                  if (valSpan) {
+                    const raw = valSpan.textContent;
+                    const val = this.parsePriceStr(raw);
+                    if (val > 1e4) {
+                      this.marketCap = val;
+                      console.log(`[Market] MC: $${val.toLocaleString()} (${raw})`);
+                    } else if (val > 0) {
+                      console.warn(`[Market] Rejected MC candidate: $${val} (likely liquidity, not MC)`);
+                    }
+                  }
+                }
+              }
+            }
+            console.log("[Market] Axiom complex logic found no price, trying aggressive fallback...");
+            const allSpans = Array.from(document.querySelectorAll("span, div")).filter((el) => {
+              const txt = el.textContent || "";
+              return txt.includes("$") && /\d/.test(txt) && txt.length < 20 && el.children.length === 0 && !txt.includes("SOL") && !txt.includes("BTC") && !txt.includes("%") && !txt.includes("+") && !txt.includes("-") && !txt.includes("K") && !txt.includes("M") && !txt.includes("B");
+            }).slice(0, 20);
+            if (allSpans.length > 0) {
+              console.log(
+                `[Market] Axiom fallback found ${allSpans.length} price candidates:`,
+                allSpans.map((el) => el.textContent.trim()).slice(0, 10)
+              );
+            }
+            this.processCandidates(allSpans, true);
+            return;
+          }
+          const candidates = Array.from(document.querySelectorAll("h1, h2, .price")).filter((el) => {
+            const txt = el.textContent || "";
+            return txt.includes("$") && /\d/.test(txt) && !txt.includes("%") && !txt.includes("+") && !txt.includes("-") && txt.length < 30;
+          });
+          this.processCandidates(candidates);
+        },
+        processCandidates(candidates, isExplicitAxiom = false) {
           for (const el of candidates) {
             const raw = el.textContent.trim();
             const val = this.parsePriceStr(raw);
@@ -362,47 +647,67 @@
             if (hasUnit || val > 1e4) {
               if (val > 0)
                 this.marketCap = val;
-            } else if (val > 0 && val < 1e4) {
-              if (val >= 50 && val <= 500) {
+            } else if (val > 0 && val < 5e4) {
+              if (this.isSolPrice(val)) {
+                console.warn(`[Market] REJECTED SOL PRICE: $${val}`);
                 continue;
               }
-              if (this.price > 0) {
+              if (!isExplicitAxiom && this.price > 0 && Date.now() - this.lastPriceTs < 5e3) {
                 const ratio = val / this.price;
                 if (ratio > 100 || ratio < 0.01) {
-                  console.warn(`[Market] SPIKE REJECTED: $${val} (${(ratio * 100).toFixed(0)}x change from $${this.price})`);
+                  console.warn(`[Market] SPIKE REJECTED: $${val} (${ratio.toFixed(1)}x change)`);
                   continue;
                 }
               }
               this.updatePrice(val);
-              this.fetchMarketContext();
             }
           }
         },
-        async fetchMarketContext() {
-          const url = window.location.href;
-          const mintMatch = url.match(/\/trade\/([a-zA-Z0-9]+)/);
-          const mint = mintMatch ? mintMatch[1] : null;
-          if (!mint || this.lastContextFetch && Date.now() - this.lastContextFetch < 3e4)
+        async fetchMarketContext(mintOverride) {
+          const query = mintOverride || this.currentMint;
+          if (!query)
+            return;
+          if (this.lastContextFetch && Date.now() - this.lastContextFetch < 1e4 && this.context)
             return;
           this.lastContextFetch = Date.now();
           try {
-            console.log(`[Market] Fetching context for ${mint}...`);
-            const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${mint}`);
-            const data = await response.json();
-            const pair = data.pairs?.[0];
+            console.log(`[Market] Searching context for ${query}...`);
+            const res = await chrome.runtime.sendMessage({
+              type: "PROXY_FETCH",
+              url: `https://api.dexscreener.com/latest/dex/search?q=${query}`
+            });
+            if (!res.ok)
+              throw new Error(`HTTP error! status: ${res.status || res.error}`);
+            const data = res.data;
+            const pairs = (data.pairs || []).sort((a, b) => {
+              return (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0);
+            });
+            const pair = pairs[0];
             if (pair) {
               this.context = {
                 vol24h: pair.volume?.h24 || 0,
                 priceChange24h: pair.priceChange?.h24 || 0,
                 liquidity: pair.liquidity?.usd || 0,
                 fdv: pair.fdv || 0,
+                symbol: pair.baseToken?.symbol || "",
+                dex: pair.dexId,
                 ts: Date.now()
               };
-              console.log(`[Market] Context: Vol=$${(this.context.vol24h / 1e6).toFixed(1)}M, Chg=${this.context.priceChange24h}%`);
+              console.log(`[Market] Context Ready: ${this.context.symbol} on ${this.context.dex} (Vol: $${(this.context.vol24h / 1e3).toFixed(0)}K)`);
+              this.notify();
+            } else {
+              console.warn(`[Market] No results found for ${query}`);
             }
           } catch (e) {
             console.error("[Market] Context fetch failed:", e);
           }
+        },
+        notify() {
+          this.listeners.forEach((cb) => cb({
+            price: this.price,
+            context: this.context,
+            mint: this.currentMint
+          }));
         },
         parsePriceStr(text) {
           if (!text)
@@ -437,15 +742,344 @@
             val *= 1e9;
           return isNaN(val) ? 0 : val;
         },
+        isSolPrice(price) {
+          return price >= 50 && price <= 500;
+        },
         updatePrice(val) {
           if (!val || val <= 1e-12)
             return;
           if (val !== this.price) {
-            console.log(`[Market] Price updated: $${val.toFixed(8)} (MC: $${this.marketCap.toFixed(0)})`);
+            const oldPrice = this.price || 0;
+            console.log(`[Market] Price: $${val.toFixed(8)} (was $${oldPrice.toFixed(8)}) | MC: $${this.marketCap.toFixed(0)}`);
             this.price = val;
             this.lastPriceTs = Date.now();
-            this.listeners.forEach((cb) => cb(val));
+            this.priceIsFresh = true;
+            this.notify();
           }
+        }
+      };
+    }
+  });
+
+  // src/modules/schemas.js
+  function uuid() {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+      const r = Math.random() * 16 | 0;
+      return (c === "x" ? r : r & 3 | 8).toString(16);
+    });
+  }
+  function createEvent(type, payload = {}, overrides = {}) {
+    return {
+      eventId: uuid(),
+      ts: Date.now(),
+      sessionId: void 0,
+      tradeId: void 0,
+      platform: Platform.UNKNOWN,
+      type,
+      payload,
+      ...overrides
+    };
+  }
+  var Platform, SCHEMA_VERSION;
+  var init_schemas = __esm({
+    "src/modules/schemas.js"() {
+      Platform = {
+        AXIOM: "AXIOM",
+        PADRE: "PADRE",
+        UNKNOWN: "UNKNOWN"
+      };
+      SCHEMA_VERSION = 3;
+    }
+  });
+
+  // src/modules/diagnostics-store.js
+  function defaultState() {
+    return {
+      schemaVersion: SCHEMA_VERSION,
+      clientId: uuid(),
+      events: [],
+      settings: {
+        privacy: {
+          autoSendDiagnostics: false,
+          diagnosticsConsentAcceptedAt: null,
+          includeFeatureClicks: true
+        },
+        diagnostics: {
+          endpointUrl: "https://zero-diagnostics.zerodata1.workers.dev/v1/zero/ingest",
+          lastUploadedEventTs: 0
+        }
+      },
+      upload: {
+        queue: [],
+        backoffUntilTs: 0,
+        lastError: null
+      }
+    };
+  }
+  function isStorageAvailable() {
+    try {
+      return typeof chrome !== "undefined" && chrome.storage && chrome.storage.local;
+    } catch {
+      return false;
+    }
+  }
+  async function chromeStorageGet(key) {
+    if (!isStorageAvailable())
+      return null;
+    return new Promise((resolve) => {
+      try {
+        chrome.storage.local.get([key], (res) => {
+          if (chrome.runtime.lastError) {
+            const msg = chrome.runtime.lastError.message || "";
+            if (!msg.includes("context invalidated")) {
+              console.warn("[DiagStore] get error:", msg);
+            }
+            resolve(null);
+            return;
+          }
+          resolve(res[key] || null);
+        });
+      } catch (e) {
+        if (!String(e).includes("context invalidated")) {
+          console.error("[DiagStore] get exception:", e);
+        }
+        resolve(null);
+      }
+    });
+  }
+  async function chromeStorageSet(key, value) {
+    if (!isStorageAvailable())
+      return;
+    return new Promise((resolve) => {
+      try {
+        chrome.storage.local.set({ [key]: value }, () => {
+          if (chrome.runtime.lastError) {
+            const msg = chrome.runtime.lastError.message || "";
+            if (!msg.includes("context invalidated")) {
+              console.warn("[DiagStore] set error:", msg);
+            }
+          }
+          resolve();
+        });
+      } catch (e) {
+        if (!String(e).includes("context invalidated")) {
+          console.error("[DiagStore] set exception:", e);
+        }
+        resolve();
+      }
+    });
+  }
+  async function chromeStorageRemove(key) {
+    if (!isStorageAvailable())
+      return;
+    return new Promise((resolve) => {
+      try {
+        chrome.storage.local.remove(key, () => resolve());
+      } catch {
+        resolve();
+      }
+    });
+  }
+  var STORAGE_KEY, EVENTS_CAP, UPLOAD_QUEUE_CAP, DEBOUNCE_MS, ERROR_COOLDOWN_MS, DiagnosticsStore;
+  var init_diagnostics_store = __esm({
+    "src/modules/diagnostics-store.js"() {
+      init_schemas();
+      STORAGE_KEY = "zero_state";
+      EVENTS_CAP = 2e4;
+      UPLOAD_QUEUE_CAP = 200;
+      DEBOUNCE_MS = 400;
+      ERROR_COOLDOWN_MS = 5e3;
+      DiagnosticsStore = {
+        /** @type {ReturnType<typeof defaultState>|null} */
+        state: null,
+        _saveTimer: null,
+        _lastErrorTs: 0,
+        // ------ Lifecycle ------
+        async load() {
+          const saved = await chromeStorageGet(STORAGE_KEY);
+          if (!saved) {
+            this.state = defaultState();
+            await this._persist();
+          } else {
+            this.state = this._migrate(saved);
+          }
+          return this.state;
+        },
+        _migrate(saved) {
+          const s = { ...defaultState(), ...saved };
+          s.settings = { ...defaultState().settings, ...s.settings };
+          s.settings.privacy = { ...defaultState().settings.privacy, ...s.settings?.privacy };
+          s.settings.diagnostics = { ...defaultState().settings.diagnostics, ...s.settings?.diagnostics };
+          s.upload = { ...defaultState().upload, ...s.upload };
+          if (!s.clientId)
+            s.clientId = uuid();
+          if (!Array.isArray(s.events))
+            s.events = [];
+          if (!Array.isArray(s.upload.queue))
+            s.upload.queue = [];
+          s.schemaVersion = SCHEMA_VERSION;
+          return s;
+        },
+        // ------ Debounced persist ------
+        save() {
+          if (this._saveTimer)
+            return;
+          this._saveTimer = setTimeout(() => {
+            this._saveTimer = null;
+            this._persist();
+          }, DEBOUNCE_MS);
+        },
+        async _persist() {
+          if (!this.state)
+            return;
+          await chromeStorageSet(STORAGE_KEY, this.state);
+        },
+        async forceSave() {
+          if (this._saveTimer) {
+            clearTimeout(this._saveTimer);
+            this._saveTimer = null;
+          }
+          await this._persist();
+        },
+        // ------ Events ring buffer ------
+        /**
+         * Append an event to the ring buffer.
+         * @param {string} type - EventType value
+         * @param {Record<string, any>} payload
+         * @param {{ sessionId?: string, tradeId?: string, platform?: string }} ctx
+         */
+        logEvent(type, payload = {}, ctx = {}) {
+          if (!this.state)
+            return;
+          if (type === "ERROR") {
+            const now = Date.now();
+            if (now - this._lastErrorTs < ERROR_COOLDOWN_MS)
+              return;
+            this._lastErrorTs = now;
+          }
+          const evt = createEvent(type, payload, {
+            sessionId: ctx.sessionId,
+            tradeId: ctx.tradeId,
+            platform: ctx.platform || "UNKNOWN"
+          });
+          this.state.events.push(evt);
+          if (this.state.events.length > EVENTS_CAP) {
+            this.state.events = this.state.events.slice(-EVENTS_CAP);
+          }
+          this.save();
+        },
+        // ------ Upload queue ------
+        enqueuePacket(packet) {
+          if (!this.state)
+            return;
+          this.state.upload.queue.push({
+            uploadId: packet.uploadId,
+            createdAt: packet.createdAt,
+            eventCount: (packet.eventsDelta || []).length,
+            payload: packet
+          });
+          if (this.state.upload.queue.length > UPLOAD_QUEUE_CAP) {
+            this.state.upload.queue = this.state.upload.queue.slice(-UPLOAD_QUEUE_CAP);
+          }
+          this.logEvent("UPLOAD_PACKET_ENQUEUED", { uploadId: packet.uploadId });
+          this.save();
+        },
+        dequeuePacket() {
+          if (!this.state || !this.state.upload.queue.length)
+            return null;
+          const item = this.state.upload.queue.shift();
+          this.save();
+          return item;
+        },
+        peekPacket() {
+          if (!this.state || !this.state.upload.queue.length)
+            return null;
+          return this.state.upload.queue[0];
+        },
+        // ------ Privacy settings ------
+        isAutoSendEnabled() {
+          return !!this.state?.settings?.privacy?.autoSendDiagnostics;
+        },
+        enableAutoSend() {
+          if (!this.state)
+            return;
+          this.state.settings.privacy.autoSendDiagnostics = true;
+          this.state.settings.privacy.diagnosticsConsentAcceptedAt = Date.now();
+          this.save();
+        },
+        disableAutoSend() {
+          if (!this.state)
+            return;
+          this.state.settings.privacy.autoSendDiagnostics = false;
+          this.save();
+        },
+        getEndpointUrl() {
+          return this.state?.settings?.diagnostics?.endpointUrl || "";
+        },
+        setEndpointUrl(url) {
+          if (!this.state)
+            return;
+          this.state.settings.diagnostics.endpointUrl = url;
+          this.save();
+        },
+        getLastUploadedEventTs() {
+          return this.state?.settings?.diagnostics?.lastUploadedEventTs || 0;
+        },
+        setLastUploadedEventTs(ts) {
+          if (!this.state)
+            return;
+          this.state.settings.diagnostics.lastUploadedEventTs = ts;
+          this.save();
+        },
+        // ------ Backoff ------
+        isInBackoff() {
+          return Date.now() < (this.state?.upload?.backoffUntilTs || 0);
+        },
+        setBackoff(delayMs) {
+          if (!this.state)
+            return;
+          this.state.upload.backoffUntilTs = Date.now() + delayMs;
+          this.save();
+        },
+        clearBackoff() {
+          if (!this.state)
+            return;
+          this.state.upload.backoffUntilTs = 0;
+          this.state.upload.lastError = null;
+          this.save();
+        },
+        setLastError(msg) {
+          if (!this.state)
+            return;
+          this.state.upload.lastError = msg;
+          this.save();
+        },
+        // ------ Data management ------
+        async clearAllData() {
+          await chromeStorageRemove(STORAGE_KEY);
+          this.state = defaultState();
+          await this._persist();
+        },
+        async clearUploadQueue() {
+          if (!this.state)
+            return;
+          this.state.upload.queue = [];
+          this.state.upload.backoffUntilTs = 0;
+          this.state.upload.lastError = null;
+          await this.forceSave();
+        },
+        // ------ Delta query ------
+        getEventsDelta() {
+          if (!this.state)
+            return [];
+          const lastTs = this.getLastUploadedEventTs();
+          return this.state.events.filter((e) => e.ts > lastTs);
+        },
+        getClientId() {
+          return this.state?.clientId || "";
         }
       };
     }
@@ -454,15 +1088,93 @@
   // src/modules/core/analytics.js
   var analytics_exports = {};
   __export(analytics_exports, {
-    Analytics: () => Analytics
+    Analytics: () => Analytics,
+    EVENT_CATEGORIES: () => EVENT_CATEGORIES
   });
-  var Analytics;
+  var EVENT_CATEGORIES, Analytics;
   var init_analytics = __esm({
     "src/modules/core/analytics.js"() {
       init_store();
       init_featureManager();
       init_market();
+      EVENT_CATEGORIES = {
+        TRADE: "TRADE",
+        ALERT: "ALERT",
+        DISCIPLINE: "DISCIPLINE",
+        SYSTEM: "SYSTEM",
+        MILESTONE: "MILESTONE"
+      };
       Analytics = {
+        // ==========================================
+        // PERSISTENT EVENT LOGGING
+        // ==========================================
+        logEvent(state, type, category, message, data = {}) {
+          if (!state.eventLog)
+            state.eventLog = [];
+          const event = {
+            id: `evt_${Date.now()}_${Math.floor(Math.random() * 1e3)}`,
+            ts: Date.now(),
+            type,
+            category,
+            message,
+            data
+          };
+          state.eventLog.push(event);
+          if (state.eventLog.length > 100) {
+            state.eventLog = state.eventLog.slice(-100);
+          }
+          console.log(`[EVENT LOG] [${category}] ${type}: ${message}`);
+          return event;
+        },
+        logTradeEvent(state, trade) {
+          const pnlText = trade.realizedPnlSol ? `P&L: ${trade.realizedPnlSol > 0 ? "+" : ""}${trade.realizedPnlSol.toFixed(4)} SOL` : `Size: ${trade.solAmount.toFixed(4)} SOL`;
+          const message = `${trade.side} ${trade.symbol} @ $${trade.priceUsd?.toFixed(6) || "N/A"} | ${pnlText}`;
+          this.logEvent(state, trade.side, EVENT_CATEGORIES.TRADE, message, {
+            tradeId: trade.id,
+            symbol: trade.symbol,
+            priceUsd: trade.priceUsd,
+            solAmount: trade.solAmount,
+            realizedPnlSol: trade.realizedPnlSol,
+            strategy: trade.strategy,
+            riskDefined: trade.riskDefined
+          });
+        },
+        logDisciplineEvent(state, score, penalty, reasons) {
+          if (penalty <= 0)
+            return;
+          const message = `Discipline -${penalty} pts: ${reasons.join(", ")}`;
+          this.logEvent(state, "PENALTY", EVENT_CATEGORIES.DISCIPLINE, message, {
+            score,
+            penalty,
+            reasons
+          });
+        },
+        logAlertEvent(state, alertType, message) {
+          this.logEvent(state, alertType, EVENT_CATEGORIES.ALERT, message, { alertType });
+        },
+        logMilestone(state, type, message, data = {}) {
+          this.logEvent(state, type, EVENT_CATEGORIES.MILESTONE, message, data);
+        },
+        getEventLog(state, options = {}) {
+          const { category, limit = 50, offset = 0 } = options;
+          let events = state.eventLog || [];
+          if (category) {
+            events = events.filter((e) => e.category === category);
+          }
+          events = events.sort((a, b) => b.ts - a.ts);
+          return events.slice(offset, offset + limit);
+        },
+        getEventStats(state) {
+          const events = state.eventLog || [];
+          const stats = {
+            total: events.length,
+            trades: events.filter((e) => e.category === EVENT_CATEGORIES.TRADE).length,
+            alerts: events.filter((e) => e.category === EVENT_CATEGORIES.ALERT).length,
+            disciplineEvents: events.filter((e) => e.category === EVENT_CATEGORIES.DISCIPLINE).length,
+            milestones: events.filter((e) => e.category === EVENT_CATEGORIES.MILESTONE).length
+          };
+          return stats;
+        },
         analyzeRecentTrades(state) {
           const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
           if (trades.length === 0)
@@ -532,14 +1244,89 @@
               penalty += 20;
               reasons.push("Oversizing (>50%)");
             }
+            const planFlags = FeatureManager.resolveFlags(state, "TRADE_PLAN");
+            if (planFlags.interactive && !trade.riskDefined) {
+              penalty += 5;
+              reasons.push("No Stop Loss Defined");
+            }
+          }
+          if (trade.side === "SELL") {
+            const result = this.checkPlanAdherence(trade, state);
+            if (result.penalty > 0) {
+              penalty += result.penalty;
+              reasons.push(...result.reasons);
+            }
           }
           let score = state.session.disciplineScore !== void 0 ? state.session.disciplineScore : 100;
           score = Math.max(0, score - penalty);
           state.session.disciplineScore = score;
           if (penalty > 0) {
             console.log(`[DISCIPLINE] Score -${penalty} (${reasons.join(", ")})`);
+            this.logDisciplineEvent(state, score, penalty, reasons);
           }
           return { score, penalty, reasons };
+        },
+        // Check if trade exit adhered to the original plan
+        checkPlanAdherence(sellTrade, state) {
+          let penalty = 0;
+          const reasons = [];
+          const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+          const buyTrade = trades.find(
+            (t) => t.side === "BUY" && t.mint === sellTrade.mint && t.ts < sellTrade.ts && t.riskDefined
+          );
+          if (!buyTrade || !buyTrade.plannedStop)
+            return { penalty: 0, reasons: [] };
+          const exitPrice = sellTrade.priceUsd;
+          const plannedStop = buyTrade.plannedStop;
+          const plannedTarget = buyTrade.plannedTarget;
+          const entryPrice = buyTrade.priceUsd;
+          if (exitPrice < plannedStop && sellTrade.realizedPnlSol < 0) {
+            const violationPct = ((plannedStop - exitPrice) / plannedStop * 100).toFixed(1);
+            penalty += 15;
+            reasons.push(`Stop Violated (-${violationPct}% below stop)`);
+          }
+          if (plannedTarget && exitPrice < plannedTarget && sellTrade.realizedPnlSol > 0) {
+            const targetDistance = (plannedTarget - exitPrice) / plannedTarget * 100;
+            if (targetDistance > 30) {
+              penalty += 5;
+              reasons.push("Early Exit (Left >30% gains)");
+            }
+          }
+          sellTrade.planAdherence = {
+            hadPlan: true,
+            plannedStop,
+            plannedTarget,
+            entryPrice,
+            exitPrice,
+            stopViolated: exitPrice < plannedStop && sellTrade.realizedPnlSol < 0,
+            hitTarget: plannedTarget && exitPrice >= plannedTarget
+          };
+          return { penalty, reasons };
+        },
+        // Calculate R-Multiple for a trade (requires defined risk)
+        calculateRMultiple(sellTrade, state) {
+          const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+          const buyTrade = trades.find(
+            (t) => t.side === "BUY" && t.mint === sellTrade.mint && t.ts < sellTrade.ts && t.riskDefined
+          );
+          if (!buyTrade || !buyTrade.plannedStop)
+            return null;
+          const entryPrice = buyTrade.priceUsd;
+          const exitPrice = sellTrade.priceUsd;
+          const stopPrice = buyTrade.plannedStop;
+          const riskPerUnit = entryPrice - stopPrice;
+          if (riskPerUnit <= 0)
+            return null;
+          const pnlPerUnit = exitPrice - entryPrice;
+          const rMultiple = pnlPerUnit / riskPerUnit;
+          return {
+            rMultiple: parseFloat(rMultiple.toFixed(2)),
+            entryPrice,
+            exitPrice,
+            stopPrice,
+            riskPerUnit,
+            pnlPerUnit
+          };
         },
         updateStreaks(trade, state) {
           if (trade.side !== "SELL")
@@ -614,14 +1401,23 @@
           const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
           if (!flags.enabled)
             return;
-          const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+          if (state.session?.activeAlerts) {
+            const lastAlert = state.session.activeAlerts.slice().reverse().find((a) => a.type === "VELOCITY");
+            if (lastAlert && Date.now() - lastAlert.ts < 6e4) {
+              return;
+            }
+          }
+          const trades = Object.values(state.trades || {}).filter((t) => t.mode === (state.settings.tradingMode || "paper")).sort((a, b) => a.ts - b.ts);
           if (trades.length < 5)
             return;
           const last5 = trades.slice(-5);
           const timeSpan = last5[4].ts - last5[0].ts;
-          if (timeSpan < 3e5) {
+          const timeSinceLast = Date.now() - last5[4].ts;
+          if (timeSpan < 3e5 && timeSinceLast < 3e5) {
+            console.log(`[ZER\xD8 ALERT] Overtrading Detected: 5 trades in ${(timeSpan / 1e3).toFixed(1)}s`, last5.map((t) => t.id));
             this.addAlert(state, "VELOCITY", "\u26A0\uFE0F OVERTRADING: You're trading too fast. Stop and evaluate setups.");
             state.behavior.overtradingFrequency = (state.behavior.overtradingFrequency || 0) + 1;
+            state.lastOvertradingAlert = Date.now();
           }
         },
         monitorProfitOverstay(state) {
@@ -686,6 +1482,7 @@
           state.session.activeAlerts.push(alert);
           if (state.session.activeAlerts.length > 3)
             state.session.activeAlerts.shift();
+          this.logAlertEvent(state, type, message);
           console.log(`[ELITE ALERT] ${type}: ${message}`);
         },
         updateProfile(state) {
@@ -761,21 +1558,715 @@
 `;
           text += `#Solana #PaperTrading #Crypto`;
           return text;
+        },
+        // ==========================================
+        // EXPORT FUNCTIONALITY
+        // ==========================================
+        exportToCSV(state) {
+          const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+          if (trades.length === 0)
+            return null;
+          const headers = [
+            "Trade ID",
+            "Timestamp",
+            "Side",
+            "Symbol",
+            "Token Mint",
+            "SOL Amount",
+            "Token Qty",
+            "Price USD",
+            "Market Cap",
+            "Realized PnL (SOL)",
+            "Strategy",
+            "Emotion",
+            "Mode",
+            "Planned Stop",
+            "Planned Target",
+            "Risk Defined",
+            "Entry Thesis"
+          ];
+          const rows = trades.map((t) => [
+            t.id,
+            new Date(t.ts).toISOString(),
+            t.side,
+            t.symbol || "",
+            t.mint || "",
+            t.solAmount?.toFixed(6) || "",
+            t.tokenQty?.toFixed(6) || "",
+            t.priceUsd?.toFixed(8) || "",
+            t.marketCap?.toFixed(2) || "",
+            t.realizedPnlSol?.toFixed(6) || "",
+            t.strategy || "",
+            t.emotion || "",
+            t.mode || "paper",
+            t.plannedStop?.toFixed(8) || "",
+            t.plannedTarget?.toFixed(8) || "",
+            t.riskDefined ? "Yes" : "No",
+            `"${(t.entryThesis || "").replace(/"/g, '""')}"`
+          ]);
+          const csvContent = [
+            headers.join(","),
+            ...rows.map((r) => r.join(","))
+          ].join("\n");
+          return csvContent;
+        },
+        exportToJSON(state) {
+          const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+          const session = state.session || {};
+          const behavior = state.behavior || {};
+          const exportData = {
+            exportedAt: (/* @__PURE__ */ new Date()).toISOString(),
+            version: state.version || "1.0.0",
+            session: {
+              balance: session.balance,
+              equity: session.equity,
+              realized: session.realized,
+              winStreak: session.winStreak,
+              lossStreak: session.lossStreak,
+              disciplineScore: session.disciplineScore,
+              tradeCount: trades.length
+            },
+            behavior: {
+              profile: behavior.profile,
+              tiltFrequency: behavior.tiltFrequency,
+              fomoTrades: behavior.fomoTrades,
+              panicSells: behavior.panicSells,
+              sunkCostFrequency: behavior.sunkCostFrequency,
+              overtradingFrequency: behavior.overtradingFrequency,
+              profitNeglectFrequency: behavior.profitNeglectFrequency
+            },
+            analytics: this.analyzeRecentTrades(state),
+            trades: trades.map((t) => ({
+              id: t.id,
+              timestamp: new Date(t.ts).toISOString(),
+              side: t.side,
+              symbol: t.symbol,
+              mint: t.mint,
+              solAmount: t.solAmount,
+              tokenQty: t.tokenQty,
+              priceUsd: t.priceUsd,
+              marketCap: t.marketCap,
+              realizedPnlSol: t.realizedPnlSol,
+              strategy: t.strategy,
+              emotion: t.emotion,
+              mode: t.mode,
+              tradePlan: {
+                plannedStop: t.plannedStop,
+                plannedTarget: t.plannedTarget,
+                entryThesis: t.entryThesis,
+                riskDefined: t.riskDefined
+              },
+              planAdherence: t.planAdherence || null
+            }))
+          };
+          return JSON.stringify(exportData, null, 2);
+        },
+        downloadExport(content, filename, mimeType) {
+          const blob = new Blob([content], { type: mimeType });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        },
+        exportTradesAsCSV(state) {
+          const csv = this.exportToCSV(state);
+          if (!csv) {
+            console.warn("[Export] No trades to export");
+            return false;
+          }
+          const filename = `zero_trades_${(/* @__PURE__ */ new Date()).toISOString().split("T")[0]}.csv`;
+          this.downloadExport(csv, filename, "text/csv;charset=utf-8;");
+          return true;
+        },
+        exportSessionAsJSON(state) {
+          const json = this.exportToJSON(state);
+          const filename = `zero_session_${(/* @__PURE__ */ new Date()).toISOString().split("T")[0]}.json`;
+          this.downloadExport(json, filename, "application/json");
+          return true;
+        },
+        // ==========================================
+        // CONSISTENCY SCORE
+        // ==========================================
+        /**
+         * Calculate Consistency Score (0-100)
+         * Measures:
+         * - Win Rate Stability (variance in rolling win rate)
+         * - Position Sizing Consistency (variance in trade sizes)
+         * - Trade Frequency Stability (time between trades)
+         * - Strategy Focus (% of trades using top 2 strategies)
+         */
+        // ==========================================
+        // PERSONAL TRADER PROFILE (ELITE)
+        // ==========================================
+        /**
+         * Generate a comprehensive trader profile based on historical data
+         * Analyzes: Best strategies, worst conditions, optimal session length, best time of day
+         */
+        generateTraderProfile(state) {
+          const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+          if (trades.length < 10) {
+            return {
+              ready: false,
+              message: "Need 10+ trades to generate your profile",
+              tradesNeeded: 10 - trades.length
+            };
+          }
+          const sellTrades = trades.filter((t) => t.side === "SELL");
+          const buyTrades = trades.filter((t) => t.side === "BUY");
+          return {
+            ready: true,
+            generatedAt: Date.now(),
+            tradeCount: trades.length,
+            bestStrategies: this._analyzeBestStrategies(buyTrades, sellTrades, trades),
+            worstConditions: this._analyzeWorstConditions(trades, state),
+            optimalSessionLength: this._analyzeOptimalSessionLength(trades, state),
+            bestTimeOfDay: this._analyzeBestTimeOfDay(sellTrades),
+            tradingStyle: this._determineTradingStyle(trades),
+            riskProfile: this._analyzeRiskProfile(buyTrades, state),
+            emotionalPatterns: this._analyzeEmotionalPatterns(trades, state)
+          };
+        },
+        _analyzeBestStrategies(buyTrades, sellTrades, allTrades) {
+          const strategyStats = {};
+          buyTrades.forEach((buy) => {
+            const strat = buy.strategy || "Unknown";
+            if (!strategyStats[strat]) {
+              strategyStats[strat] = { count: 0, wins: 0, totalPnl: 0, avgHoldTime: 0, trades: [] };
+            }
+            strategyStats[strat].count++;
+            strategyStats[strat].trades.push(buy);
+          });
+          sellTrades.forEach((sell) => {
+            const matchingBuy = allTrades.find(
+              (t) => t.side === "BUY" && t.mint === sell.mint && t.ts < sell.ts
+            );
+            if (matchingBuy) {
+              const strat = matchingBuy.strategy || "Unknown";
+              if (strategyStats[strat]) {
+                const pnl = sell.realizedPnlSol || 0;
+                strategyStats[strat].totalPnl += pnl;
+                if (pnl > 0)
+                  strategyStats[strat].wins++;
+                strategyStats[strat].avgHoldTime += sell.ts - matchingBuy.ts;
+              }
+            }
+          });
+          const results = Object.entries(strategyStats).filter(([_, s]) => s.count >= 2).map(([name, s]) => ({
+            name,
+            count: s.count,
+            winRate: s.count > 0 ? (s.wins / s.count * 100).toFixed(1) : 0,
+            totalPnl: s.totalPnl,
+            avgPnl: s.count > 0 ? s.totalPnl / s.count : 0,
+            avgHoldTime: s.wins > 0 ? Math.round(s.avgHoldTime / s.wins / 6e4) : 0
+            // in minutes
+          })).sort((a, b) => b.totalPnl - a.totalPnl);
+          return {
+            top: results.slice(0, 3),
+            worst: results.filter((s) => s.totalPnl < 0).sort((a, b) => a.totalPnl - b.totalPnl).slice(0, 2),
+            mostUsed: results.sort((a, b) => b.count - a.count)[0] || null
+          };
+        },
+        _analyzeWorstConditions(trades, state) {
+          const conditions = [];
+          let afterLossWins = 0, afterLossTotal = 0;
+          for (let i = 1; i < trades.length; i++) {
+            if (trades[i - 1].side === "SELL" && (trades[i - 1].realizedPnlSol || 0) < 0) {
+              afterLossTotal++;
+              if (trades[i].side === "SELL" && (trades[i].realizedPnlSol || 0) > 0) {
+                afterLossWins++;
+              }
+            }
+          }
+          if (afterLossTotal >= 3) {
+            const afterLossWinRate = (afterLossWins / afterLossTotal * 100).toFixed(0);
+            if (afterLossWinRate < 40) {
+              conditions.push({
+                type: "AFTER_LOSS",
+                label: "After Losing Trades",
+                severity: "high",
+                stat: `${afterLossWinRate}% win rate`,
+                advice: "Take a 5-minute break after losses before your next trade."
+              });
+            }
+          }
+          let rapidWins = 0, rapidTotal = 0;
+          for (let i = 1; i < trades.length; i++) {
+            if (trades[i].ts - trades[i - 1].ts < 12e4) {
+              rapidTotal++;
+              if (trades[i].side === "SELL" && (trades[i].realizedPnlSol || 0) > 0) {
+                rapidWins++;
+              }
+            }
+          }
+          if (rapidTotal >= 3) {
+            const rapidWinRate = (rapidWins / rapidTotal * 100).toFixed(0);
+            if (rapidWinRate < 35) {
+              conditions.push({
+                type: "RAPID_TRADING",
+                label: "Rapid-Fire Trading",
+                severity: "high",
+                stat: `${rapidWinRate}% win rate`,
+                advice: "Slow down. Wait at least 2 minutes between trades."
+              });
+            }
+          }
+          const avgSize = trades.filter((t) => t.side === "BUY").reduce((sum, t) => sum + (t.solAmount || 0), 0) / trades.filter((t) => t.side === "BUY").length;
+          let largeWins = 0, largeTotal = 0;
+          trades.filter((t) => t.side === "SELL").forEach((t) => {
+            const matchingBuy = trades.find((b) => b.side === "BUY" && b.mint === t.mint && b.ts < t.ts);
+            if (matchingBuy && matchingBuy.solAmount > avgSize * 1.5) {
+              largeTotal++;
+              if ((t.realizedPnlSol || 0) > 0)
+                largeWins++;
+            }
+          });
+          if (largeTotal >= 2) {
+            const largeWinRate = (largeWins / largeTotal * 100).toFixed(0);
+            if (largeWinRate < 40) {
+              conditions.push({
+                type: "LARGE_POSITIONS",
+                label: "Oversized Positions",
+                severity: "medium",
+                stat: `${largeWinRate}% win rate`,
+                advice: "Your large trades underperform. Stick to consistent sizing."
+              });
+            }
+          }
+          const sessionTrades = this._groupBySession(trades, state);
+          let lateWins = 0, lateTotal = 0;
+          sessionTrades.forEach((session) => {
+            if (session.length < 5)
+              return;
+            const sessionStart = session[0].ts;
+            const lateThreshold = sessionStart + 60 * 60 * 1e3;
+            session.filter((t) => t.ts > lateThreshold && t.side === "SELL").forEach((t) => {
+              lateTotal++;
+              if ((t.realizedPnlSol || 0) > 0)
+                lateWins++;
+            });
+          });
+          if (lateTotal >= 3) {
+            const lateWinRate = (lateWins / lateTotal * 100).toFixed(0);
+            if (lateWinRate < 35) {
+              conditions.push({
+                type: "LATE_SESSION",
+                label: "Extended Sessions",
+                severity: "medium",
+                stat: `${lateWinRate}% win rate`,
+                advice: "Your performance drops after 1 hour. Consider shorter sessions."
+              });
+            }
+          }
+          return conditions.sort((a, b) => (b.severity === "high" ? 1 : 0) - (a.severity === "high" ? 1 : 0));
+        },
+        _analyzeOptimalSessionLength(trades, state) {
+          const sessionTrades = this._groupBySession(trades, state);
+          if (sessionTrades.length < 2) {
+            return { optimal: null, message: "Need more session data" };
+          }
+          const sessionPerformance = sessionTrades.map((session) => {
+            const duration = session.length > 0 ? (session[session.length - 1].ts - session[0].ts) / 6e4 : 0;
+            const sells = session.filter((t) => t.side === "SELL");
+            const pnl = sells.reduce((sum, t) => sum + (t.realizedPnlSol || 0), 0);
+            const wins = sells.filter((t) => (t.realizedPnlSol || 0) > 0).length;
+            const winRate = sells.length > 0 ? wins / sells.length * 100 : 0;
+            return { duration, pnl, winRate, tradeCount: session.length };
+          });
+          const buckets = {
+            short: { range: "< 30 min", sessions: [], avgPnl: 0, avgWinRate: 0 },
+            medium: { range: "30-60 min", sessions: [], avgPnl: 0, avgWinRate: 0 },
+            long: { range: "60-120 min", sessions: [], avgPnl: 0, avgWinRate: 0 },
+            extended: { range: "> 120 min", sessions: [], avgPnl: 0, avgWinRate: 0 }
+          };
+          sessionPerformance.forEach((s) => {
+            if (s.duration < 30)
+              buckets.short.sessions.push(s);
+            else if (s.duration < 60)
+              buckets.medium.sessions.push(s);
+            else if (s.duration < 120)
+              buckets.long.sessions.push(s);
+            else
+              buckets.extended.sessions.push(s);
+          });
+          Object.values(buckets).forEach((b) => {
+            if (b.sessions.length > 0) {
+              b.avgPnl = b.sessions.reduce((sum, s) => sum + s.pnl, 0) / b.sessions.length;
+              b.avgWinRate = b.sessions.reduce((sum, s) => sum + s.winRate, 0) / b.sessions.length;
+            }
+          });
+          const best = Object.entries(buckets).filter(([_, b]) => b.sessions.length >= 1).sort((a, b) => b[1].avgPnl - a[1].avgPnl)[0];
+          return {
+            optimal: best ? best[1].range : null,
+            bestPnl: best ? best[1].avgPnl.toFixed(4) : 0,
+            bestWinRate: best ? best[1].avgWinRate.toFixed(1) : 0,
+            buckets: Object.fromEntries(
+              Object.entries(buckets).map(([k, v]) => [k, {
+                range: v.range,
+                count: v.sessions.length,
+                avgPnl: v.avgPnl.toFixed(4),
+                avgWinRate: v.avgWinRate.toFixed(1)
+              }])
+            )
+          };
+        },
+        _analyzeBestTimeOfDay(sellTrades) {
+          if (sellTrades.length < 5) {
+            return { best: null, message: "Need more trades" };
+          }
+          const timeSlots = {
+            morning: { range: "6AM-12PM", wins: 0, total: 0, pnl: 0 },
+            afternoon: { range: "12PM-6PM", wins: 0, total: 0, pnl: 0 },
+            evening: { range: "6PM-12AM", wins: 0, total: 0, pnl: 0 },
+            night: { range: "12AM-6AM", wins: 0, total: 0, pnl: 0 }
+          };
+          sellTrades.forEach((t) => {
+            const hour = new Date(t.ts).getHours();
+            let slot;
+            if (hour >= 6 && hour < 12)
+              slot = "morning";
+            else if (hour >= 12 && hour < 18)
+              slot = "afternoon";
+            else if (hour >= 18 && hour < 24)
+              slot = "evening";
+            else
+              slot = "night";
+            timeSlots[slot].total++;
+            timeSlots[slot].pnl += t.realizedPnlSol || 0;
+            if ((t.realizedPnlSol || 0) > 0)
+              timeSlots[slot].wins++;
+          });
+          const results = Object.entries(timeSlots).filter(([_, s]) => s.total >= 2).map(([name, s]) => ({
+            name,
+            range: s.range,
+            winRate: s.total > 0 ? (s.wins / s.total * 100).toFixed(1) : 0,
+            pnl: s.pnl,
+            count: s.total
+          })).sort((a, b) => b.pnl - a.pnl);
+          return {
+            best: results[0] || null,
+            worst: results[results.length - 1] || null,
+            breakdown: results
+          };
+        },
+        _determineTradingStyle(trades) {
+          const sellTrades = trades.filter((t) => t.side === "SELL");
+          if (sellTrades.length < 5)
+            return { style: "Unknown", description: "Need more data" };
+          let totalHoldTime = 0, holdCount = 0;
+          sellTrades.forEach((sell) => {
+            const buy = trades.find((t) => t.side === "BUY" && t.mint === sell.mint && t.ts < sell.ts);
+            if (buy) {
+              totalHoldTime += sell.ts - buy.ts;
+              holdCount++;
+            }
+          });
+          const avgHoldMinutes = holdCount > 0 ? totalHoldTime / holdCount / 6e4 : 0;
+          if (avgHoldMinutes < 5) {
+            return { style: "Scalper", description: "Quick in-and-out trades, high frequency", avgHold: avgHoldMinutes.toFixed(1) };
+          } else if (avgHoldMinutes < 30) {
+            return { style: "Day Trader", description: "Short-term positions, momentum focused", avgHold: avgHoldMinutes.toFixed(1) };
+          } else if (avgHoldMinutes < 120) {
+            return { style: "Swing Trader", description: "Medium holds, trend following", avgHold: avgHoldMinutes.toFixed(1) };
+          } else {
+            return { style: "Position Trader", description: "Long holds, conviction plays", avgHold: avgHoldMinutes.toFixed(1) };
+          }
+        },
+        _analyzeRiskProfile(buyTrades, state) {
+          if (buyTrades.length < 3)
+            return { profile: "Unknown", avgRisk: 0 };
+          const startSol = state.settings?.startSol || 10;
+          const riskPcts = buyTrades.map((t) => t.solAmount / startSol * 100);
+          const avgRisk = riskPcts.reduce((a, b) => a + b, 0) / riskPcts.length;
+          const maxRisk = Math.max(...riskPcts);
+          const plansUsed = buyTrades.filter((t) => t.riskDefined).length;
+          const planRate = (plansUsed / buyTrades.length * 100).toFixed(0);
+          let profile;
+          if (avgRisk < 5)
+            profile = "Conservative";
+          else if (avgRisk < 15)
+            profile = "Moderate";
+          else if (avgRisk < 30)
+            profile = "Aggressive";
+          else
+            profile = "High Risk";
+          return {
+            profile,
+            avgRisk: avgRisk.toFixed(1),
+            maxRisk: maxRisk.toFixed(1),
+            planUsageRate: planRate,
+            plansUsed
+          };
+        },
+        _analyzeEmotionalPatterns(trades, state) {
+          const behavior = state.behavior || {};
+          const patterns = [];
+          if ((behavior.fomoTrades || 0) > 2) {
+            patterns.push({ type: "FOMO", frequency: behavior.fomoTrades, advice: "Wait 60 seconds before entering after seeing green candles." });
+          }
+          if ((behavior.panicSells || 0) > 2) {
+            patterns.push({ type: "Panic Selling", frequency: behavior.panicSells, advice: "Set stop losses in advance and trust them." });
+          }
+          if ((behavior.tiltFrequency || 0) > 1) {
+            patterns.push({ type: "Tilt Trading", frequency: behavior.tiltFrequency, advice: "Take a mandatory break after 3 consecutive losses." });
+          }
+          if ((behavior.sunkCostFrequency || 0) > 1) {
+            patterns.push({ type: "Sunk Cost Bias", frequency: behavior.sunkCostFrequency, advice: "Never average down more than once per position." });
+          }
+          return patterns;
+        },
+        _groupBySession(trades, state) {
+          const sessions = [];
+          let currentSession = [];
+          const SESSION_GAP = 30 * 60 * 1e3;
+          trades.forEach((trade, i) => {
+            if (i === 0) {
+              currentSession.push(trade);
+            } else if (trade.ts - trades[i - 1].ts > SESSION_GAP) {
+              if (currentSession.length > 0)
+                sessions.push(currentSession);
+              currentSession = [trade];
+            } else {
+              currentSession.push(trade);
+            }
+          });
+          if (currentSession.length > 0)
+            sessions.push(currentSession);
+          return sessions;
+        },
+        calculateConsistencyScore(state) {
+          const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+          if (trades.length < 5) {
+            return { score: null, message: "Need 5+ trades for consistency score", breakdown: null };
+          }
+          const breakdown = {
+            winRateStability: 0,
+            sizingConsistency: 0,
+            frequencyStability: 0,
+            strategyFocus: 0
+          };
+          const sellTrades = trades.filter((t) => t.side === "SELL");
+          if (sellTrades.length >= 5) {
+            const windowSize = Math.min(5, Math.floor(sellTrades.length / 2));
+            const rollingWinRates = [];
+            for (let i = windowSize; i <= sellTrades.length; i++) {
+              const window2 = sellTrades.slice(i - windowSize, i);
+              const wins = window2.filter((t) => (t.realizedPnlSol || 0) > 0).length;
+              rollingWinRates.push(wins / windowSize);
+            }
+            if (rollingWinRates.length > 1) {
+              const avg = rollingWinRates.reduce((a, b) => a + b, 0) / rollingWinRates.length;
+              const variance = rollingWinRates.reduce((sum, r) => sum + Math.pow(r - avg, 2), 0) / rollingWinRates.length;
+              const stdDev = Math.sqrt(variance);
+              breakdown.winRateStability = Math.max(0, 25 - stdDev * 100);
+            } else {
+              breakdown.winRateStability = 20;
+            }
+          } else {
+            breakdown.winRateStability = 15;
+          }
+          const buyTrades = trades.filter((t) => t.side === "BUY");
+          if (buyTrades.length >= 3) {
+            const sizes = buyTrades.map((t) => t.solAmount);
+            const avgSize = sizes.reduce((a, b) => a + b, 0) / sizes.length;
+            const variance = sizes.reduce((sum, s) => sum + Math.pow(s - avgSize, 2), 0) / sizes.length;
+            const cv = Math.sqrt(variance) / avgSize;
+            breakdown.sizingConsistency = Math.max(0, 25 - cv * 25);
+          } else {
+            breakdown.sizingConsistency = 15;
+          }
+          if (trades.length >= 4) {
+            const intervals = [];
+            for (let i = 1; i < trades.length; i++) {
+              intervals.push(trades[i].ts - trades[i - 1].ts);
+            }
+            const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+            const variance = intervals.reduce((sum, i) => sum + Math.pow(i - avgInterval, 2), 0) / intervals.length;
+            const cv = Math.sqrt(variance) / avgInterval;
+            breakdown.frequencyStability = Math.max(0, 25 - cv * 12.5);
+          } else {
+            breakdown.frequencyStability = 15;
+          }
+          const strategyCounts = {};
+          buyTrades.forEach((t) => {
+            const strat = t.strategy || "Unknown";
+            strategyCounts[strat] = (strategyCounts[strat] || 0) + 1;
+          });
+          const sortedStrategies = Object.entries(strategyCounts).sort((a, b) => b[1] - a[1]);
+          const top2Count = sortedStrategies.slice(0, 2).reduce((sum, [_, count]) => sum + count, 0);
+          const focusRatio = buyTrades.length > 0 ? top2Count / buyTrades.length : 0;
+          breakdown.strategyFocus = focusRatio * 25;
+          const score = Math.round(
+            breakdown.winRateStability + breakdown.sizingConsistency + breakdown.frequencyStability + breakdown.strategyFocus
+          );
+          let message = "";
+          if (score >= 80)
+            message = "Highly consistent trading patterns";
+          else if (score >= 60)
+            message = "Good consistency, minor variations";
+          else if (score >= 40)
+            message = "Moderate consistency, room for improvement";
+          else
+            message = "Inconsistent patterns detected";
+          return {
+            score,
+            message,
+            breakdown: {
+              winRateStability: Math.round(breakdown.winRateStability),
+              sizingConsistency: Math.round(breakdown.sizingConsistency),
+              frequencyStability: Math.round(breakdown.frequencyStability),
+              strategyFocus: Math.round(breakdown.strategyFocus)
+            }
+          };
         }
       };
     }
   });
 
-  // src/content.boot.js
-  init_store();
-  init_featureManager();
+  // src/modules/upload-packet.js
+  function buildUploadPackets() {
+    const events = DiagnosticsStore.getEventsDelta();
+    if (events.length === 0)
+      return { packets: [], totalEvents: 0 };
+    const clientId = DiagnosticsStore.getClientId();
+    const version = Store.state?.version || "0.0.0";
+    const chunks = [];
+    for (let i = 0; i < events.length; i += MAX_EVENTS_PER_PACKET) {
+      chunks.push(events.slice(i, i + MAX_EVENTS_PER_PACKET));
+    }
+    const packets = chunks.map((chunk) => {
+      const packet = {
+        uploadId: uuid(),
+        clientId,
+        createdAt: Date.now(),
+        schemaVersion: SCHEMA_VERSION,
+        extensionVersion: version,
+        eventsDelta: chunk
+      };
+      let serialized = JSON.stringify(packet);
+      if (serialized.length > MAX_PAYLOAD_BYTES && chunk.length > 100) {
+        const trimmed = chunk.slice(-Math.floor(chunk.length * 0.7));
+        packet.eventsDelta = trimmed;
+        packet._trimmed = true;
+      }
+      return packet;
+    });
+    return { packets, totalEvents: events.length };
+  }
+  function enqueueUploadPackets() {
+    const { packets } = buildUploadPackets();
+    for (const pkt of packets) {
+      DiagnosticsStore.enqueuePacket(pkt);
+    }
+    return packets.length;
+  }
+  var MAX_EVENTS_PER_PACKET, MAX_PAYLOAD_BYTES;
+  var init_upload_packet = __esm({
+    "src/modules/upload-packet.js"() {
+      init_diagnostics_store();
+      init_schemas();
+      init_store();
+      MAX_EVENTS_PER_PACKET = 2e3;
+      MAX_PAYLOAD_BYTES = 300 * 1024;
+    }
+  });
+
+  // src/modules/diagnostics-manager.js
+  var diagnostics_manager_exports = {};
+  __export(diagnostics_manager_exports, {
+    DiagnosticsManager: () => DiagnosticsManager
+  });
+  var UPLOAD_INTERVAL_MS, RETRY_DELAY_MS, DiagnosticsManager;
+  var init_diagnostics_manager = __esm({
+    "src/modules/diagnostics-manager.js"() {
+      init_diagnostics_store();
+      init_upload_packet();
+      UPLOAD_INTERVAL_MS = 6e4;
+      RETRY_DELAY_MS = 3e4;
+      DiagnosticsManager = {
+        _timer: null,
+        init() {
+          if (this._timer)
+            return;
+          console.log("[DiagnosticsManager] Initialized. Status:", DiagnosticsStore.isAutoSendEnabled() ? "ENABLED" : "DISABLED");
+          this._scheduleNextTick();
+        },
+        _scheduleNextTick(delay = UPLOAD_INTERVAL_MS) {
+          if (this._timer)
+            clearTimeout(this._timer);
+          this._timer = setTimeout(() => this._tick(), delay);
+        },
+        async _tick() {
+          try {
+            if (!DiagnosticsStore.isAutoSendEnabled()) {
+              this._scheduleNextTick();
+              return;
+            }
+            if (DiagnosticsStore.isInBackoff()) {
+              const state = await DiagnosticsStore.load();
+              const now = Date.now();
+              if (now < state.upload.backoffUntilTs) {
+                this._scheduleNextTick(UPLOAD_INTERVAL_MS);
+                return;
+              }
+            }
+            const enqueuedCount = enqueueUploadPackets();
+            if (enqueuedCount > 0) {
+              console.log(`[DiagnosticsManager] Enqueued ${enqueuedCount} packets.`);
+            }
+            await this._processQueue();
+          } catch (e) {
+            console.error("[DiagnosticsManager] Loop error:", e);
+          }
+          this._scheduleNextTick();
+        },
+        async _processQueue() {
+          const endpoint = DiagnosticsStore.getEndpointUrl();
+          if (!endpoint)
+            return;
+          let packet = DiagnosticsStore.peekPacket();
+          while (packet) {
+            if (!DiagnosticsStore.isAutoSendEnabled())
+              return;
+            try {
+              console.log(`[DiagnosticsManager] Uploading packet ${packet.uploadId}...`);
+              const response = await fetch(endpoint, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(packet.payload)
+              });
+              if (response.ok) {
+                DiagnosticsStore.dequeuePacket();
+                DiagnosticsStore.setLastUploadedEventTs(Date.now());
+                DiagnosticsStore.clearBackoff();
+                console.log(`[DiagnosticsManager] Upload success.`);
+              } else {
+                const txt = await response.text();
+                throw new Error(`Server ${response.status}: ${txt.slice(0, 100)}`);
+              }
+            } catch (err) {
+              console.warn(`[DiagnosticsManager] Upload failed:`, err);
+              DiagnosticsStore.setLastError(String(err));
+              DiagnosticsStore.setBackoff(RETRY_DELAY_MS);
+              return;
+            }
+            packet = DiagnosticsStore.peekPacket();
+          }
+        }
+      };
+    }
+  });
 
   // src/modules/ui/ids.js
   var IDS = {
     banner: "paper-mode-banner",
     pnlHud: "paper-pnl-hud",
     buyHud: "paper-buyhud-root",
-    style: "paper-overlay-style"
+    style: "paper-overlay-style",
+    positionsPanel: "paper-positions-panel"
   };
 
   // src/modules/ui/common-styles.js
@@ -816,6 +2307,28 @@
 @keyframes professorSlideIn {
   from { transform: translateY(30px) scale(0.9); opacity: 0; }
   to { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+/* Premium Scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0d1117;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(20, 184, 166, 0.2);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #14b8a6;
+  background-clip: content-box;
 }
 `;
 
@@ -1147,6 +2660,147 @@
   top: -12px;
   border-bottom-color: #ef4444;
 }
+
+/* Positions Panel */
+#${IDS.pnlHud} .positionsPanel {
+  border-top: 1px solid rgba(20,184,166,0.1);
+}
+
+#${IDS.pnlHud} .positionsHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  cursor: pointer;
+  background: rgba(20,184,166,0.03);
+  transition: background 0.2s;
+}
+
+#${IDS.pnlHud} .positionsHeader:hover {
+  background: rgba(20,184,166,0.08);
+}
+
+#${IDS.pnlHud} .positionsTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+#${IDS.pnlHud} .positionCount {
+  color: #14b8a6;
+  font-weight: 800;
+}
+
+#${IDS.pnlHud} .positionsToggle {
+  color: #64748b;
+  transition: transform 0.2s;
+}
+
+#${IDS.pnlHud} .positionsToggle.expanded {
+  transform: rotate(180deg);
+}
+
+#${IDS.pnlHud} .positionsList {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+#${IDS.pnlHud} .positionRow {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 16px;
+  align-items: center;
+  padding: 14px 20px;
+  border-bottom: 1px solid rgba(20,184,166,0.05);
+  transition: background 0.15s;
+}
+
+#${IDS.pnlHud} .positionRow:hover {
+  background: rgba(20,184,166,0.05);
+}
+
+#${IDS.pnlHud} .positionRow:last-child {
+  border-bottom: none;
+}
+
+#${IDS.pnlHud} .positionInfo {
+  min-width: 0;
+}
+
+#${IDS.pnlHud} .positionSymbol {
+  font-size: 14px;
+  font-weight: 700;
+  color: #f8fafc;
+  margin-bottom: 2px;
+}
+
+#${IDS.pnlHud} .positionDetails {
+  display: flex;
+  gap: 12px;
+  font-size: 10px;
+  color: #64748b;
+}
+
+#${IDS.pnlHud} .positionPnl {
+  text-align: right;
+  min-width: 100px;
+}
+
+#${IDS.pnlHud} .positionPnl .pnlValue {
+  font-size: 13px;
+  font-weight: 700;
+  color: #64748b;
+}
+
+#${IDS.pnlHud} .positionPnl .pnlPct {
+  font-size: 10px;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+#${IDS.pnlHud} .positionPnl.positive .pnlValue,
+#${IDS.pnlHud} .positionPnl.positive .pnlPct {
+  color: #10b981;
+}
+
+#${IDS.pnlHud} .positionPnl.negative .pnlValue,
+#${IDS.pnlHud} .positionPnl.negative .pnlPct {
+  color: #ef4444;
+}
+
+#${IDS.pnlHud} .quickSellBtns {
+  display: flex;
+  gap: 6px;
+}
+
+#${IDS.pnlHud} .qSellBtn {
+  background: rgba(239,68,68,0.1);
+  border: 1px solid rgba(239,68,68,0.2);
+  color: #ef4444;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+#${IDS.pnlHud} .qSellBtn:hover {
+  background: rgba(239,68,68,0.2);
+  border-color: rgba(239,68,68,0.4);
+}
+
+#${IDS.pnlHud} .noPositions {
+  padding: 20px;
+  text-align: center;
+  color: #64748b;
+  font-size: 12px;
+}
 `;
 
   // src/modules/ui/buy-hud-styles.js
@@ -1414,12 +3068,14 @@
 }
 
 .market-badge.gated {
-    background: linear-gradient(90deg, rgba(168, 85, 247, 0.1), rgba(139, 92, 246, 0.1));
-    border: 1px dashed rgba(168, 85, 247, 0.3);
-    color: #a855f7;
+    background: rgba(139, 92, 246, 0.05);
+    border: 1px solid rgba(139, 92, 246, 0.15);
+    color: #818cf8;
     justify-content: center;
-    gap: 8px;
-    font-weight: 700;
+    gap: 6px;
+    font-weight: 600;
+    font-size: 10px;
+    padding: 6px 10px;
 }
 
 .market-badge.loading {
@@ -1437,6 +3093,207 @@
 .market-badge .mitem span {
     color: #f8fafc;
     margin-left: 4px;
+}
+
+/* Trade Plan Section Styles */
+.trade-plan-section {
+    margin-top: 14px;
+    padding: 12px;
+    background: rgba(99, 102, 241, 0.05);
+    border: 1px solid rgba(99, 102, 241, 0.15);
+    border-radius: 10px;
+}
+
+.trade-plan-section.gated {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(139, 92, 246, 0.08));
+    border: 1px dashed rgba(99, 102, 241, 0.3);
+    cursor: pointer;
+    text-align: center;
+    padding: 16px 12px;
+    transition: all 0.2s;
+}
+
+.trade-plan-section.gated:hover {
+    border-color: rgba(99, 102, 241, 0.5);
+    background: rgba(99, 102, 241, 0.1);
+}
+
+.plan-gated-badge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: #6366f1;
+    font-weight: 700;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.plan-gated-hint {
+    color: #64748b;
+    font-size: 10px;
+    margin-top: 4px;
+}
+
+.plan-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+
+.plan-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #94a3b8;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.plan-title svg {
+    color: #6366f1;
+}
+
+.plan-tag {
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    color: white;
+    font-size: 8px;
+    font-weight: 800;
+    padding: 2px 6px;
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+}
+
+.plan-row {
+    display: flex;
+    gap: 10px;
+}
+
+.plan-field {
+    flex: 1;
+}
+
+.plan-field.full {
+    margin-top: 10px;
+}
+
+.plan-label {
+    display: block;
+    color: #64748b;
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-bottom: 4px;
+}
+
+.plan-label .optional {
+    color: #475569;
+    font-weight: 500;
+    text-transform: none;
+}
+
+.plan-input-wrap {
+    display: flex;
+    align-items: center;
+    background: #161b22;
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    border-radius: 6px;
+    overflow: hidden;
+    transition: border-color 0.2s;
+}
+
+.plan-input-wrap:focus-within {
+    border-color: #6366f1;
+}
+
+.plan-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: #f8fafc;
+    padding: 8px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    outline: none;
+    width: 100%;
+    min-width: 0;
+}
+
+.plan-input::placeholder {
+    color: #475569;
+}
+
+.plan-unit {
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 600;
+    padding-right: 10px;
+    text-transform: uppercase;
+}
+
+.plan-textarea {
+    width: 100%;
+    background: #161b22;
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    border-radius: 6px;
+    color: #f8fafc;
+    padding: 8px 10px;
+    font-size: 11px;
+    font-family: inherit;
+    outline: none;
+    resize: none;
+    transition: border-color 0.2s;
+}
+
+.plan-textarea::placeholder {
+    color: #475569;
+}
+
+.plan-textarea:focus {
+    border-color: #6366f1;
+}
+
+.plan-toggle {
+    margin-top: 12px;
+    padding: 8px 12px;
+    background: rgba(99, 102, 241, 0.05);
+    border: 1px solid rgba(99, 102, 241, 0.15);
+    border-radius: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    color: #94a3b8;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    transition: all 0.2s;
+}
+
+.plan-toggle:hover {
+    background: rgba(99, 102, 241, 0.1);
+    border-color: rgba(99, 102, 241, 0.3);
+    color: #6366f1;
+}
+
+.plan-collapse-arrow {
+    cursor: pointer;
+    color: #64748b;
+    padding: 2px 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+}
+
+.plan-collapse-arrow:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: #94a3b8;
 }
 `;
 
@@ -2247,8 +4104,211 @@ input:checked + .slider:before {
 .behavior-stat-item .v { font-size: 16px; font-weight: 800; color: #f8fafc; }
 `;
 
+  // src/modules/ui/settings-panel-styles.js
+  var SETTINGS_PANEL_CSS = `
+/* Section titles */
+.settings-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 20px 0 12px 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(20,184,166,0.08);
+}
+
+/* Tier badges */
+.tier-badge {
+  font-size: 9px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+}
+
+.tier-badge.pro {
+  background: rgba(99,102,241,0.15);
+  color: #818cf8;
+}
+
+.tier-badge.elite {
+  background: rgba(245,158,11,0.15);
+  color: #f59e0b;
+}
+
+/* Privacy info box */
+.privacy-info-box {
+  background: rgba(20,184,166,0.03);
+  border: 1px solid rgba(20,184,166,0.08);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+}
+
+.privacy-info-box p {
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.5;
+  margin: 0 0 6px 0;
+}
+
+.privacy-info-box p:last-child {
+  margin-bottom: 0;
+}
+
+/* Diagnostics status */
+.diag-status {
+  background: #0d1117;
+  border: 1px solid rgba(20,184,166,0.08);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+}
+
+.diag-status-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+}
+
+.diag-label {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.diag-value {
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+.diag-value.enabled {
+  color: #10b981;
+}
+
+.diag-value.disabled {
+  color: #64748b;
+}
+
+.diag-value.error {
+  color: #ef4444;
+  font-size: 10px;
+  max-width: 200px;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Settings action buttons */
+.settings-btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.settings-action-btn {
+  flex: 1;
+  min-width: 120px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid rgba(20,184,166,0.15);
+  background: rgba(20,184,166,0.05);
+  color: #94a3b8;
+  transition: all 0.2s;
+}
+
+.settings-action-btn:hover {
+  background: rgba(20,184,166,0.1);
+  border-color: rgba(20,184,166,0.3);
+  color: #14b8a6;
+}
+
+.settings-action-btn.danger {
+  border-color: rgba(239,68,68,0.15);
+  background: rgba(239,68,68,0.05);
+}
+
+.settings-action-btn.danger:hover {
+  background: rgba(239,68,68,0.1);
+  border-color: rgba(239,68,68,0.3);
+  color: #ef4444;
+}
+
+/* Feature cards */
+.feature-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.feature-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: #0d1117;
+  border: 1px solid rgba(100,116,139,0.12);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.feature-card:hover {
+  background: rgba(20,184,166,0.03);
+  border-color: rgba(20,184,166,0.15);
+  transform: translateX(2px);
+}
+
+.feature-card-lock {
+  font-size: 16px;
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+.feature-card-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.feature-card-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #e2e8f0;
+  margin-bottom: 2px;
+}
+
+.feature-card-desc {
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+.feature-card-badge {
+  font-size: 9px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: rgba(100,116,139,0.1);
+}
+`;
+
   // src/modules/ui/styles.js
-  var CSS = COMMON_CSS + BANNER_CSS + PNL_HUD_CSS + BUY_HUD_CSS + MODALS_CSS + PROFESSOR_CSS + THEME_OVERRIDES_CSS + ELITE_CSS;
+  var CSS = COMMON_CSS + BANNER_CSS + PNL_HUD_CSS + BUY_HUD_CSS + MODALS_CSS + PROFESSOR_CSS + THEME_OVERRIDES_CSS + ELITE_CSS + SETTINGS_PANEL_CSS;
 
   // src/modules/ui/overlay.js
   var OverlayManager = {
@@ -2257,8 +4317,19 @@ input:checked + .slider:before {
     init(platformName) {
       this.createShadowRoot();
       this.injectStyles();
+      this.injectPageBridge();
       if (platformName === "Padre") {
       }
+    },
+    injectPageBridge() {
+      if (document.getElementById("paper-page-bridge"))
+        return;
+      const script = document.createElement("script");
+      script.id = "paper-page-bridge";
+      script.src = chrome.runtime.getURL("src/page-bridge.js");
+      script.onload = () => console.log("[ZER\xD8] Page bridge injected for network price interception");
+      script.onerror = (e) => console.error("[ZER\xD8] Failed to inject page bridge:", e);
+      (document.head || document.documentElement).appendChild(script);
     },
     getShadowRoot() {
       if (this.shadowRoot && this.shadowHost && this.shadowHost.isConnected) {
@@ -2312,16 +4383,8 @@ input:checked + .slider:before {
     }
   };
 
-  // src/content.boot.js
-  init_market();
-
-  // src/modules/ui/hud.js
+  // src/modules/ui/professor.js
   init_store();
-  init_market();
-
-  // src/modules/ui/banner.js
-  init_store();
-  init_featureManager();
 
   // src/modules/ui/icons.js
   var ICONS = {
@@ -2341,10 +4404,158 @@ input:checked + .slider:before {
     LOCK: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`,
     BRAIN: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.97-3.06 2.5 2.5 0 0 1-1.95-4.36 2.5 2.5 0 0 1 2-4.11 2.5 2.5 0 0 1 5.38-2.45Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.97-3.06 2.5 2.5 0 0 0 1.95-4.36 2.5 2.5 0 0 0-2-4.11 2.5 2.5 0 0 0-5.38-2.45Z"/></svg>`,
     SHARE: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12V4a2 2 0 0 1 2-2h10l4 4v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2"/><path d="M14 2v4h4"/><path d="m8 18 3 3 6-6"/></svg>`,
-    X: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`
+    X: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`,
+    DOWNLOAD: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`,
+    FILE_JSON: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M10 12a1 1 0 0 0-1 1v1a1 1 0 0 1-1 1 1 1 0 0 1 1 1v1a1 1 0 0 0 1 1"/><path d="M14 18a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1 1 1 0 0 1-1-1v-1a1 1 0 0 0-1-1"/></svg>`,
+    FILE_CSV: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>`,
+    USER: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`,
+    CHART_BAR: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>`,
+    CLOCK: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`,
+    ALERT_CIRCLE: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`,
+    TROPHY: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>`,
+    CHEVRON_DOWN: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>`,
+    CHEVRON_UP: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>`
   };
 
+  // src/modules/ui/professor.js
+  var Professor = {
+    currentStep: 0,
+    steps: [
+      {
+        title: "Welcome to ZER\xD8",
+        body: "ZER\xD8 is a secure paper trading overlay for Solana.<br>Practice strategies on real charts without risking real funds.",
+        icon: ICONS.BRAIN || "\u{1F9E0}"
+      },
+      {
+        title: "Track Your Performance",
+        body: "Monitor your session P&L, win rates, and streaks in real-time.<br>Stats update instantly as you trade.",
+        icon: "\u{1F4CA}"
+      },
+      {
+        title: "Start Fresh Anytime",
+        body: "Use the <strong>Reset</strong> button to clear your current session stats and start a fresh run.<br>Your trade history is always preserved.",
+        icon: "\u{1F504}"
+      },
+      {
+        title: "Privacy First",
+        body: "All trading data is stored locally on your device.<br>We do not track your personal trades or access your wallet.",
+        icon: "\u{1F6E1}\uFE0F"
+      },
+      {
+        title: "You're All Set",
+        body: "ZER\xD8 will stay out of the way while you practice.<br>Open <strong>Settings</strong> to replay this walkthrough anytime.",
+        icon: "\u{1F680}"
+      }
+    ],
+    async init() {
+      const s = Store.state.settings;
+      if (!s.onboardingSeen) {
+        setTimeout(() => this.startWalkthrough(), 1500);
+      }
+    },
+    startWalkthrough(force = false) {
+      if (!force && Store.state.settings.onboardingSeen)
+        return;
+      this.currentStep = 0;
+      this.renderStep(this.currentStep);
+    },
+    renderStep(index) {
+      const step = this.steps[index];
+      if (!step) {
+        this.complete();
+        return;
+      }
+      const container = OverlayManager.getContainer();
+      let overlay = container.querySelector(".professor-overlay");
+      if (!overlay) {
+        overlay = document.createElement("div");
+        overlay.className = "professor-overlay";
+        overlay.style.position = "fixed";
+        overlay.style.bottom = "120px";
+        overlay.style.left = "50%";
+        overlay.style.transform = "translateX(-50%)";
+        overlay.style.zIndex = "1000000";
+        container.appendChild(overlay);
+      }
+      const isLast = index === this.steps.length - 1;
+      overlay.innerHTML = `
+            <div class="professor-container" style="
+                background: #0f172a; 
+                border: 1px solid rgba(20,184,166,0.5); 
+                box-shadow: 0 20px 50px rgba(0,0,0,0.8); 
+                padding: 20px; 
+                border-radius: 12px; 
+                width: 320px; 
+                text-align: center;
+                animation: fadeIn 0.3s ease-out;
+                pointer-events: auto;
+            ">
+                <div style="font-size:32px; margin-bottom:12px;">${step.icon}</div>
+                <div style="font-size:16px; font-weight:700; color:#f8fafc; margin-bottom:8px;">${step.title}</div>
+                <div style="font-size:13px; color:#94a3b8; line-height:1.5; margin-bottom:20px; min-height:40px;">${step.body}</div>
+                
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <div style="display:flex; gap:4px;">
+                        ${this.steps.map((_, i) => `
+                            <div style="
+                                width:6px; height:6px; border-radius:50%; 
+                                background:${i === index ? "#14b8a6" : "#334155"};
+                                transition: background 0.3s;
+                            "></div>
+                        `).join("")}
+                    </div>
+                    <div style="display:flex; gap:10px;">
+                        ${!isLast ? `<button class="prof-skip" style="background:transparent; border:none; color:#64748b; font-size:12px; cursor:pointer;">Skip</button>` : ""}
+                        <button class="prof-next" style="
+                            background: rgba(20,184,166,0.2); 
+                            color: #14b8a6; 
+                            border: 1px solid rgba(20,184,166,0.3); 
+                            padding: 6px 16px; 
+                            border-radius: 6px; 
+                            font-size: 13px; 
+                            font-weight: 600;
+                            cursor: pointer;
+                        ">${isLast ? "Finish" : "Next"}</button>
+                    </div>
+                </div>
+            </div>
+        `;
+      const nextBtn = overlay.querySelector(".prof-next");
+      const skipBtn = overlay.querySelector(".prof-skip");
+      nextBtn.onclick = () => this.next();
+      if (skipBtn)
+        skipBtn.onclick = () => this.complete();
+    },
+    next() {
+      this.currentStep++;
+      this.renderStep(this.currentStep);
+    },
+    async complete() {
+      const overlay = OverlayManager.getContainer().querySelector(".professor-overlay");
+      if (overlay)
+        overlay.remove();
+      if (!Store.state.settings.onboardingSeen) {
+        Store.state.settings.onboardingSeen = true;
+        Store.state.settings.onboardingCompletedAt = Date.now();
+        Store.state.settings.onboardingCompletedAt = Date.now();
+        Store.state.settings.onboardingVersion = Store.state.version || "1.11.8";
+        await Store.save();
+      }
+    }
+  };
+
+  // src/content.boot.js
+  init_store();
+  init_featureManager();
+  init_market();
+
+  // src/modules/ui/hud.js
+  init_store();
+  init_market();
+
   // src/modules/ui/banner.js
+  init_store();
+  init_featureManager();
   var Banner = {
     mountBanner() {
       const root = OverlayManager.getShadowRoot();
@@ -2437,6 +4648,7 @@ input:checked + .slider:before {
 
   // src/modules/ui/pnl-hud.js
   init_store();
+  init_diagnostics_store();
   init_featureManager();
 
   // src/modules/core/pnl-calculator.js
@@ -2463,13 +4675,16 @@ input:checked + .slider:before {
     async fetchSolPriceBackground() {
       console.log("[PNL] Fetching SOL price from CoinGecko...");
       try {
-        const response = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd", {
-          signal: AbortSignal.timeout(5e3)
-          // Increase timeout from 3s to 5s
+        const response = await chrome.runtime.sendMessage({
+          type: "PROXY_FETCH",
+          url: "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd",
+          options: { method: "GET" }
         });
-        const data = await response.json();
+        if (!response.ok)
+          throw new Error(response.statusText || response.error || "Fetch failed");
+        const data = response.data;
         const solPrice = data?.solana?.usd;
-        if (solPrice && solPrice > 50 && solPrice < 500) {
+        if (solPrice && solPrice > 10 && solPrice < 3e3) {
           this.cachedSolPrice = solPrice;
           this.lastValidSolPrice = solPrice;
           this.lastSolPriceFetch = Date.now();
@@ -2497,7 +4712,7 @@ input:checked + .slider:before {
       if (!Number.isFinite(n))
         return "0.0000";
       if (Math.abs(n) < 1 && n !== 0) {
-        return n.toFixed(6);
+        return n.toFixed(9);
       }
       return n.toFixed(4);
     },
@@ -2526,6 +4741,7 @@ input:checked + .slider:before {
           currentPrice = Market.price;
           const oldPrice = pos.lastPriceUsd || pos.entryPriceUsd;
           if (!pos.lastPriceUsd || Math.abs(oldPrice - Market.price) / oldPrice > 1e-3) {
+            console.log(`[PNL] Updating ${pos.symbol} price: $${oldPrice.toFixed(8)} \u2192 $${Market.price.toFixed(8)}`);
             pos.lastPriceUsd = Market.price;
             priceWasUpdated = true;
           }
@@ -2564,7 +4780,7 @@ input:checked + .slider:before {
   init_analytics();
   init_featureManager();
   var OrderExecution = {
-    async buy(amountSol, strategy = "Trend", tokenInfo = null) {
+    async buy(amountSol, strategy = "Trend", tokenInfo = null, tradePlan = null) {
       const state = Store.state;
       if (!state.settings.enabled)
         return { success: false, error: "Paper trading disabled" };
@@ -2572,7 +4788,15 @@ input:checked + .slider:before {
         return { success: false, error: "Invalid amount" };
       if (amountSol > state.session.balance)
         return { success: false, error: "Insufficient funds" };
-      let price = Market.price || 1e-6;
+      if (!Market.priceIsFresh && Date.now() - Market.lastPriceTs > 5e3) {
+        console.warn(`[Trading] Price data is ${((Date.now() - Market.lastPriceTs) / 1e3).toFixed(1)}s old`);
+      }
+      let price = Market.price || 0;
+      if (price <= 0)
+        return { success: false, error: "Waiting for price data..." };
+      if (price >= 50 && price <= 500) {
+        return { success: false, error: `Price appears to be SOL price ($${price.toFixed(2)}). Wait for token price.` };
+      }
       let marketCap = Market.marketCap || 0;
       if (price > 1e4 && marketCap > 0 && marketCap < 1e4) {
         console.warn(`[Trading] SWAP DETECTED! Price=${price} MarketCap=${marketCap}. Swapping...`);
@@ -2610,6 +4834,7 @@ input:checked + .slider:before {
       pos.lastPriceUsd = price;
       pos.totalSolSpent += amountSol;
       const tradeId = `trade_${Date.now()}_${Math.floor(Math.random() * 1e3)}`;
+      const plan = tradePlan || {};
       const trade = {
         id: tradeId,
         ts: Date.now(),
@@ -2621,7 +4846,12 @@ input:checked + .slider:before {
         priceUsd: price,
         marketCap,
         strategy: FeatureManager.resolveFlags(state, "STRATEGY_TAGGING").interactive ? strategy || "Trend" : "Trend",
-        mode: state.settings.tradingMode || "paper"
+        mode: state.settings.tradingMode || "paper",
+        // Trade Plan (PRO feature)
+        plannedStop: plan.plannedStop || null,
+        plannedTarget: plan.plannedTarget || null,
+        entryThesis: plan.entryThesis || "",
+        riskDefined: plan.riskDefined || false
       };
       if (!state.trades)
         state.trades = {};
@@ -2630,6 +4860,8 @@ input:checked + .slider:before {
         state.session.trades = [];
       state.session.trades.push(tradeId);
       Analytics.calculateDiscipline(trade, state);
+      Analytics.logTradeEvent(state, trade);
+      this.checkMilestones(trade, state);
       window.postMessage({ __paper: true, type: "PAPER_DRAW_MARKER", trade }, "*");
       await Store.save();
       return { success: true, trade, position: pos };
@@ -2638,9 +4870,15 @@ input:checked + .slider:before {
       const state = Store.state;
       if (!state.settings.enabled)
         return { success: false, error: "Paper trading disabled" };
+      if (!Market.priceIsFresh && Date.now() - Market.lastPriceTs > 5e3) {
+        console.warn(`[Trading] Price data is ${((Date.now() - Market.lastPriceTs) / 1e3).toFixed(1)}s old`);
+      }
       let currentPrice = Market.price || 0;
       if (currentPrice <= 0)
         return { success: false, error: "No price data" };
+      if (currentPrice >= 50 && currentPrice <= 500) {
+        return { success: false, error: `Price appears to be SOL price ($${currentPrice.toFixed(2)})` };
+      }
       if (currentPrice > 1e4) {
         console.error(`[Trading] INVALID PRICE for SELL: $${currentPrice}`);
         return { success: false, error: `Price data invalid ($${currentPrice.toFixed(2)}). Wait for chart to load.` };
@@ -2690,6 +4928,8 @@ input:checked + .slider:before {
       state.session.trades.push(tradeId);
       Analytics.calculateDiscipline(trade, state);
       Analytics.updateStreaks(trade, state);
+      Analytics.logTradeEvent(state, trade);
+      this.checkMilestones(trade, state);
       window.postMessage({ __paper: true, type: "PAPER_DRAW_MARKER", trade }, "*");
       await Store.save();
       return { success: true, trade };
@@ -2701,6 +4941,39 @@ input:checked + .slider:before {
       Object.assign(state.trades[tradeId], updates);
       await Store.save();
       return true;
+    },
+    checkMilestones(trade, state) {
+      const tradeCount = Object.keys(state.trades || {}).length;
+      const sellTrades = Object.values(state.trades || {}).filter((t) => t.side === "SELL");
+      const wins = sellTrades.filter((t) => (t.realizedPnlSol || 0) > 0).length;
+      if (tradeCount === 1) {
+        Analytics.logMilestone(state, "FIRST_TRADE", "First trade executed! Welcome to ZER\xD8.", { tradeCount });
+      } else if (tradeCount === 10) {
+        Analytics.logMilestone(state, "TRADE_10", "10 trades completed. Building your baseline.", { tradeCount });
+      } else if (tradeCount === 50) {
+        Analytics.logMilestone(state, "TRADE_50", "50 trades! You have a solid trading history.", { tradeCount });
+      } else if (tradeCount === 100) {
+        Analytics.logMilestone(state, "TRADE_100", "100 trades milestone! Veteran status unlocked.", { tradeCount });
+      }
+      const winStreak = state.session.winStreak || 0;
+      if (winStreak === 5) {
+        Analytics.logMilestone(state, "WIN_STREAK_5", "5 wins in a row! Keep the discipline.", { winStreak });
+      } else if (winStreak === 10) {
+        Analytics.logMilestone(state, "WIN_STREAK_10", "10 consecutive wins! Elite performance.", { winStreak });
+      }
+      const startSol = state.settings.startSol || 10;
+      const currentEquity = state.session.balance + (state.session.realized || 0);
+      const equityMultiple = currentEquity / startSol;
+      if (equityMultiple >= 2 && !state._milestone_2x) {
+        Analytics.logMilestone(state, "EQUITY_2X", "Portfolio doubled! 2x achieved.", { equityMultiple: equityMultiple.toFixed(2) });
+        state._milestone_2x = true;
+      } else if (equityMultiple >= 3 && !state._milestone_3x) {
+        Analytics.logMilestone(state, "EQUITY_3X", "Portfolio tripled! 3x achieved.", { equityMultiple: equityMultiple.toFixed(2) });
+        state._milestone_3x = true;
+      } else if (equityMultiple >= 5 && !state._milestone_5x) {
+        Analytics.logMilestone(state, "EQUITY_5X", "Portfolio 5x! Legendary.", { equityMultiple: equityMultiple.toFixed(2) });
+        state._milestone_5x = true;
+      }
     }
   };
 
@@ -2715,7 +4988,7 @@ input:checked + .slider:before {
     calculateDiscipline: (trade, state) => Analytics.calculateDiscipline(trade, state),
     updateStreaks: (trade, state) => Analytics.updateStreaks(trade, state),
     // Order Execution methods
-    buy: async (amountSol, strategy, tokenInfo) => await OrderExecution.buy(amountSol, strategy, tokenInfo),
+    buy: async (amountSol, strategy, tokenInfo, tradePlan) => await OrderExecution.buy(amountSol, strategy, tokenInfo, tradePlan),
     sell: async (pct, strategy, tokenInfo) => await OrderExecution.sell(pct, strategy, tokenInfo),
     tagTrade: async (tradeId, updates) => await OrderExecution.tagTrade(tradeId, updates)
   };
@@ -2950,6 +5223,7 @@ input:checked + .slider:before {
   // src/modules/ui/dashboard.js
   init_store();
   init_analytics();
+  init_market();
 
   // src/modules/ui/dashboard-styles.js
   var DASHBOARD_CSS = `
@@ -3104,6 +5378,1421 @@ canvas#equity-canvas {
 
   // src/modules/ui/dashboard.js
   init_featureManager();
+
+  // src/modules/ui/session-replay.js
+  init_store();
+  init_analytics();
+  init_featureManager();
+  var SESSION_REPLAY_CSS = `
+.replay-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.9);
+    z-index: 2147483647;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.replay-modal {
+    background: linear-gradient(145deg, #0d1117, #161b22);
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    border-radius: 16px;
+    width: 800px;
+    max-width: 95vw;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5);
+}
+
+.replay-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid rgba(139, 92, 246, 0.2);
+    background: rgba(139, 92, 246, 0.05);
+}
+
+.replay-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    font-weight: 800;
+    color: #a78bfa;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.replay-title svg {
+    width: 20px;
+    height: 20px;
+}
+
+.replay-close {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #94a3b8;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.replay-close:hover {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.3);
+    color: #ef4444;
+}
+
+.replay-stats {
+    display: flex;
+    gap: 20px;
+    padding: 12px 20px;
+    background: rgba(0, 0, 0, 0.3);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.replay-stat {
+    text-align: center;
+}
+
+.replay-stat .k {
+    font-size: 10px;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
+
+.replay-stat .v {
+    font-size: 16px;
+    font-weight: 700;
+    color: #f8fafc;
+}
+
+.replay-filters {
+    display: flex;
+    gap: 8px;
+    padding: 12px 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    flex-wrap: wrap;
+}
+
+.filter-btn {
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: transparent;
+    color: #64748b;
+}
+
+.filter-btn:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.filter-btn.active {
+    background: rgba(139, 92, 246, 0.2);
+    border-color: rgba(139, 92, 246, 0.5);
+    color: #a78bfa;
+}
+
+.filter-btn.trade { --accent: #14b8a6; }
+.filter-btn.alert { --accent: #ef4444; }
+.filter-btn.discipline { --accent: #f59e0b; }
+.filter-btn.milestone { --accent: #10b981; }
+
+.filter-btn.active.trade { background: rgba(20, 184, 166, 0.2); border-color: rgba(20, 184, 166, 0.5); color: #14b8a6; }
+.filter-btn.active.alert { background: rgba(239, 68, 68, 0.2); border-color: rgba(239, 68, 68, 0.5); color: #ef4444; }
+.filter-btn.active.discipline { background: rgba(245, 158, 11, 0.2); border-color: rgba(245, 158, 11, 0.5); color: #f59e0b; }
+.filter-btn.active.milestone { background: rgba(16, 185, 129, 0.2); border-color: rgba(16, 185, 129, 0.5); color: #10b981; }
+
+.replay-timeline {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 20px;
+}
+
+.timeline-empty {
+    text-align: center;
+    padding: 40px 20px;
+    color: #64748b;
+}
+
+.timeline-empty svg {
+    width: 48px;
+    height: 48px;
+    margin-bottom: 12px;
+    opacity: 0.5;
+}
+
+.timeline-event {
+    display: flex;
+    gap: 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+    transition: background 0.2s;
+}
+
+.timeline-event:hover {
+    background: rgba(255, 255, 255, 0.02);
+    margin: 0 -20px;
+    padding: 12px 20px;
+}
+
+.timeline-event:last-child {
+    border-bottom: none;
+}
+
+.event-time {
+    flex-shrink: 0;
+    width: 60px;
+    font-size: 11px;
+    color: #64748b;
+    font-weight: 500;
+}
+
+.event-icon {
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.event-icon.trade { background: rgba(20, 184, 166, 0.15); color: #14b8a6; }
+.event-icon.alert { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+.event-icon.discipline { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+.event-icon.milestone { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+.event-icon.system { background: rgba(99, 102, 241, 0.15); color: #6366f1; }
+
+.event-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.event-type {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
+
+.event-type.trade { color: #14b8a6; }
+.event-type.alert { color: #ef4444; }
+.event-type.discipline { color: #f59e0b; }
+.event-type.milestone { color: #10b981; }
+.event-type.system { color: #6366f1; }
+
+.event-message {
+    font-size: 13px;
+    color: #e2e8f0;
+    line-height: 1.4;
+}
+
+.event-data {
+    display: flex;
+    gap: 12px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+}
+
+.event-tag {
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.05);
+    color: #94a3b8;
+}
+
+.event-tag.win { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+.event-tag.loss { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+
+.replay-footer {
+    padding: 12px 20px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.replay-count {
+    font-size: 11px;
+    color: #64748b;
+}
+
+.replay-elite-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    color: #a78bfa;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.locked-replay {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 40px;
+    text-align: center;
+}
+
+.locked-replay svg {
+    width: 64px;
+    height: 64px;
+    color: #a78bfa;
+    margin-bottom: 20px;
+}
+
+.locked-replay h3 {
+    color: #f8fafc;
+    font-size: 18px;
+    margin: 0 0 8px;
+}
+
+.locked-replay p {
+    color: #64748b;
+    font-size: 13px;
+    margin: 0 0 20px;
+    max-width: 300px;
+}
+
+.unlock-btn {
+    background: linear-gradient(135deg, #8b5cf6, #a78bfa);
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.unlock-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(139, 92, 246, 0.3);
+}
+`;
+  var SessionReplay = {
+    isOpen: false,
+    activeFilters: ["TRADE", "ALERT", "DISCIPLINE", "MILESTONE"],
+    open() {
+      this.isOpen = true;
+      this.render();
+    },
+    close() {
+      this.isOpen = false;
+      const overlay = OverlayManager.getShadowRoot().querySelector(".replay-overlay");
+      if (overlay)
+        overlay.remove();
+    },
+    toggle() {
+      if (this.isOpen)
+        this.close();
+      else
+        this.open();
+    },
+    render() {
+      const root = OverlayManager.getShadowRoot();
+      let overlay = root.querySelector(".replay-overlay");
+      if (!overlay) {
+        overlay = document.createElement("div");
+        overlay.className = "replay-overlay";
+        if (!root.getElementById("replay-styles")) {
+          const style = document.createElement("style");
+          style.id = "replay-styles";
+          style.textContent = SESSION_REPLAY_CSS;
+          root.appendChild(style);
+        }
+        root.appendChild(overlay);
+      }
+      const state = Store.state;
+      const flags = FeatureManager.resolveFlags(state, "SESSION_REPLAY");
+      const eventStats = Analytics.getEventStats(state);
+      const session = state.session || {};
+      if (flags.gated) {
+        overlay.innerHTML = this.renderLockedState();
+        this.bindLockedEvents(overlay);
+        return;
+      }
+      const events = this.getFilteredEvents(state);
+      overlay.innerHTML = `
+            <div class="replay-modal">
+                <div class="replay-header">
+                    <div class="replay-title">
+                        ${ICONS.BRAIN}
+                        <span>Session Replay</span>
+                    </div>
+                    <button class="replay-close">${ICONS.X}</button>
+                </div>
+
+                <div class="replay-stats">
+                    <div class="replay-stat">
+                        <div class="k">Session ID</div>
+                        <div class="v" style="font-size:11px; color:#a78bfa;">${session.id ? session.id.split("_")[1] : "--"}</div>
+                    </div>
+                    <div class="replay-stat">
+                        <div class="k">Duration</div>
+                        <div class="v">${Store.getSessionDuration()} min</div>
+                    </div>
+                    <div class="replay-stat">
+                        <div class="k">Total Events</div>
+                        <div class="v">${eventStats.total}</div>
+                    </div>
+                    <div class="replay-stat">
+                        <div class="k">Trades</div>
+                        <div class="v" style="color:#14b8a6;">${eventStats.trades}</div>
+                    </div>
+                    <div class="replay-stat">
+                        <div class="k">Alerts</div>
+                        <div class="v" style="color:#ef4444;">${eventStats.alerts}</div>
+                    </div>
+                    <div class="replay-stat">
+                        <div class="k">Discipline</div>
+                        <div class="v" style="color:#f59e0b;">${eventStats.disciplineEvents}</div>
+                    </div>
+                </div>
+
+                <div class="replay-filters">
+                    <button class="filter-btn trade ${this.activeFilters.includes("TRADE") ? "active" : ""}" data-filter="TRADE">
+                        Trades (${eventStats.trades})
+                    </button>
+                    <button class="filter-btn alert ${this.activeFilters.includes("ALERT") ? "active" : ""}" data-filter="ALERT">
+                        Alerts (${eventStats.alerts})
+                    </button>
+                    <button class="filter-btn discipline ${this.activeFilters.includes("DISCIPLINE") ? "active" : ""}" data-filter="DISCIPLINE">
+                        Discipline (${eventStats.disciplineEvents})
+                    </button>
+                    <button class="filter-btn milestone ${this.activeFilters.includes("MILESTONE") ? "active" : ""}" data-filter="MILESTONE">
+                        Milestones (${eventStats.milestones})
+                    </button>
+                </div>
+
+                <div class="replay-timeline">
+                    ${events.length > 0 ? this.renderEvents(events) : this.renderEmpty()}
+                </div>
+
+                <div class="replay-footer">
+                    <div class="replay-count">Showing ${events.length} of ${eventStats.total} events</div>
+                    <div class="replay-elite-badge">
+                        ${ICONS.BRAIN} ELITE FEATURE
+                    </div>
+                </div>
+            </div>
+        `;
+      this.bindEvents(overlay);
+    },
+    renderLockedState() {
+      return `
+            <div class="replay-modal">
+                <div class="replay-header">
+                    <div class="replay-title">
+                        ${ICONS.BRAIN}
+                        <span>Session Replay</span>
+                    </div>
+                    <button class="replay-close">${ICONS.X}</button>
+                </div>
+                <div class="locked-replay">
+                    ${ICONS.LOCK}
+                    <h3>Session Replay is Elite</h3>
+                    <p>Review your entire trading session with a visual timeline of trades, alerts, discipline events, and milestones.</p>
+                    <button class="unlock-btn">Upgrade to Elite</button>
+                </div>
+            </div>
+        `;
+    },
+    renderEmpty() {
+      return `
+            <div class="timeline-empty">
+                ${ICONS.TARGET}
+                <div style="font-size:14px; font-weight:600; margin-bottom:4px;">No events yet</div>
+                <div style="font-size:12px;">Start trading to build your session timeline</div>
+            </div>
+        `;
+    },
+    renderEvents(events) {
+      return events.map((event) => {
+        const time = new Date(event.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+        const category = event.category.toLowerCase();
+        const icon = this.getEventIcon(event.category);
+        const dataTags = this.renderEventData(event);
+        return `
+                <div class="timeline-event">
+                    <div class="event-time">${time}</div>
+                    <div class="event-icon ${category}">${icon}</div>
+                    <div class="event-content">
+                        <div class="event-type ${category}">${event.type}</div>
+                        <div class="event-message">${event.message}</div>
+                        ${dataTags ? `<div class="event-data">${dataTags}</div>` : ""}
+                    </div>
+                </div>
+            `;
+      }).join("");
+    },
+    renderEventData(event) {
+      const data = event.data || {};
+      const tags = [];
+      if (data.symbol)
+        tags.push(`<span class="event-tag">${data.symbol}</span>`);
+      if (data.strategy)
+        tags.push(`<span class="event-tag">${data.strategy}</span>`);
+      if (data.realizedPnlSol !== void 0 && data.realizedPnlSol !== null) {
+        const pnl = data.realizedPnlSol;
+        const cls = pnl >= 0 ? "win" : "loss";
+        tags.push(`<span class="event-tag ${cls}">${pnl >= 0 ? "+" : ""}${pnl.toFixed(4)} SOL</span>`);
+      }
+      if (data.penalty)
+        tags.push(`<span class="event-tag">-${data.penalty} pts</span>`);
+      if (data.winStreak)
+        tags.push(`<span class="event-tag win">${data.winStreak}W Streak</span>`);
+      if (data.tradeCount)
+        tags.push(`<span class="event-tag">${data.tradeCount} trades</span>`);
+      return tags.join("");
+    },
+    getEventIcon(category) {
+      switch (category) {
+        case "TRADE":
+          return ICONS.TARGET;
+        case "ALERT":
+          return ICONS.TILT;
+        case "DISCIPLINE":
+          return ICONS.BRAIN;
+        case "MILESTONE":
+          return ICONS.WIN;
+        default:
+          return ICONS.ZERO;
+      }
+    },
+    getFilteredEvents(state) {
+      const allEvents = Analytics.getEventLog(state, { limit: 100 });
+      return allEvents.filter((e) => this.activeFilters.includes(e.category));
+    },
+    toggleFilter(category) {
+      const idx = this.activeFilters.indexOf(category);
+      if (idx > -1) {
+        this.activeFilters.splice(idx, 1);
+      } else {
+        this.activeFilters.push(category);
+      }
+      this.render();
+    },
+    bindEvents(overlay) {
+      const closeBtn = overlay.querySelector(".replay-close");
+      if (closeBtn) {
+        closeBtn.onclick = () => this.close();
+      }
+      overlay.onclick = (e) => {
+        if (e.target === overlay)
+          this.close();
+      };
+      overlay.querySelectorAll(".filter-btn").forEach((btn) => {
+        btn.onclick = () => {
+          const filter = btn.getAttribute("data-filter");
+          this.toggleFilter(filter);
+        };
+      });
+    },
+    bindLockedEvents(overlay) {
+      const closeBtn = overlay.querySelector(".replay-close");
+      if (closeBtn) {
+        closeBtn.onclick = () => this.close();
+      }
+      const unlockBtn = overlay.querySelector(".unlock-btn");
+      if (unlockBtn) {
+        unlockBtn.onclick = () => {
+          this.close();
+          Paywall.showUpgradeModal("SESSION_REPLAY");
+        };
+      }
+      overlay.onclick = (e) => {
+        if (e.target === overlay)
+          this.close();
+      };
+    }
+  };
+
+  // src/modules/ui/trader-profile.js
+  init_store();
+  init_analytics();
+  init_featureManager();
+  var PROFILE_CSS = `
+.trader-profile-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(8px);
+    z-index: 999999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.trader-profile-modal {
+    background: linear-gradient(145deg, #0d1117, #161b22);
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    border-radius: 16px;
+    width: 90%;
+    max-width: 800px;
+    max-height: 85vh;
+    overflow: hidden;
+    box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5), 0 0 100px rgba(139, 92, 246, 0.1);
+}
+
+.profile-header {
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(99, 102, 241, 0.1));
+    padding: 20px 24px;
+    border-bottom: 1px solid rgba(139, 92, 246, 0.2);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.profile-header-left {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.profile-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #8b5cf6, #6366f1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+}
+
+.profile-title-section h2 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 800;
+    color: #f8fafc;
+    letter-spacing: -0.5px;
+}
+
+.profile-subtitle {
+    font-size: 11px;
+    color: #64748b;
+    margin-top: 2px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.profile-close {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #94a3b8;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.profile-close:hover {
+    background: rgba(239, 68, 68, 0.2);
+    border-color: rgba(239, 68, 68, 0.3);
+    color: #ef4444;
+}
+
+.profile-content {
+    padding: 24px;
+    overflow-y: auto;
+    max-height: calc(85vh - 90px);
+}
+
+.profile-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+}
+
+.profile-card {
+    background: rgba(30, 41, 59, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    padding: 18px;
+}
+
+.profile-card.full-width {
+    grid-column: span 2;
+}
+
+.profile-card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+}
+
+.profile-card-header svg {
+    color: #8b5cf6;
+}
+
+.profile-card-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.strategy-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.strategy-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 8px;
+}
+
+.strategy-name {
+    font-weight: 700;
+    color: #f8fafc;
+    font-size: 13px;
+}
+
+.strategy-stats {
+    display: flex;
+    gap: 12px;
+    font-size: 11px;
+}
+
+.strategy-stat {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.strategy-stat .label {
+    color: #64748b;
+}
+
+.strategy-stat .value {
+    font-weight: 600;
+}
+
+.strategy-stat .value.positive {
+    color: #10b981;
+}
+
+.strategy-stat .value.negative {
+    color: #ef4444;
+}
+
+.condition-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.condition-item {
+    padding: 12px;
+    background: rgba(239, 68, 68, 0.05);
+    border: 1px solid rgba(239, 68, 68, 0.15);
+    border-radius: 8px;
+}
+
+.condition-item.medium {
+    background: rgba(245, 158, 11, 0.05);
+    border-color: rgba(245, 158, 11, 0.15);
+}
+
+.condition-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.condition-label {
+    font-weight: 700;
+    font-size: 12px;
+    color: #f8fafc;
+}
+
+.condition-severity {
+    font-size: 9px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 4px;
+    text-transform: uppercase;
+}
+
+.condition-severity.high {
+    background: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+}
+
+.condition-severity.medium {
+    background: rgba(245, 158, 11, 0.2);
+    color: #f59e0b;
+}
+
+.condition-stat {
+    font-size: 11px;
+    color: #94a3b8;
+    margin-bottom: 6px;
+}
+
+.condition-advice {
+    font-size: 11px;
+    color: #64748b;
+    font-style: italic;
+}
+
+.time-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+}
+
+.time-slot {
+    padding: 12px 8px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 8px;
+    text-align: center;
+}
+
+.time-slot.best {
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.time-slot.worst {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.time-range {
+    font-size: 10px;
+    color: #64748b;
+    margin-bottom: 4px;
+}
+
+.time-winrate {
+    font-size: 14px;
+    font-weight: 800;
+    color: #f8fafc;
+}
+
+.time-pnl {
+    font-size: 10px;
+    margin-top: 2px;
+}
+
+.session-buckets {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+}
+
+.session-bucket {
+    padding: 12px 8px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 8px;
+    text-align: center;
+}
+
+.session-bucket.optimal {
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(99, 102, 241, 0.1));
+    border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+.bucket-range {
+    font-size: 10px;
+    color: #64748b;
+    margin-bottom: 4px;
+}
+
+.bucket-pnl {
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.bucket-winrate {
+    font-size: 10px;
+    color: #94a3b8;
+    margin-top: 2px;
+}
+
+.style-display {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.style-badge {
+    padding: 12px 20px;
+    background: linear-gradient(135deg, #8b5cf6, #6366f1);
+    border-radius: 10px;
+    color: white;
+    font-size: 16px;
+    font-weight: 800;
+}
+
+.style-details {
+    flex: 1;
+}
+
+.style-description {
+    font-size: 12px;
+    color: #94a3b8;
+    margin-bottom: 4px;
+}
+
+.style-hold {
+    font-size: 11px;
+    color: #64748b;
+}
+
+.risk-display {
+    display: flex;
+    gap: 20px;
+}
+
+.risk-badge {
+    padding: 14px 20px;
+    border-radius: 10px;
+    text-align: center;
+}
+
+.risk-badge.Conservative { background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); }
+.risk-badge.Moderate { background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.3); }
+.risk-badge.Aggressive { background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); }
+.risk-badge.HighRisk { background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); }
+
+.risk-label {
+    font-size: 14px;
+    font-weight: 800;
+    color: #f8fafc;
+}
+
+.risk-stats {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+}
+
+.risk-stat {
+    text-align: center;
+    padding: 10px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 8px;
+}
+
+.risk-stat .k {
+    font-size: 9px;
+    color: #64748b;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+}
+
+.risk-stat .v {
+    font-size: 14px;
+    font-weight: 700;
+    color: #f8fafc;
+}
+
+.emotional-patterns {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.pattern-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    background: rgba(245, 158, 11, 0.05);
+    border: 1px solid rgba(245, 158, 11, 0.15);
+    border-radius: 8px;
+}
+
+.pattern-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.pattern-type {
+    font-weight: 700;
+    font-size: 12px;
+    color: #f8fafc;
+}
+
+.pattern-freq {
+    font-size: 10px;
+    color: #f59e0b;
+    background: rgba(245, 158, 11, 0.2);
+    padding: 2px 8px;
+    border-radius: 4px;
+}
+
+.pattern-advice {
+    font-size: 10px;
+    color: #64748b;
+    max-width: 200px;
+    text-align: right;
+}
+
+.no-data {
+    color: #64748b;
+    font-size: 12px;
+    text-align: center;
+    padding: 20px;
+}
+
+.profile-locked {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 40px;
+    text-align: center;
+}
+
+.locked-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(99, 102, 241, 0.2));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 20px;
+}
+
+.locked-icon svg {
+    width: 32px;
+    height: 32px;
+    color: #8b5cf6;
+}
+
+.locked-title {
+    font-size: 18px;
+    font-weight: 800;
+    color: #f8fafc;
+    margin-bottom: 8px;
+}
+
+.locked-desc {
+    font-size: 13px;
+    color: #64748b;
+    max-width: 400px;
+    line-height: 1.6;
+    margin-bottom: 24px;
+}
+
+.unlock-btn {
+    background: linear-gradient(135deg, #8b5cf6, #6366f1);
+    color: white;
+    border: none;
+    padding: 12px 32px;
+    border-radius: 10px;
+    font-weight: 700;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.unlock-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 30px rgba(139, 92, 246, 0.3);
+}
+
+.profile-building {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 40px;
+    text-align: center;
+}
+
+.building-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 16px;
+    background: rgba(99, 102, 241, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 20px;
+}
+
+.building-icon svg {
+    width: 32px;
+    height: 32px;
+    color: #6366f1;
+}
+
+.building-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: #f8fafc;
+    margin-bottom: 8px;
+}
+
+.building-desc {
+    font-size: 13px;
+    color: #64748b;
+    margin-bottom: 16px;
+}
+
+.building-progress {
+    width: 200px;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.building-progress-bar {
+    height: 100%;
+    background: linear-gradient(135deg, #8b5cf6, #6366f1);
+    border-radius: 3px;
+    transition: width 0.3s;
+}
+`;
+  var TraderProfile = {
+    isOpen: false,
+    open() {
+      this.isOpen = true;
+      this.render();
+    },
+    close() {
+      this.isOpen = false;
+      const overlay = OverlayManager.getShadowRoot().querySelector(".trader-profile-overlay");
+      if (overlay)
+        overlay.remove();
+    },
+    render() {
+      const root = OverlayManager.getShadowRoot();
+      let overlay = root.querySelector(".trader-profile-overlay");
+      if (!overlay) {
+        overlay = document.createElement("div");
+        overlay.className = "trader-profile-overlay";
+        if (!root.getElementById("trader-profile-styles")) {
+          const style = document.createElement("style");
+          style.id = "trader-profile-styles";
+          style.textContent = PROFILE_CSS;
+          root.appendChild(style);
+        }
+        root.appendChild(overlay);
+      }
+      const state = Store.state;
+      const flags = FeatureManager.resolveFlags(state, "TRADER_PROFILE");
+      if (flags.gated) {
+        overlay.innerHTML = this.renderLockedState();
+        this.bindEvents(overlay);
+        return;
+      }
+      const profile = Analytics.generateTraderProfile(state);
+      if (!profile.ready) {
+        overlay.innerHTML = this.renderBuildingState(profile);
+        this.bindEvents(overlay);
+        return;
+      }
+      overlay.innerHTML = this.renderFullProfile(profile);
+      this.bindEvents(overlay);
+    },
+    renderLockedState() {
+      return `
+            <div class="trader-profile-modal">
+                <div class="profile-header">
+                    <div class="profile-header-left">
+                        <div class="profile-avatar">${ICONS.USER}</div>
+                        <div class="profile-title-section">
+                            <h2>Personal Trader Profile</h2>
+                            <div class="profile-subtitle">Elite Feature</div>
+                        </div>
+                    </div>
+                    <button class="profile-close" id="profile-close-btn">${ICONS.X}</button>
+                </div>
+                <div class="profile-locked">
+                    <div class="locked-icon">${ICONS.LOCK}</div>
+                    <div class="locked-title">Unlock Your Trader DNA</div>
+                    <div class="locked-desc">
+                        Discover your best strategies, worst conditions, optimal session length, and peak trading hours.
+                        Your personal trader profile evolves as you trade, giving you data-driven insights to improve.
+                    </div>
+                    <button class="unlock-btn" id="unlock-profile-btn">Upgrade to ELITE</button>
+                </div>
+            </div>
+        `;
+    },
+    renderBuildingState(profile) {
+      const progress = (10 - profile.tradesNeeded) / 10 * 100;
+      return `
+            <div class="trader-profile-modal">
+                <div class="profile-header">
+                    <div class="profile-header-left">
+                        <div class="profile-avatar">${ICONS.USER}</div>
+                        <div class="profile-title-section">
+                            <h2>Personal Trader Profile</h2>
+                            <div class="profile-subtitle">Building Your Profile...</div>
+                        </div>
+                    </div>
+                    <button class="profile-close" id="profile-close-btn">${ICONS.X}</button>
+                </div>
+                <div class="profile-building">
+                    <div class="building-icon">${ICONS.CHART_BAR}</div>
+                    <div class="building-title">Profile Under Construction</div>
+                    <div class="building-desc">${profile.message}</div>
+                    <div class="building-progress">
+                        <div class="building-progress-bar" style="width: ${progress}%"></div>
+                    </div>
+                    <div style="margin-top: 10px; font-size: 11px; color: #64748b;">
+                        ${profile.tradesNeeded} more trades needed
+                    </div>
+                </div>
+            </div>
+        `;
+    },
+    renderFullProfile(profile) {
+      return `
+            <div class="trader-profile-modal">
+                <div class="profile-header">
+                    <div class="profile-header-left">
+                        <div class="profile-avatar">${ICONS.USER}</div>
+                        <div class="profile-title-section">
+                            <h2>Personal Trader Profile</h2>
+                            <div class="profile-subtitle">${profile.tradeCount} trades analyzed</div>
+                        </div>
+                    </div>
+                    <button class="profile-close" id="profile-close-btn">${ICONS.X}</button>
+                </div>
+                <div class="profile-content">
+                    <div class="profile-grid">
+                        <!-- Trading Style -->
+                        <div class="profile-card">
+                            <div class="profile-card-header">
+                                ${ICONS.TROPHY}
+                                <span class="profile-card-title">Trading Style</span>
+                            </div>
+                            <div class="style-display">
+                                <div class="style-badge">${profile.tradingStyle.style}</div>
+                                <div class="style-details">
+                                    <div class="style-description">${profile.tradingStyle.description}</div>
+                                    <div class="style-hold">Avg Hold: ${profile.tradingStyle.avgHold} min</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Risk Profile -->
+                        <div class="profile-card">
+                            <div class="profile-card-header">
+                                ${ICONS.ALERT_CIRCLE}
+                                <span class="profile-card-title">Risk Profile</span>
+                            </div>
+                            <div class="risk-display">
+                                <div class="risk-badge ${profile.riskProfile.profile.replace(" ", "")}">
+                                    <div class="risk-label">${profile.riskProfile.profile}</div>
+                                </div>
+                                <div class="risk-stats">
+                                    <div class="risk-stat">
+                                        <div class="k">Avg Risk</div>
+                                        <div class="v">${profile.riskProfile.avgRisk}%</div>
+                                    </div>
+                                    <div class="risk-stat">
+                                        <div class="k">Max Risk</div>
+                                        <div class="v">${profile.riskProfile.maxRisk}%</div>
+                                    </div>
+                                    <div class="risk-stat">
+                                        <div class="k">Plan Usage</div>
+                                        <div class="v">${profile.riskProfile.planUsageRate}%</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Best Strategies -->
+                        <div class="profile-card">
+                            <div class="profile-card-header">
+                                ${ICONS.WIN}
+                                <span class="profile-card-title">Best Strategies</span>
+                            </div>
+                            <div class="strategy-list">
+                                ${profile.bestStrategies.top.length > 0 ? profile.bestStrategies.top.map((s, i) => `
+                                    <div class="strategy-item">
+                                        <span class="strategy-name">${i + 1}. ${s.name}</span>
+                                        <div class="strategy-stats">
+                                            <div class="strategy-stat">
+                                                <span class="label">Win:</span>
+                                                <span class="value positive">${s.winRate}%</span>
+                                            </div>
+                                            <div class="strategy-stat">
+                                                <span class="label">P&L:</span>
+                                                <span class="value ${s.totalPnl >= 0 ? "positive" : "negative"}">${s.totalPnl >= 0 ? "+" : ""}${s.totalPnl.toFixed(4)}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                `).join("") : '<div class="no-data">No strategy data yet</div>'}
+                            </div>
+                        </div>
+
+                        <!-- Worst Conditions -->
+                        <div class="profile-card">
+                            <div class="profile-card-header">
+                                ${ICONS.TILT}
+                                <span class="profile-card-title">Worst Conditions</span>
+                            </div>
+                            <div class="condition-list">
+                                ${profile.worstConditions.length > 0 ? profile.worstConditions.map((c) => `
+                                    <div class="condition-item ${c.severity}">
+                                        <div class="condition-header">
+                                            <span class="condition-label">${c.label}</span>
+                                            <span class="condition-severity ${c.severity}">${c.severity}</span>
+                                        </div>
+                                        <div class="condition-stat">${c.stat}</div>
+                                        <div class="condition-advice">${c.advice}</div>
+                                    </div>
+                                `).join("") : '<div class="no-data">No problematic patterns detected</div>'}
+                            </div>
+                        </div>
+
+                        <!-- Best Time of Day -->
+                        <div class="profile-card">
+                            <div class="profile-card-header">
+                                ${ICONS.CLOCK}
+                                <span class="profile-card-title">Best Time of Day</span>
+                            </div>
+                            <div class="time-grid">
+                                ${profile.bestTimeOfDay.breakdown && profile.bestTimeOfDay.breakdown.length > 0 ? profile.bestTimeOfDay.breakdown.map((t) => `
+                                        <div class="time-slot ${t === profile.bestTimeOfDay.best ? "best" : ""} ${t === profile.bestTimeOfDay.worst ? "worst" : ""}">
+                                            <div class="time-range">${t.range}</div>
+                                            <div class="time-winrate">${t.winRate}%</div>
+                                            <div class="time-pnl ${t.pnl >= 0 ? "positive" : "negative"}" style="color: ${t.pnl >= 0 ? "#10b981" : "#ef4444"}">
+                                                ${t.pnl >= 0 ? "+" : ""}${t.pnl.toFixed(3)}
+                                            </div>
+                                        </div>
+                                    `).join("") : '<div class="no-data" style="grid-column: span 4;">Need more trades across different times</div>'}
+                            </div>
+                        </div>
+
+                        <!-- Optimal Session Length -->
+                        <div class="profile-card">
+                            <div class="profile-card-header">
+                                ${ICONS.CHART_BAR}
+                                <span class="profile-card-title">Optimal Session Length</span>
+                            </div>
+                            ${profile.optimalSessionLength.optimal ? `
+                                <div style="margin-bottom: 12px; font-size: 13px; color: #94a3b8;">
+                                    Your best performance: <strong style="color: #8b5cf6;">${profile.optimalSessionLength.optimal}</strong> sessions
+                                </div>
+                                <div class="session-buckets">
+                                    ${Object.entries(profile.optimalSessionLength.buckets).map(([key, b]) => `
+                                        <div class="session-bucket ${b.range === profile.optimalSessionLength.optimal ? "optimal" : ""}">
+                                            <div class="bucket-range">${b.range}</div>
+                                            <div class="bucket-pnl" style="color: ${parseFloat(b.avgPnl) >= 0 ? "#10b981" : "#ef4444"}">
+                                                ${parseFloat(b.avgPnl) >= 0 ? "+" : ""}${b.avgPnl}
+                                            </div>
+                                            <div class="bucket-winrate">${b.avgWinRate}% WR</div>
+                                        </div>
+                                    `).join("")}
+                                </div>
+                            ` : '<div class="no-data">Need more session data</div>'}
+                        </div>
+
+                        <!-- Emotional Patterns -->
+                        ${profile.emotionalPatterns.length > 0 ? `
+                            <div class="profile-card full-width">
+                                <div class="profile-card-header">
+                                    ${ICONS.BRAIN}
+                                    <span class="profile-card-title">Emotional Patterns to Address</span>
+                                </div>
+                                <div class="emotional-patterns">
+                                    ${profile.emotionalPatterns.map((p) => `
+                                        <div class="pattern-item">
+                                            <div class="pattern-info">
+                                                <span class="pattern-type">${p.type}</span>
+                                                <span class="pattern-freq">${p.frequency}x detected</span>
+                                            </div>
+                                            <div class="pattern-advice">${p.advice}</div>
+                                        </div>
+                                    `).join("")}
+                                </div>
+                            </div>
+                        ` : ""}
+                    </div>
+                </div>
+            </div>
+        `;
+    },
+    bindEvents(overlay) {
+      const self = this;
+      const closeBtn = overlay.querySelector("#profile-close-btn");
+      if (closeBtn) {
+        closeBtn.onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          self.close();
+        };
+      }
+      const unlockBtn = overlay.querySelector("#unlock-profile-btn");
+      if (unlockBtn) {
+        unlockBtn.onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          self.close();
+          Paywall.showUpgradeModal("TRADER_PROFILE");
+        };
+      }
+      overlay.onclick = (e) => {
+        if (e.target === overlay) {
+          self.close();
+        }
+      };
+    }
+  };
+
+  // src/modules/ui/dashboard.js
   var Dashboard = {
     isOpen: false,
     toggle() {
@@ -3139,6 +6828,7 @@ canvas#equity-canvas {
       const state = Store.state;
       const stats = Analytics.analyzeRecentTrades(state) || { winRate: "0.0", totalTrades: 0, wins: 0, losses: 0, totalPnlSol: 0 };
       const debrief = Analytics.getProfessorDebrief(state);
+      const consistency = Analytics.calculateConsistencyScore(state);
       const chartFlags = FeatureManager.resolveFlags(state, "EQUITY_CHARTS");
       const logFlags = FeatureManager.resolveFlags(state, "DETAILED_LOGS");
       const aiFlags = FeatureManager.resolveFlags(state, "ADVANCED_ANALYTICS");
@@ -3172,6 +6862,12 @@ canvas#equity-canvas {
                             <div class="dashboard-card big-stat">
                                 <div class="k">Session P&L</div>
                                 <div class="v ${stats.totalPnlSol >= 0 ? "win" : "loss"}">${stats.totalPnlSol.toFixed(4)} SOL</div>
+                            </div>
+                            <div class="dashboard-card big-stat" id="consistency-score-card">
+                                <div class="k">Consistency</div>
+                                <div class="v" style="color:${consistency.score >= 70 ? "#10b981" : consistency.score >= 50 ? "#f59e0b" : "#64748b"};">
+                                    ${consistency.score !== null ? consistency.score : "--"}
+                                </div>
                             </div>
                         </div>
 
@@ -3236,10 +6932,44 @@ canvas#equity-canvas {
                             </div>
                         </div>
 
-                        <div style="margin-top:20px;">
+                        <div class="behavior-profile-card" id="dashboard-market-session" style="background: linear-gradient(135deg, rgba(6, 182, 212, 0.1), rgba(59, 130, 246, 0.1)); border: 1px solid rgba(6, 182, 212, 0.2); margin-top:20px;">
+                            <div class="dashboard-title" style="font-size:12px; margin-bottom:12px; opacity:0.6;">MARKET SNAPSHOT</div>
+                            <div style="display:flex; justify-content:space-between; align-items:flex-end;">
+                                <div>
+                                    <div style="font-size:11px; color:#64748b; margin-bottom:4px; text-transform:uppercase;">Volume (24h)</div>
+                                    <div style="font-size:16px; font-weight:800; color:#f8fafc;">
+                                        $${Market.context ? (Market.context.vol24h / 1e6).toFixed(1) + "M" : "N/A"}
+                                    </div>
+                                </div>
+                                <div style="text-align:right;">
+                                    <div style="font-size:11px; color:#64748b; margin-bottom:4px; text-transform:uppercase;">Price Change</div>
+                                    <div style="font-size:16px; font-weight:800; color:${Market.context && Market.context.priceChange24h >= 0 ? "#10b981" : "#ef4444"}">
+                                        ${Market.context ? Market.context.priceChange24h.toFixed(1) + "%" : "N/A"}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style="margin-top:20px; display:flex; flex-direction:column; gap:10px;">
                             <button id="dashboard-share-btn" style="width:100%; background:#1d9bf0; color:white; border:none; padding:10px; border-radius:8px; font-weight:700; font-size:12px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px;">
                                 <span>\u{1D54F}</span> Share Session
                             </button>
+                            <button id="session-replay-btn" style="width:100%; background:rgba(139,92,246,0.15); color:#a78bfa; border:1px solid rgba(139,92,246,0.3); padding:10px; border-radius:8px; font-weight:700; font-size:12px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px;">
+                                ${ICONS.BRAIN} Session Replay
+                                <span style="font-size:9px; background:linear-gradient(135deg,#8b5cf6,#a78bfa); color:white; padding:2px 6px; border-radius:4px; margin-left:4px;">ELITE</span>
+                            </button>
+                            <button id="trader-profile-btn" style="width:100%; background:rgba(99,102,241,0.15); color:#818cf8; border:1px solid rgba(99,102,241,0.3); padding:10px; border-radius:8px; font-weight:700; font-size:12px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px;">
+                                ${ICONS.USER} Trader Profile
+                                <span style="font-size:9px; background:linear-gradient(135deg,#6366f1,#818cf8); color:white; padding:2px 6px; border-radius:4px; margin-left:4px;">ELITE</span>
+                            </button>
+                            <div class="export-btns" style="display:flex; gap:8px;">
+                                <button id="export-csv-btn" class="export-btn" style="flex:1; background:rgba(16,185,129,0.1); color:#10b981; border:1px solid rgba(16,185,129,0.3); padding:8px; border-radius:6px; font-weight:600; font-size:11px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">
+                                    ${ICONS.FILE_CSV} Export CSV
+                                </button>
+                                <button id="export-json-btn" class="export-btn" style="flex:1; background:rgba(99,102,241,0.1); color:#6366f1; border:1px solid rgba(99,102,241,0.3); padding:8px; border-radius:6px; font-weight:600; font-size:11px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">
+                                    ${ICONS.FILE_JSON} Export JSON
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -3278,6 +7008,60 @@ canvas#equity-canvas {
             window.open(url, "_blank");
           };
         }
+      }
+      const exportCsvBtn = overlay.querySelector("#export-csv-btn");
+      const exportJsonBtn = overlay.querySelector("#export-json-btn");
+      if (exportCsvBtn) {
+        if (logFlags.gated) {
+          exportCsvBtn.style.opacity = "0.5";
+          exportCsvBtn.onclick = () => Paywall.showUpgradeModal("DETAILED_LOGS");
+        } else {
+          exportCsvBtn.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const success = Analytics.exportTradesAsCSV(state);
+            if (success) {
+              exportCsvBtn.textContent = "Downloaded!";
+              setTimeout(() => {
+                exportCsvBtn.innerHTML = `${ICONS.FILE_CSV} Export CSV`;
+              }, 2e3);
+            }
+          };
+        }
+      }
+      if (exportJsonBtn) {
+        if (logFlags.gated) {
+          exportJsonBtn.style.opacity = "0.5";
+          exportJsonBtn.onclick = () => Paywall.showUpgradeModal("DETAILED_LOGS");
+        } else {
+          exportJsonBtn.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            Analytics.exportSessionAsJSON(state);
+            exportJsonBtn.textContent = "Downloaded!";
+            setTimeout(() => {
+              exportJsonBtn.innerHTML = `${ICONS.FILE_JSON} Export JSON`;
+            }, 2e3);
+          };
+        }
+      }
+      const replayBtn = overlay.querySelector("#session-replay-btn");
+      if (replayBtn) {
+        replayBtn.onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          self.close();
+          SessionReplay.open();
+        };
+      }
+      const profileBtn = overlay.querySelector("#trader-profile-btn");
+      if (profileBtn) {
+        profileBtn.onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          self.close();
+          TraderProfile.open();
+        };
       }
       overlay.onclick = (e) => {
         if (e.target === overlay) {
@@ -3397,6 +7181,351 @@ canvas#equity-canvas {
     }
   };
 
+  // src/modules/ui/settings-panel.js
+  init_store();
+  init_diagnostics_store();
+  init_featureManager();
+  var SettingsPanel = {
+    /**
+     * Show the full settings modal (replaces old mini-settings).
+     */
+    show() {
+      const container = OverlayManager.getContainer();
+      const existing = container.querySelector(".zero-settings-overlay");
+      if (existing)
+        existing.remove();
+      const overlay = document.createElement("div");
+      overlay.className = "confirm-modal-overlay zero-settings-overlay";
+      const isShadow = Store.state.settings.tradingMode === "shadow";
+      const diagState = DiagnosticsStore.state || {};
+      const isAutoSend = diagState.settings?.privacy?.autoSendDiagnostics || false;
+      const lastUpload = diagState.settings?.diagnostics?.lastUploadedEventTs || 0;
+      const lastError = diagState.upload?.lastError || null;
+      const queueLen = (diagState.upload?.queue || []).length;
+      overlay.innerHTML = `
+            <div class="settings-modal" style="width:440px; max-height:85vh; overflow-y:auto;">
+                <div class="settings-header">
+                    <div class="settings-title"><span>\u2699\uFE0F</span> Settings</div>
+                    <button class="settings-close">\xD7</button>
+                </div>
+
+                <!-- General -->
+                <div class="settings-section-title">General</div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <div class="setting-name">Shadow Real Mode</div>
+                        <div class="setting-desc">Tag trades as "Real" for journaling.</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" data-setting="shadow" ${isShadow ? "checked" : ""}>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <div class="setting-row">
+                     <div class="setting-info">
+                        <div class="setting-name">Walkthrough</div>
+                        <div class="setting-desc">Replay the introductory walkthrough.</div>
+                    </div>
+                    <button class="settings-action-btn" data-setting-act="replayWalkthrough" style="width:auto; padding:6px 12px; font-size:12px;">View walkthrough</button>
+                </div>
+
+                <!-- Privacy & Data -->
+                <div class="settings-section-title">Optional diagnostics (off by default)</div>
+
+                <div class="privacy-info-box">
+                    <p>ZER\xD8 stores your paper trading data locally on your device by default.</p>
+                    <p>You can optionally enable diagnostics to help improve ZER\xD8 and unlock deeper features over time. Diagnostics help us understand session flow, feature usage, and where tools break down \u2014 not your private trading decisions.</p>
+                    <ul style="margin:8px 0 8px 16px; padding:0; list-style-type:disc; color:#94a3b8; font-size:11px;">
+                        <li>Improves Pro and Elite features</li>
+                        <li>Helps analytics become more accurate</li>
+                        <li>Helps fix bugs faster</li>
+                        <li>Shapes future tools based on real usage</li>
+                    </ul>
+                    <p style="margin-top:12px; font-weight:600; color:#f8fafc;">What is NOT included:</p>
+                    <ul style="margin:4px 0 8px 16px; padding:0; list-style-type:disc; color:#ef4444; font-size:11px;">
+                        <li>Real funds or wallet access</li>
+                        <li>Private keys or credentials</li>
+                        <li>Raw page content or keystrokes</li>
+                        <li>Any data sold or shared with third parties</li>
+                    </ul>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <div class="setting-name">Enable diagnostics</div>
+                        <div class="setting-desc">Enable optional diagnostics to help improve ZER\xD8 and future features.</div>
+                        <div class="setting-desc" style="opacity:0.6; margin-top:4px;">Some future features may improve faster with anonymized diagnostics enabled.</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" data-setting="autoSend" ${isAutoSend ? "checked" : ""}>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <div class="diag-status">
+                    <div class="diag-status-row">
+                        <span class="diag-label">Uploads</span>
+                        <span class="diag-value ${isAutoSend ? "enabled" : "disabled"}">${isAutoSend ? "Enabled" : "Disabled"}</span>
+                    </div>
+                    ${lastUpload > 0 ? `
+                    <div class="diag-status-row">
+                        <span class="diag-label">Last upload</span>
+                        <span class="diag-value">${new Date(lastUpload).toLocaleString()}</span>
+                    </div>` : ""}
+                    ${lastError ? `
+                    <div class="diag-status-row">
+                        <span class="diag-label">Last error</span>
+                        <span class="diag-value error">${lastError}</span>
+                    </div>` : ""}
+                    ${queueLen > 0 ? `
+                    <div class="diag-status-row">
+                        <span class="diag-label">Queued packets</span>
+                        <span class="diag-value">${queueLen}</span>
+                    </div>` : ""}
+                </div>
+
+                <div class="settings-btn-row">
+                    <button class="settings-action-btn" data-setting-act="viewPayload">View sample payload</button>
+                    <button class="settings-action-btn danger" data-setting-act="deleteQueue">Delete queued uploads</button>
+                    <button class="settings-action-btn danger" data-setting-act="deleteLocal">Delete local ZER\xD8 data</button>
+                </div>
+
+                <!-- Pro Features (HIDDEN FOR FREE RELEASE) -->
+                <!-- Elite Features (HIDDEN FOR FREE RELEASE) -->
+
+                <div style="margin-top:20px; text-align:center; font-size:11px; color:#64748b;">
+                    ZER\xD8 v${Store.state.version || "1.11.6"}
+                </div>
+            </div>
+        `;
+      container.appendChild(overlay);
+      this._bind(overlay);
+    },
+    _bind(overlay) {
+      const close = () => {
+        overlay.remove();
+        if (window.ZeroHUD && window.ZeroHUD.updateAll)
+          window.ZeroHUD.updateAll();
+      };
+      overlay.querySelector(".settings-close").onclick = close;
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay)
+          close();
+      });
+      const shadowToggle = overlay.querySelector('[data-setting="shadow"]');
+      if (shadowToggle) {
+        shadowToggle.onchange = async (e) => {
+          Store.state.settings.tradingMode = e.target.checked ? "shadow" : "paper";
+          await Store.save();
+          const c = OverlayManager.getContainer();
+          c.classList.toggle("zero-shadow-mode", e.target.checked);
+        };
+      }
+      const autoSendToggle = overlay.querySelector('[data-setting="autoSend"]');
+      if (autoSendToggle) {
+        autoSendToggle.onchange = (e) => {
+          if (e.target.checked) {
+            this._showConsentModal(overlay, () => {
+              DiagnosticsStore.enableAutoSend();
+              this._refreshDiagStatus(overlay, true);
+            }, () => {
+              e.target.checked = false;
+            });
+          } else {
+            DiagnosticsStore.disableAutoSend();
+            this._refreshDiagStatus(overlay, false);
+          }
+        };
+      }
+      overlay.addEventListener("click", async (e) => {
+        const act = e.target.getAttribute("data-setting-act");
+        if (!act) {
+          const card = e.target.closest(".feature-card.locked");
+          if (card) {
+            const featureId = card.getAttribute("data-feature");
+            this._logFeatureClick(featureId);
+            this._showComingSoonModal(overlay, featureId);
+          }
+          return;
+        }
+        if (act === "viewPayload") {
+          this._showSamplePayload(overlay);
+        }
+        if (act === "replayWalkthrough") {
+          overlay.remove();
+          Professor.startWalkthrough(true);
+        }
+        if (act === "deleteQueue") {
+          await DiagnosticsStore.clearUploadQueue();
+          this._refreshDiagStatus(overlay, DiagnosticsStore.isAutoSendEnabled());
+        }
+        if (act === "deleteLocal") {
+          this._showDeleteConfirm(overlay);
+        }
+      });
+    },
+    _refreshDiagStatus(overlay, isEnabled) {
+      const statusEl = overlay.querySelector(".diag-status");
+      if (!statusEl)
+        return;
+      const diagState = DiagnosticsStore.state || {};
+      const lastUpload = diagState.settings?.diagnostics?.lastUploadedEventTs || 0;
+      const lastError = diagState.upload?.lastError || null;
+      const queueLen = (diagState.upload?.queue || []).length;
+      statusEl.innerHTML = `
+            <div class="diag-status-row">
+                <span class="diag-label">Uploads</span>
+                <span class="diag-value ${isEnabled ? "enabled" : "disabled"}">${isEnabled ? "Enabled" : "Disabled"}</span>
+            </div>
+            ${lastUpload > 0 ? `<div class="diag-status-row"><span class="diag-label">Last upload</span><span class="diag-value">${new Date(lastUpload).toLocaleString()}</span></div>` : ""}
+            ${lastError ? `<div class="diag-status-row"><span class="diag-label">Last error</span><span class="diag-value error">${lastError}</span></div>` : ""}
+            ${queueLen > 0 ? `<div class="diag-status-row"><span class="diag-label">Queued packets</span><span class="diag-value">${queueLen}</span></div>` : ""}
+        `;
+    },
+    _showConsentModal(parent, onAccept, onDecline) {
+      const modal = document.createElement("div");
+      modal.className = "confirm-modal-overlay";
+      modal.style.zIndex = "2147483648";
+      modal.innerHTML = `
+            <div class="confirm-modal" style="max-width:420px;">
+                <h3>Help improve ZER\xD8 (optional)</h3>
+                <p style="font-size:13px; line-height:1.6;">
+                    By enabling diagnostics, ZER\xD8 will automatically send anonymized session logs, simulated trades, and feature interaction events to help improve accuracy, performance, and future features.
+                </p>
+                <p style="font-size:13px; line-height:1.6; margin-top:8px;">
+                    This is optional, off by default, and can be disabled at any time.
+                </p>
+                <div class="confirm-modal-buttons">
+                    <button class="confirm-modal-btn cancel">Cancel</button>
+                    <button class="confirm-modal-btn confirm" style="background:rgba(20,184,166,0.8);">Enable diagnostics</button>
+                </div>
+            </div>
+        `;
+      parent.appendChild(modal);
+      modal.querySelector(".cancel").onclick = () => {
+        modal.remove();
+        onDecline();
+      };
+      modal.querySelector(".confirm").onclick = () => {
+        modal.remove();
+        onAccept();
+      };
+      modal.addEventListener("click", (e) => {
+        if (e.target === modal) {
+          modal.remove();
+          onDecline();
+        }
+      });
+    },
+    _showComingSoonModal(parent, featureId) {
+      const allFeatures = [...TEASED_FEATURES.PRO, ...TEASED_FEATURES.ELITE];
+      const feat = allFeatures.find((f) => f.id === featureId);
+      const tier = featureId.startsWith("ELITE") ? "Elite" : "Pro";
+      const modal = document.createElement("div");
+      modal.className = "confirm-modal-overlay";
+      modal.style.zIndex = "2147483648";
+      modal.innerHTML = `
+            <div class="confirm-modal" style="max-width:380px; text-align:center;">
+                <h3 style="color:#14b8a6;">Coming Soon</h3>
+                <p style="font-size:14px; font-weight:600; color:#f8fafc; margin-bottom:6px;">
+                    ${feat ? feat.name : featureId}
+                </p>
+                <p style="font-size:13px; color:#94a3b8; margin-bottom:16px;">
+                    ${feat ? feat.desc : ""} This feature is part of <strong style="color:${tier === "Elite" ? "#f59e0b" : "#6366f1"}">${tier}</strong>.
+                </p>
+                <div class="confirm-modal-buttons" style="justify-content:center;">
+                    <button class="confirm-modal-btn" style="background:rgba(20,184,166,0.2); color:#14b8a6;" data-act="waitlist">Join waitlist</button>
+                    <button class="confirm-modal-btn cancel">Close</button>
+                </div>
+            </div>
+        `;
+      parent.appendChild(modal);
+      modal.querySelector(".cancel").onclick = () => modal.remove();
+      modal.querySelector('[data-act="waitlist"]').onclick = () => {
+        const subject = encodeURIComponent(`ZER\xD8 ${tier} Waitlist - ${feat ? feat.name : featureId}`);
+        const body = encodeURIComponent(`I'm interested in ${feat ? feat.name : featureId} for ZER\xD8 ${tier}.
+
+Please add me to the waitlist.`);
+        const mailTo = `mailto:?subject=${subject}&body=${body}`;
+        try {
+          navigator.clipboard.writeText(`I'm interested in ZER\xD8 ${tier}: ${feat ? feat.name : featureId}. Please add me to the waitlist.`);
+        } catch {
+        }
+        window.open(mailTo);
+        modal.remove();
+      };
+      modal.addEventListener("click", (e) => {
+        if (e.target === modal)
+          modal.remove();
+      });
+    },
+    _showSamplePayload(parent) {
+      const sample = {
+        uploadId: "sample-xxxxx",
+        clientId: "<redacted>",
+        createdAt: Date.now(),
+        schemaVersion: 3,
+        extensionVersion: Store.state.version || "1.11.6",
+        eventsDelta: [
+          { eventId: "evt_sample1", ts: Date.now() - 6e4, type: "SESSION_STARTED", platform: "AXIOM", payload: {} },
+          { eventId: "evt_sample2", ts: Date.now() - 3e4, type: "TRADE_OPENED", platform: "AXIOM", payload: { side: "BUY", symbol: "TOKEN" } },
+          { eventId: "evt_sample3", ts: Date.now(), type: "TRADE_CLOSED", platform: "AXIOM", payload: { side: "SELL", pnl: 0.05 } }
+        ]
+      };
+      const modal = document.createElement("div");
+      modal.className = "confirm-modal-overlay";
+      modal.style.zIndex = "2147483648";
+      modal.innerHTML = `
+            <div class="confirm-modal" style="max-width:500px;">
+                <h3>Sample upload payload</h3>
+                <pre style="background:#0d1117; border:1px solid rgba(20,184,166,0.15); border-radius:8px; padding:12px; font-size:11px; color:#94a3b8; overflow-x:auto; max-height:300px; white-space:pre-wrap; word-break:break-all;">${JSON.stringify(sample, null, 2)}</pre>
+                <p style="font-size:11px; color:#64748b; margin-top:8px;">
+                    This is a sample of what would be sent. Real payloads contain only event IDs, timestamps, types, and small scalar values. No DOM content, keystrokes, wallet data, or personal information.
+                </p>
+                <div class="confirm-modal-buttons">
+                    <button class="confirm-modal-btn cancel">Close</button>
+                </div>
+            </div>
+        `;
+      parent.appendChild(modal);
+      modal.querySelector(".cancel").onclick = () => modal.remove();
+      modal.addEventListener("click", (e) => {
+        if (e.target === modal)
+          modal.remove();
+      });
+    },
+    _showDeleteConfirm(parent) {
+      const modal = document.createElement("div");
+      modal.className = "confirm-modal-overlay";
+      modal.style.zIndex = "2147483648";
+      modal.innerHTML = `
+            <div class="confirm-modal">
+                <h3>Delete all local data?</h3>
+                <p>This will permanently delete all ZER\xD8 diagnostics data, event logs, and upload queue from your browser. Your trading session data (stored under a separate key) is unaffected.</p>
+                <div class="confirm-modal-buttons">
+                    <button class="confirm-modal-btn cancel">Cancel</button>
+                    <button class="confirm-modal-btn confirm">Delete</button>
+                </div>
+            </div>
+        `;
+      parent.appendChild(modal);
+      modal.querySelector(".cancel").onclick = () => modal.remove();
+      modal.querySelector(".confirm").onclick = async () => {
+        await DiagnosticsStore.clearAllData();
+        modal.remove();
+      };
+      modal.addEventListener("click", (e) => {
+        if (e.target === modal)
+          modal.remove();
+      });
+    },
+    _logFeatureClick(featureId) {
+      DiagnosticsStore.logEvent("UI_LOCKED_FEATURE_CLICKED", { featureId });
+    }
+  };
+
   // src/modules/ui/pnl-hud.js
   function px(n) {
     return n + "px";
@@ -3404,6 +7533,7 @@ canvas#equity-canvas {
   function clamp(v, min, max) {
     return Math.max(min, Math.min(max, v));
   }
+  var positionsExpanded = false;
   var PnlHud = {
     mountPnlHud(makeDraggable) {
       const container = OverlayManager.getContainer();
@@ -3429,7 +7559,7 @@ canvas#equity-canvas {
         container.appendChild(root);
         this.bindPnlEvents(root);
       }
-      const CURRENT_UI_VERSION = "1.10.3";
+      const CURRENT_UI_VERSION = "1.12.0";
       const renderedVersion = root.dataset.uiVersion;
       if (isNew || renderedVersion !== CURRENT_UI_VERSION) {
         this.renderPnlHudContent(root, makeDraggable);
@@ -3447,7 +7577,7 @@ canvas#equity-canvas {
                     <input class="startSolInput" type="text" inputmode="decimal" />
                   </div>
                   <button class="pillBtn" data-act="shareX" style="background:rgba(29,155,240,0.15);color:#1d9bf0;border:1px solid rgba(29,155,240,0.3);font-family:'Arial',sans-serif;font-weight:600;display:none;" id="pnl-share-btn">Share \u{1D54F}</button>
-                  <button class="pillBtn" data-act="getPro" style="background:rgba(99,102,241,0.15);color:#6366f1;border:1px solid rgba(99,102,241,0.3);font-weight:700;display:none;align-items:center;gap:4px;" id="pnl-pro-btn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>PRO</button>
+                  <button class="pillBtn" data-act="shareX" style="background:rgba(29,155,240,0.15);color:#1d9bf0;border:1px solid rgba(29,155,240,0.3);font-family:'Arial',sans-serif;font-weight:600;display:none;" id="pnl-share-btn">Share \u{1D54F}</button>
                   <button class="pillBtn" data-act="trades">Trades</button>
                   <button class="pillBtn" data-act="dashboard" style="background:rgba(20,184,166,0.15);color:#14b8a6;border:1px solid rgba(20,184,166,0.3);font-weight:700;">Stats</button>
                   <button class="pillBtn" data-act="reset" style="color:#ef4444;">Reset</button>
@@ -3476,6 +7606,16 @@ canvas#equity-canvas {
                     <div class="k">DISCIPLINE <span class="pro-tag" style="display:none;" id="discipline-pro-tag">PRO</span></div>
                     <div class="v" data-k="discipline">100</div>
                 </div>
+              </div>
+              <div class="positionsPanel">
+                <div class="positionsHeader" data-act="togglePositions">
+                  <div class="positionsTitle">
+                    <span>POSITIONS</span>
+                    <span class="positionCount" data-k="positionCount">(0)</span>
+                  </div>
+                  <span class="positionsToggle">\u25BC</span>
+                </div>
+                <div class="positionsList" style="display:none;" data-k="positionsList"></div>
               </div>
               <div class="tradeList" style="display:none;"></div>
             </div>
@@ -3562,6 +7702,15 @@ canvas#equity-canvas {
         if (act === "getPro") {
           Paywall.showUpgradeModal();
         }
+        if (act === "togglePositions") {
+          positionsExpanded = !positionsExpanded;
+          this.updatePositionsPanel(root);
+        }
+        if (act === "quickSell") {
+          const mint = actEl.getAttribute("data-mint");
+          const pct = parseFloat(actEl.getAttribute("data-pct"));
+          await this.executeQuickSell(mint, pct);
+        }
       });
     },
     shareToX() {
@@ -3578,11 +7727,10 @@ canvas#equity-canvas {
       const shareFlags = FeatureManager.resolveFlags(s, "SHARE_TO_X");
       const proFlags = FeatureManager.resolveFlags(s, "SHARE_TO_X");
       const shareBtn = root.querySelector("#pnl-share-btn");
-      const proBtn = root.querySelector("#pnl-pro-btn");
       if (shareBtn)
         shareBtn.style.display = shareFlags.visible && !shareFlags.gated ? "" : "none";
-      if (proBtn)
-        proBtn.style.display = s.settings.tier === "free" ? "flex" : "none";
+      if (shareBtn)
+        shareBtn.style.display = shareFlags.visible && !shareFlags.gated ? "" : "none";
       if (!Store.state.settings.enabled) {
         root.style.display = "none";
         return;
@@ -3651,137 +7799,90 @@ canvas#equity-canvas {
       }
       const discFlags = FeatureManager.resolveFlags(s, "DISCIPLINE_SCORING");
       const discStatEl = root.querySelector(".stat.discipline");
-      const discProTag = root.querySelector("#discipline-pro-tag");
+      const discValueEl = root.querySelector('[data-k="discipline"]');
       if (discStatEl) {
         discStatEl.style.display = discFlags.visible ? "" : "none";
-        if (discProTag)
-          discProTag.style.display = discFlags.gated ? "" : "none";
-        if (discFlags.gated) {
-          discStatEl.style.opacity = "0.5";
-          discStatEl.style.cursor = "pointer";
-          discStatEl.onclick = (e) => {
-            e.stopPropagation();
-            Paywall.showUpgradeModal();
-          };
-        } else {
-          discStatEl.style.opacity = "1";
-          discStatEl.style.cursor = "default";
-          discStatEl.onclick = null;
-        }
-      }
-      const discEl = root.querySelector('[data-k="discipline"]');
-      if (discEl) {
-        const score = s.session.disciplineScore !== void 0 ? s.session.disciplineScore : 100;
-        discEl.textContent = score;
-        let color = "#94a3b8";
-        if (score >= 90)
-          color = "#10b981";
-        else if (score < 70)
-          color = "#ef4444";
-        else if (score < 90)
-          color = "#f59e0b";
-        discEl.style.color = color;
       }
       const tokenSymbolEl = root.querySelector('[data-k="tokenSymbol"]');
       if (tokenSymbolEl) {
         const symbol = currentToken?.symbol || "TOKEN";
         tokenSymbolEl.textContent = symbol;
       }
+      this.updatePositionsPanel(root);
     },
     showResetModal() {
       const overlay = document.createElement("div");
       overlay.className = "confirm-modal-overlay";
+      const duration = Store.getSessionDuration();
+      const summary = Store.getSessionSummary();
       overlay.innerHTML = `
             <div class="confirm-modal">
-                <h3>Reset Session?</h3>
-                <p>Clear all history and restore balance?</p>
+                <h3>Reset current session?</h3>
+                <p>This will clear current session stats and start a fresh run.<br>Your trade history and past sessions will not be deleted.</p>
+                ${summary && summary.tradeCount > 0 ? `
+                    <div style="background:rgba(20,184,166,0.1); border:1px solid rgba(20,184,166,0.2); border-radius:8px; padding:10px; margin:12px 0; font-size:11px;">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                            <span style="color:#64748b;">Duration</span>
+                            <span style="color:#f8fafc; font-weight:600;">${duration} min</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                            <span style="color:#64748b;">Trades</span>
+                            <span style="color:#f8fafc; font-weight:600;">${summary.tradeCount}</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                            <span style="color:#64748b;">Win Rate</span>
+                            <span style="color:#10b981; font-weight:600;">${summary.winRate}%</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between;">
+                            <span style="color:#64748b;">P&L</span>
+                            <span style="color:${summary.realized >= 0 ? "#10b981" : "#ef4444"}; font-weight:600;">${summary.realized >= 0 ? "+" : ""}${summary.realized.toFixed(4)} SOL</span>
+                        </div>
+                    </div>
+                ` : ""}
                 <div class="confirm-modal-buttons">
                     <button class="confirm-modal-btn cancel">Cancel</button>
-                    <button class="confirm-modal-btn confirm">Reset</button>
+                    <button class="confirm-modal-btn confirm">Reset session</button>
                 </div>
             </div>
         `;
       OverlayManager.getContainer().appendChild(overlay);
       overlay.querySelector(".cancel").onclick = () => overlay.remove();
       overlay.querySelector(".confirm").onclick = async () => {
-        Store.state.session.balance = Store.state.settings.startSol;
-        Store.state.session.realized = 0;
-        Store.state.session.winStreak = 0;
-        Store.state.session.lossStreak = 0;
-        Store.state.session.trades = [];
-        Store.state.trades = {};
+        await Store.startNewSession();
         Store.state.positions = {};
         await Store.save();
+        window.postMessage({ __paper: true, type: "PAPER_CLEAR_MARKERS" }, "*");
         if (window.ZeroHUD && window.ZeroHUD.updateAll) {
           window.ZeroHUD.updateAll();
         }
+        overlay.remove();
         overlay.remove();
       };
     },
-    showSettingsModal() {
+    showDisciplineInfoModal() {
       const overlay = document.createElement("div");
       overlay.className = "confirm-modal-overlay";
-      const isShadow = Store.state.settings.tradingMode === "shadow";
+      overlay.style.zIndex = "2147483648";
       overlay.innerHTML = `
-            <div class="settings-modal">
-                <div class="settings-header">
-                    <div class="settings-title">
-                        <span>\u2699\uFE0F</span> Settings
+                <div class="confirm-modal" style="max-width:380px; text-align:center;">
+                    <h3>Discipline scoring</h3>
+                    <p style="font-size:13px; line-height:1.6; color:#94a3b8; margin-bottom:16px;">
+                        Discipline scoring analyzes how consistently you follow your plan and manage risk. Available in Pro.
+                    </p>
+                    <div class="confirm-modal-buttons" style="justify-content:center;">
+                        <button class="confirm-modal-btn cancel">Close</button>
                     </div>
-                    <button class="settings-close">\xD7</button>
                 </div>
-
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <div class="setting-name">Shadow Real Mode</div>
-                        <div class="setting-desc">Tag trades as "Real" for journaling. Changes UI theme.</div>
-                    </div>
-                    <label class="toggle-switch">
-                        <input type="checkbox" id="toggle-shadow" ${isShadow ? "checked" : ""}>
-                        <span class="slider"></span>
-                    </label>
-                </div>
-
-                <div class="setting-row" style="opacity:0.5; pointer-events:none;">
-                    <div class="setting-info">
-                        <div class="setting-name">Discipline Score</div>
-                        <div class="setting-desc">Track rule adherence (Coming Soon).</div>
-                    </div>
-                    <label class="toggle-switch">
-                        <input type="checkbox">
-                        <span class="slider"></span>
-                    </label>
-                </div>
-
-                <div style="margin-top:20px; text-align:center; font-size:11px; color:#64748b;">
-                    ZER\xD8 v${Store.state.version || "0.9.9"}
-                </div>
-            </div>
-        `;
+            `;
       OverlayManager.getContainer().appendChild(overlay);
-      const close = () => {
-        overlay.remove();
-        if (window.ZeroHUD && window.ZeroHUD.updateAll) {
-          window.ZeroHUD.updateAll();
-        }
-      };
-      overlay.querySelector(".settings-close").onclick = close;
-      const bg = overlay;
-      bg.addEventListener("click", (e) => {
-        if (e.target === bg)
-          close();
+      overlay.querySelector(".cancel").onclick = () => overlay.remove();
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay)
+          overlay.remove();
       });
-      const shadowToggle = overlay.querySelector("#toggle-shadow");
-      shadowToggle.onchange = async (e) => {
-        const val = e.target.checked;
-        Store.state.settings.tradingMode = val ? "shadow" : "paper";
-        await Store.save();
-        const container = OverlayManager.getContainer();
-        if (val)
-          container.classList.add("zero-shadow-mode");
-        else
-          container.classList.remove("zero-shadow-mode");
-      };
+    },
+    showSettingsModal() {
+      SettingsPanel.show();
     },
     updateTradeList(container) {
       const trades = Store.state.session.trades || [];
@@ -3823,6 +7924,102 @@ canvas#equity-canvas {
             `;
       });
       container.innerHTML = html || '<div style="padding:10px;color:#64748b;text-align:center;">No trades yet</div>';
+    },
+    updatePositionsPanel(root) {
+      const s = Store.state;
+      const positions = Object.values(s.positions || {});
+      const listEl = root.querySelector('[data-k="positionsList"]');
+      const toggleIcon = root.querySelector(".positionsToggle");
+      const countEl = root.querySelector('[data-k="positionCount"]');
+      if (countEl) {
+        countEl.textContent = `(${positions.length})`;
+      }
+      if (toggleIcon) {
+        toggleIcon.textContent = positionsExpanded ? "\u25B2" : "\u25BC";
+        toggleIcon.classList.toggle("expanded", positionsExpanded);
+      }
+      if (listEl) {
+        listEl.style.display = positionsExpanded ? "block" : "none";
+        if (positionsExpanded) {
+          listEl.innerHTML = this.renderPositionRows(positions);
+        }
+      }
+    },
+    renderPositionRows(positions) {
+      if (positions.length === 0) {
+        return '<div class="noPositions">No open positions</div>';
+      }
+      const solUsd = Trading.getSolPrice();
+      const currentToken = TokenDetector.getCurrentToken();
+      return positions.map((pos) => {
+        let currentPrice = pos.lastPriceUsd || pos.entryPriceUsd;
+        if (pos.mint === currentToken?.mint && currentPrice > 0) {
+        }
+        const valueUsd = pos.tokenQty * currentPrice;
+        const valueSol = valueUsd / solUsd;
+        const pnl = valueSol - pos.totalSolSpent;
+        const pnlPct = pos.totalSolSpent > 0 ? pnl / pos.totalSolSpent * 100 : 0;
+        const isPositive = pnl >= 0;
+        return `
+                <div class="positionRow">
+                    <div class="positionInfo">
+                        <div class="positionSymbol">${pos.symbol || "UNKNOWN"}</div>
+                        <div class="positionDetails">
+                            <span class="positionQty">${this.formatQty(pos.tokenQty)}</span>
+                            <span class="positionPrices">Entry: $${this.formatPrice(pos.entryPriceUsd)} \u2192 $${this.formatPrice(currentPrice)}</span>
+                        </div>
+                    </div>
+                    <div class="positionPnl ${isPositive ? "positive" : "negative"}">
+                        <div class="pnlValue">${isPositive ? "+" : ""}${Trading.fmtSol(pnl)} SOL</div>
+                        <div class="pnlPct">${isPositive ? "+" : ""}${pnlPct.toFixed(1)}%</div>
+                    </div>
+                    <div class="quickSellBtns">
+                        <button class="qSellBtn" data-act="quickSell" data-mint="${pos.mint}" data-pct="25">25%</button>
+                        <button class="qSellBtn" data-act="quickSell" data-mint="${pos.mint}" data-pct="50">50%</button>
+                        <button class="qSellBtn" data-act="quickSell" data-mint="${pos.mint}" data-pct="100">100%</button>
+                    </div>
+                </div>
+            `;
+      }).join("");
+    },
+    formatQty(n) {
+      if (!n || n <= 0)
+        return "0";
+      if (n >= 1e9)
+        return (n / 1e9).toFixed(2) + "B";
+      if (n >= 1e6)
+        return (n / 1e6).toFixed(2) + "M";
+      if (n >= 1e3)
+        return (n / 1e3).toFixed(2) + "K";
+      if (n >= 1)
+        return n.toFixed(2);
+      return n.toFixed(6);
+    },
+    formatPrice(p) {
+      if (!p || p <= 0)
+        return "0.00";
+      if (p >= 1)
+        return p.toFixed(4);
+      if (p >= 1e-4)
+        return p.toFixed(6);
+      return p.toExponential(2);
+    },
+    async executeQuickSell(mint, pct) {
+      const pos = Store.state.positions[mint];
+      if (!pos) {
+        console.error("[PnlHud] Position not found for mint:", mint);
+        return;
+      }
+      const tokenInfo = { symbol: pos.symbol, mint: pos.mint };
+      const result = await Trading.sell(pct, "Quick Sell", tokenInfo);
+      if (result.success) {
+        console.log(`[PnlHud] Quick sell ${pct}% of ${pos.symbol} successful`);
+        if (window.ZeroHUD && window.ZeroHUD.updateAll) {
+          window.ZeroHUD.updateAll();
+        }
+      } else {
+        console.error("[PnlHud] Quick sell failed:", result.error);
+      }
     }
   };
 
@@ -3840,7 +8037,13 @@ canvas#equity-canvas {
     // UI State
     buyHudTab: "buy",
     buyHudEdit: false,
-    mountBuyHud(makeDraggable) {
+    tradePlanExpanded: false,
+    // State for reuse
+    makeDraggableRef: null,
+    mountBuyHud(makeDraggable, force = false) {
+      if (makeDraggable)
+        this.makeDraggableRef = makeDraggable;
+      const dragger = makeDraggable || this.makeDraggableRef;
       const container = OverlayManager.getContainer();
       const rootId = IDS.buyHud;
       let root = container.querySelector("#" + rootId);
@@ -3862,16 +8065,27 @@ canvas#equity-canvas {
           root.style.right = "auto";
         }
         container.appendChild(root);
-        this.renderBuyHudContent(root, makeDraggable);
+        this.renderBuyHudContent(root, dragger);
         this.setupBuyHudInteractions(root);
+      } else if (force) {
+        this.renderBuyHudContent(root, dragger);
+      } else {
+        this.refreshMarketContext(root);
       }
-      this.renderBuyHudContent(root, makeDraggable);
+    },
+    refreshMarketContext(root) {
+      const container = root.querySelector(".market-context-container");
+      if (container) {
+        container.innerHTML = this.renderMarketContext().replace('<div class="market-context-container" style="margin-bottom:12px;">', "").replace(/<\/div>\s*$/, "");
+      }
     },
     renderBuyHudContent(root, makeDraggable) {
       const isBuy = this.buyHudTab === "buy";
       const actionText = isBuy ? "ZER\xD8 BUY" : "ZER\xD8 SELL";
       const actionClass = isBuy ? "action" : "action sell";
       const label = isBuy ? "Amount (SOL)" : "Amount (%)";
+      const oldField = root.querySelector('input[data-k="field"]');
+      const oldVal = oldField ? oldField.value : "";
       root.innerHTML = `
             <div class="panel">
                 <div class="panelHeader">
@@ -3888,7 +8102,7 @@ canvas#equity-canvas {
                 <div class="body">
                     ${this.renderMarketContext()}
                     <div class="fieldLabel">${label}</div>
-                    <input class="field" type="text" inputmode="decimal" data-k="field" placeholder="0.0">
+                    <input class="field" type="text" inputmode="decimal" data-k="field" placeholder="0.0" value="${oldVal}">
 
                     <div class="quickRow">
                         ${this.renderQuickButtons(isBuy)}
@@ -3901,6 +8115,7 @@ canvas#equity-canvas {
                             ${(Store.state.settings.strategies || ["Trend"]).map((s) => `<option value="${s}">${s}</option>`).join("")}
                          </select>
                     </div>
+                    ${this.renderTradePlanFields()}
                     ` : ""}
 
                     <button class="${actionClass}" data-act="action">${actionText}</button>
@@ -3955,60 +8170,32 @@ canvas#equity-canvas {
         }
         if (act === "tab-buy") {
           this.buyHudTab = "buy";
-          this.mountBuyHud();
+          this.mountBuyHud(null, true);
         }
         if (act === "tab-sell") {
           this.buyHudTab = "sell";
-          this.mountBuyHud();
+          this.mountBuyHud(null, true);
         }
         if (act === "quick") {
           const val = actEl.getAttribute("data-val");
           const field = root.querySelector('input[data-k="field"]');
-          if (field)
+          if (field) {
             field.value = val;
+            await this.executeTrade(root);
+          }
         }
         if (act === "action") {
-          const field = root.querySelector('input[data-k="field"]');
-          const val = parseFloat(field?.value || "0");
-          const status = root.querySelector('[data-k="status"]');
-          const strategyEl = root.querySelector('select[data-k="strategy"]');
-          const strategyFlags = FeatureManager.resolveFlags(Store.state, "STRATEGY_TAGGING");
-          const strategy = strategyEl && strategyFlags.interactive ? strategyEl.value : "Trend";
-          if (val <= 0) {
-            if (status)
-              status.textContent = "Invalid amount";
-            return;
-          }
-          status.textContent = "Executing...";
-          const tokenInfo = TokenDetector.getCurrentToken();
-          let res;
-          try {
-            if (this.buyHudTab === "buy") {
-              res = await Trading.buy(val, strategy, tokenInfo);
-            } else {
-              res = await Trading.sell(val, strategy, tokenInfo);
-            }
-          } catch (err) {
-            status.textContent = "Error: " + err.message;
-            status.style.color = "#ef4444";
-            return;
-          }
-          if (res && res.success) {
-            status.textContent = "Trade executed!";
-            field.value = "";
-            if (window.ZeroHUD && window.ZeroHUD.updateAll) {
-              window.ZeroHUD.updateAll();
-            }
-            setTimeout(() => {
-              this.showEmotionSelector(res.trade.id);
-            }, 500);
-          } else {
-            status.textContent = res.error || "Error executing trade";
-            status.style.color = "#ef4444";
-          }
+          await this.executeTrade(root);
+        }
+        if (act === "upgrade-plan") {
+          Paywall.showUpgradeModal("TRADE_PLAN");
         }
         if (act === "edit") {
           this.buyHudEdit = !this.buyHudEdit;
+          this.mountBuyHud();
+        }
+        if (act === "toggle-plan") {
+          this.tradePlanExpanded = !this.tradePlanExpanded;
           this.mountBuyHud();
         }
       });
@@ -4168,6 +8355,162 @@ canvas#equity-canvas {
                 ${content}
             </div>
         `;
+    },
+    renderTradePlanFields() {
+      if (!Store.state)
+        return "";
+      const flags = FeatureManager.resolveFlags(Store.state, "TRADE_PLAN");
+      if (!flags.visible)
+        return "";
+      const isGated = flags.gated;
+      const isExpanded = this.tradePlanExpanded;
+      const plan = Store.state.pendingPlan || {};
+      if (!isExpanded) {
+        return `
+                <div class="plan-toggle" data-act="toggle-plan">
+                    <span style="display:flex; align-items:center; gap:6px;">
+                        ${ICONS.TARGET} ${isGated ? "TRADE PLAN (PRO)" : "ADD TRADE PLAN"}
+                    </span>
+                    ${ICONS.CHEVRON_DOWN}
+                </div>
+            `;
+      }
+      if (isGated) {
+        return `
+                <div class="trade-plan-section gated">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <span class="plan-title">${ICONS.TARGET} Trade Plan</span>
+                        <div class="plan-collapse-arrow" data-act="toggle-plan">${ICONS.CHEVRON_UP}</div>
+                    </div>
+                    <div data-act="upgrade-plan">
+                        <div class="plan-gated-badge">
+                            ${ICONS.LOCK}
+                            <span>TRADE PLAN (PRO)</span>
+                        </div>
+                        <div class="plan-gated-hint">Define stop loss, targets & thesis</div>
+                    </div>
+                </div>
+            `;
+      }
+      return `
+            <div class="trade-plan-section">
+                <div class="plan-header">
+                    <span class="plan-title">${ICONS.TARGET} Trade Plan</span>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span class="plan-tag">PRO</span>
+                        <div class="plan-collapse-arrow" data-act="toggle-plan">${ICONS.CHEVRON_UP}</div>
+                    </div>
+                </div>
+                <div class="plan-row">
+                    <div class="plan-field">
+                        <label class="plan-label">Stop Loss</label>
+                        <div class="plan-input-wrap">
+                            <input type="text" class="plan-input" data-k="stopLoss" placeholder="0.00" value="${plan.stopLoss || ""}">
+                            <span class="plan-unit">USD</span>
+                        </div>
+                    </div>
+                    <div class="plan-field">
+                        <label class="plan-label">Target</label>
+                        <div class="plan-input-wrap">
+                            <input type="text" class="plan-input" data-k="target" placeholder="0.00" value="${plan.target || ""}">
+                            <span class="plan-unit">USD</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="plan-field full">
+                    <label class="plan-label">Entry Thesis <span class="optional">(optional)</span></label>
+                    <textarea class="plan-textarea" data-k="thesis" placeholder="Why are you taking this trade?" rows="2">${plan.thesis || ""}</textarea>
+                </div>
+            </div>
+        `;
+    },
+    // Save pending plan values as user types
+    savePendingPlan(root) {
+      if (!Store.state.pendingPlan) {
+        Store.state.pendingPlan = { stopLoss: null, target: null, thesis: "", maxRiskPct: null };
+      }
+      const stopEl = root.querySelector('[data-k="stopLoss"]');
+      const targetEl = root.querySelector('[data-k="target"]');
+      const thesisEl = root.querySelector('[data-k="thesis"]');
+      if (stopEl) {
+        const val = parseFloat(stopEl.value);
+        Store.state.pendingPlan.stopLoss = isNaN(val) ? null : val;
+      }
+      if (targetEl) {
+        const val = parseFloat(targetEl.value);
+        Store.state.pendingPlan.target = isNaN(val) ? null : val;
+      }
+      if (thesisEl) {
+        Store.state.pendingPlan.thesis = thesisEl.value.trim();
+      }
+    },
+    // Get and clear pending plan for trade execution
+    consumePendingPlan() {
+      const plan = Store.state.pendingPlan || {};
+      Store.state.pendingPlan = { stopLoss: null, target: null, thesis: "", maxRiskPct: null };
+      return {
+        plannedStop: plan.stopLoss || null,
+        plannedTarget: plan.target || null,
+        entryThesis: plan.thesis || "",
+        riskDefined: !!(plan.stopLoss && plan.stopLoss > 0)
+      };
+    },
+    // Clear plan input fields in the UI
+    clearPlanFields(root) {
+      const stopEl = root.querySelector('[data-k="stopLoss"]');
+      const targetEl = root.querySelector('[data-k="target"]');
+      const thesisEl = root.querySelector('[data-k="thesis"]');
+      if (stopEl)
+        stopEl.value = "";
+      if (targetEl)
+        targetEl.value = "";
+      if (thesisEl)
+        thesisEl.value = "";
+    },
+    async executeTrade(root) {
+      const field = root.querySelector('input[data-k="field"]');
+      const val = parseFloat(field?.value || "0");
+      const status = root.querySelector('[data-k="status"]');
+      const strategyEl = root.querySelector('select[data-k="strategy"]');
+      const strategyFlags = FeatureManager.resolveFlags(Store.state, "STRATEGY_TAGGING");
+      const strategy = strategyEl && strategyFlags.interactive ? strategyEl.value : "Trend";
+      if (val <= 0) {
+        if (status)
+          status.textContent = "Invalid amount";
+        return;
+      }
+      status.textContent = "Executing...";
+      if (this.buyHudTab === "buy") {
+        this.savePendingPlan(root);
+      }
+      const tokenInfo = TokenDetector.getCurrentToken();
+      const tradePlan = this.buyHudTab === "buy" ? this.consumePendingPlan() : null;
+      let res;
+      try {
+        if (this.buyHudTab === "buy") {
+          res = await Trading.buy(val, strategy, tokenInfo, tradePlan);
+        } else {
+          res = await Trading.sell(val, strategy, tokenInfo);
+        }
+      } catch (err) {
+        status.textContent = "Error: " + err.message;
+        status.style.color = "#ef4444";
+        return;
+      }
+      if (res && res.success) {
+        status.textContent = "Trade executed!";
+        field.value = "";
+        this.clearPlanFields(root);
+        if (window.ZeroHUD && window.ZeroHUD.updateAll) {
+          window.ZeroHUD.updateAll();
+        }
+        setTimeout(() => {
+          this.showEmotionSelector(res.trade.id);
+        }, 500);
+      } else {
+        status.textContent = res.error || "Error executing trade";
+        status.style.color = "#ef4444";
+      }
     }
   };
 
@@ -4186,7 +8529,7 @@ canvas#equity-canvas {
         }, 2e3);
       }
       Market.subscribe(async () => {
-        await PnlHud.updatePnlHud();
+        this.scheduleRender();
       });
     },
     scheduleRender() {
@@ -4258,52 +8601,120 @@ canvas#equity-canvas {
   };
 
   // src/content.boot.js
+  init_diagnostics_store();
+
+  // src/modules/logger.js
+  var Logger = {
+    isProduction: false,
+    // Set to true in prod builds
+    info(msg, ...args) {
+      if (this.isProduction)
+        return;
+      console.log(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
+    },
+    warn(msg, ...args) {
+      console.warn(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
+    },
+    error(msg, ...args) {
+      console.error(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
+    },
+    cleanArgs(args) {
+      return args.map((arg) => {
+        if (typeof arg === "object" && arg !== null) {
+          const clean = { ...arg };
+          ["key", "secret", "token", "auth", "password"].forEach((k) => {
+            if (k in clean)
+              clean[k] = "***REDACTED***";
+          });
+          return clean;
+        }
+        return arg;
+      });
+    }
+  };
+
+  // src/content.boot.js
   (async () => {
     "use strict";
-    console.log("%c ZER\xD8 v1.10.5 (Deep Psychological Guardrails)", "color: #14b8a6; font-weight: bold; font-size: 14px;");
+    Logger.info("ZER\xD8 v1.11.9 (Price Detection & Network Interception)");
     const PLATFORM = {
       isAxiom: window.location.hostname.includes("axiom.trade"),
       isPadre: window.location.hostname.includes("padre.gg"),
       name: window.location.hostname.includes("axiom.trade") ? "Axiom" : "Padre"
     };
     try {
-      console.log("[ZER\xD8] Loading Store...");
+      Logger.info("Loading Store...");
       const state = await Store.load();
       if (!state)
         throw new Error("Store state is null");
       if (!state.settings.enabled) {
-        console.log("[ZER\xD8] Force-enabling for Beta test...");
+        Logger.info("Force-enabling for Beta test...");
         state.settings.enabled = true;
         await Store.save();
       }
-      console.log("[ZER\xD8] Store loaded:", state.settings?.enabled ? "Enabled" : "Disabled");
+      Logger.info("Store loaded:", state.settings?.enabled ? "Enabled" : "Disabled");
     } catch (e) {
-      console.error("[ZER\xD8] Store Load Failed:", e);
+      Logger.error("Store Load Failed:", e);
     }
     try {
-      console.log("[ZER\xD8] Init Overlay...");
+      Logger.info("Loading DiagnosticsStore...");
+      await DiagnosticsStore.load();
+      DiagnosticsStore.logEvent("SESSION_STARTED", {
+        platform: PLATFORM.isAxiom ? "AXIOM" : PLATFORM.isPadre ? "PADRE" : "UNKNOWN"
+      }, { platform: PLATFORM.isAxiom ? "AXIOM" : PLATFORM.isPadre ? "PADRE" : "UNKNOWN" });
+    } catch (e) {
+      Logger.error("DiagnosticsStore Init Failed:", e);
+    }
+    try {
+      const { DiagnosticsManager: DiagnosticsManager2 } = await Promise.resolve().then(() => (init_diagnostics_manager(), diagnostics_manager_exports));
+      DiagnosticsManager2.init();
+    } catch (e) {
+      Logger.error("DiagnosticsManager Init Failed:", e);
+    }
+    try {
+      Logger.info("Init Overlay...");
       OverlayManager.init(PLATFORM.name);
+      Professor.init();
     } catch (e) {
-      console.error("[ZER\xD8] Overlay Init Failed:", e);
+      Logger.error("Overlay Init Failed:", e);
     }
     try {
-      console.log("[ZER\xD8] Init Market...");
+      Logger.info("Init Market...");
       Market.init();
     } catch (e) {
-      console.error("[ZER\xD8] Market Init Failed:", e);
+      Logger.error("Market Init Failed:", e);
     }
     try {
-      console.log("[ZER\xD8] Init PNL Calculator...");
+      Logger.info("Init PNL Calculator...");
       PnlCalculator.init();
     } catch (e) {
-      console.error("[ZER\xD8] PNL Calculator Init Failed:", e);
+      Logger.error("PNL Calculator Init Failed:", e);
     }
     try {
-      console.log("[ZER\xD8] Init HUD...");
+      Logger.info("Init HUD...");
       await HUD.init();
     } catch (e) {
-      console.error("[ZER\xD8] HUD Init Failed:", e);
+      Logger.error("HUD Init Failed:", e);
     }
-    console.log("[ZER\xD8] Boot sequence finished.");
+    window.addEventListener("message", async (e) => {
+      if (e.source !== window || !e.data?.__paper_cmd)
+        return;
+      const { type, val } = e.data;
+      if (type === "SET_TIER") {
+        const state = Store.state;
+        if (state && state.settings) {
+          Logger.info(`Admin: Setting tier to ${val}...`);
+          state.settings.tier = val;
+          await Store.save();
+          location.reload();
+        }
+      }
+      if (type === "RESET_STORE") {
+        Logger.warn("Admin: Resetting store...");
+        await Store.clear();
+        location.reload();
+      }
+    });
+    Logger.info("Boot sequence finished.");
   })();
 })();

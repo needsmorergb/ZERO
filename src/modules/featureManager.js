@@ -14,20 +14,55 @@ export const FEATURES = {
     EMOTION_TRACKING: 'pro',
     DISCIPLINE_SCORING: 'pro',
     AI_DEBRIEF: 'pro',
+    TRADE_PLAN: 'pro',  // Stop loss, targets, thesis capture
 
     // Phase 5-6: Advanced Pro
     EQUITY_CHARTS: 'pro',
     DETAILED_LOGS: 'pro',
     ADVANCED_ANALYTICS: 'pro',
     RISK_ADJUSTED_METRICS: 'pro',
-    SHARE_TO_X: 'pro',
+    SHARE_TO_X: 'free',
 
     // Phase 6+: Elite
     TILT_DETECTION: 'elite',
     SESSION_REPLAY: 'elite',
     ADVANCED_COACHING: 'elite',
     BEHAVIOR_BASELINE: 'elite',
-    MARKET_CONTEXT: 'elite'
+    MARKET_CONTEXT: 'elite',
+    TRADER_PROFILE: 'elite',  // Personal Trader Profile dashboard
+
+    // Explicit tease-card keys (alias existing features for Settings UI)
+    PRO_TRADE_PLAN: 'pro',
+    PRO_DISCIPLINE: 'pro',
+    PRO_STRATEGY_ANALYTICS: 'pro',
+    PRO_EMOTION_ANALYTICS: 'pro',
+    PRO_AI_DEBRIEF: 'pro',
+    ELITE_TILT_DETECTION: 'elite',
+    ELITE_RISK_METRICS: 'elite',
+    ELITE_SESSION_REPLAY: 'elite',
+    ELITE_TRADER_PROFILE: 'elite',
+    ELITE_MARKET_CONTEXT: 'elite'
+};
+
+/**
+ * Display metadata for teased Pro/Elite feature cards.
+ * Used by the Settings UI to render locked cards with descriptions.
+ */
+export const TEASED_FEATURES = {
+    PRO: [
+        { id: 'PRO_TRADE_PLAN', name: 'Trade Planning', desc: 'Set stop losses, targets, and capture your thesis before every trade.' },
+        { id: 'PRO_DISCIPLINE', name: 'Discipline Scoring', desc: 'Track how well you stick to your trading rules with an objective score.' },
+        { id: 'PRO_STRATEGY_ANALYTICS', name: 'Strategy Analytics', desc: 'See which strategies perform best and refine your edge.' },
+        { id: 'PRO_EMOTION_ANALYTICS', name: 'Emotion Analytics', desc: 'Understand how your emotional state affects your trading outcomes.' },
+        { id: 'PRO_AI_DEBRIEF', name: 'AI Trade Debrief', desc: 'Get AI-powered post-trade analysis to accelerate your learning.' },
+    ],
+    ELITE: [
+        { id: 'ELITE_TILT_DETECTION', name: 'Tilt Detection', desc: 'Real-time alerts when your behavior signals emotional trading.' },
+        { id: 'ELITE_RISK_METRICS', name: 'Risk Metrics', desc: 'Advanced risk-adjusted performance metrics for serious traders.' },
+        { id: 'ELITE_SESSION_REPLAY', name: 'Session Replay', desc: 'Replay your sessions to review decisions and improve execution.' },
+        { id: 'ELITE_TRADER_PROFILE', name: 'Trader Profile', desc: 'Your personal trading identity — strengths, weaknesses, and growth.' },
+        { id: 'ELITE_MARKET_CONTEXT', name: 'Market Context', desc: 'Overlay market conditions to see how context affected your trades.' },
+    ],
 };
 
 /**
@@ -78,19 +113,10 @@ export const FeatureManager = {
                 flags.gated = false;
             } else {
                 // Not entitled
-                if (phase === 'preview') {
-                    flags.visible = true;
-                    flags.interactive = true; // Allow preview
-                    flags.gated = false;
-                } else if (phase === 'beta') {
-                    flags.visible = false; // Hidden in silent beta
-                    flags.interactive = false;
-                } else {
-                    // Standard 'full' rollout behavior
-                    flags.visible = true;
-                    flags.interactive = false;
-                    flags.gated = true;
-                }
+                // FORCE HIDDEN FOR PRODUCTION FREE RELEASE
+                flags.visible = false;
+                flags.interactive = false;
+                flags.gated = true; // Still marked as gated internally
             }
         }
 

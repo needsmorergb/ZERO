@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ZERØ - Solana Paper Trading",
-  "version": "1.11.0",
+  "version": "1.11.9",
   "description": "Zero risk paper trading overlay for Solana on Axiom and Terminal.",
   "permissions": [
     "storage",
@@ -14,7 +14,8 @@
     "https://api.coinbase.com/*",
     "https://api.kraken.com/*",
     "https://api.dexscreener.com/*",
-    "https://api.coingecko.com/*"
+    "https://api.coingecko.com/*",
+    "https://zero-diagnostics.zerodata1.workers.dev/*"
   ],
   "icons": {
     "16": "assets/zero-16.png",
