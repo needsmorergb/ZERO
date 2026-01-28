@@ -7,9 +7,22 @@ export const OverlayManager = {
     init(platformName) {
         this.createShadowRoot();
         this.injectStyles();
+        this.injectPageBridge(); // Inject network price interceptor
         if (platformName === 'Padre') {
             // this.injectPadreOffset(); // DEBUG: Disabled to test if causing blank screen
         }
+    },
+
+    injectPageBridge() {
+        // Inject page-bridge.js for network-level price interception
+        if (document.getElementById('paper-page-bridge')) return;
+
+        const script = document.createElement('script');
+        script.id = 'paper-page-bridge';
+        script.src = chrome.runtime.getURL('src/page-bridge.js');
+        script.onload = () => console.log('[ZERØ] Page bridge injected for network price interception');
+        script.onerror = (e) => console.error('[ZERØ] Failed to inject page bridge:', e);
+        (document.head || document.documentElement).appendChild(script);
     },
 
     getShadowRoot() {

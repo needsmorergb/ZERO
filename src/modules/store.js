@@ -19,7 +19,12 @@ const DEFAULTS = {
         showProfessor: true, // Show trade analysis popup
         rolloutPhase: 'full', // 'beta' | 'preview' | 'full'
         featureOverrides: {}, // For remote kill-switches
-        behavioralAlerts: true // Phase 9: Elite Guardrails
+        behavioralAlerts: true, // Phase 9: Elite Guardrails
+
+        // Onboarding State
+        onboardingSeen: false,
+        onboardingVersion: null,
+        onboardingCompletedAt: null
     },
     // Session as first-class object
     session: {
@@ -63,7 +68,7 @@ const DEFAULTS = {
     eventLog: [], // { ts, type, category, message, data }
     // Categories: TRADE, ALERT, DISCIPLINE, SYSTEM, MILESTONE
     schemaVersion: 2,
-    version: '1.11.6'
+    version: '1.11.8'
 };
 
 // Helper utils
@@ -195,6 +200,9 @@ export const Store = {
         newState.settings.pnlPos = oldState.pnlPos ?? { x: 20, y: 60 };
         newState.settings.startSol = oldState.startSol ?? 10;
         newState.settings.tutorialCompleted = oldState.tutorialCompleted ?? false;
+        newState.settings.onboardingSeen = oldState.onboardingSeen ?? false;
+        newState.settings.onboardingVersion = oldState.onboardingVersion ?? null;
+        newState.settings.onboardingCompletedAt = oldState.onboardingCompletedAt ?? null;
 
         // Migrate Session/Balance
         newState.session.balance = oldState.cashSol ?? 10;

@@ -21,7 +21,7 @@ export const FEATURES = {
     DETAILED_LOGS: 'pro',
     ADVANCED_ANALYTICS: 'pro',
     RISK_ADJUSTED_METRICS: 'pro',
-    SHARE_TO_X: 'pro',
+    SHARE_TO_X: 'free',
 
     // Phase 6+: Elite
     TILT_DETECTION: 'elite',
@@ -113,19 +113,10 @@ export const FeatureManager = {
                 flags.gated = false;
             } else {
                 // Not entitled
-                if (phase === 'preview') {
-                    flags.visible = true;
-                    flags.interactive = true; // Allow preview
-                    flags.gated = false;
-                } else if (phase === 'beta') {
-                    flags.visible = false; // Hidden in silent beta
-                    flags.interactive = false;
-                } else {
-                    // Standard 'full' rollout behavior
-                    flags.visible = true;
-                    flags.interactive = false;
-                    flags.gated = true;
-                }
+                // FORCE HIDDEN FOR PRODUCTION FREE RELEASE
+                flags.visible = false;
+                flags.interactive = false;
+                flags.gated = true; // Still marked as gated internally
             }
         }
 

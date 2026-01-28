@@ -1,142 +1,142 @@
 import { OverlayManager } from './overlay.js';
+import { Store } from '../store.js';
 import { ICONS } from './icons.js';
 
 export const Professor = {
+    currentStep: 0,
+    steps: [
+        {
+            title: "Welcome to ZERØ",
+            body: "ZERØ is a secure paper trading overlay for Solana.<br>Practice strategies on real charts without risking real funds.",
+            icon: ICONS.BRAIN || '🧠'
+        },
+        {
+            title: "Track Your Performance",
+            body: "Monitor your session P&L, win rates, and streaks in real-time.<br>Stats update instantly as you trade.",
+            icon: '📊'
+        },
+        {
+            title: "Start Fresh Anytime",
+            body: "Use the <strong>Reset</strong> button to clear your current session stats and start a fresh run.<br>Your trade history is always preserved.",
+            icon: '🔄'
+        },
+        {
+            title: "Privacy First",
+            body: "All trading data is stored locally on your device.<br>We do not track your personal trades or access your wallet.",
+            icon: '🛡️'
+        },
+        {
+            title: "You're All Set",
+            body: "ZERØ will stay out of the way while you practice.<br>Open <strong>Settings</strong> to replay this walkthrough anytime.",
+            icon: '🚀'
+        }
+    ],
 
-    showCritique(trigger, value, analysisState) {
-        if (Store.state.settings.showProfessor === false) return;
+    async init() {
+        // Check if onboarding is needed
+        const s = Store.state.settings;
+        if (!s.onboardingSeen) {
+            // Small delay to ensure UI is ready
+            setTimeout(() => this.startWalkthrough(), 1500);
+        }
+    },
+
+    startWalkthrough(force = false) {
+        if (!force && Store.state.settings.onboardingSeen) return;
+        this.currentStep = 0;
+        this.renderStep(this.currentStep);
+    },
+
+    renderStep(index) {
+        const step = this.steps[index];
+        if (!step) {
+            this.complete();
+            return;
+        }
 
         const container = OverlayManager.getContainer();
-        if (!container) return;
+        let overlay = container.querySelector('.professor-overlay');
 
-        const existing = container.querySelector('.professor-overlay');
-        if (existing) existing.remove();
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.className = 'professor-overlay';
+            // Center styling specific for walkthrough
+            overlay.style.position = 'fixed'; // Ensure fixed positioning relative to viewport or container
+            overlay.style.bottom = '120px'; // Positioned centrally but lower
+            overlay.style.left = '50%';
+            overlay.style.transform = 'translateX(-50%)';
+            overlay.style.zIndex = '1000000';
+            container.appendChild(overlay);
+        }
 
-        const { title, message } = this.generateMessage(trigger, value, analysisState);
+        const isLast = index === this.steps.length - 1;
 
-        const overlay = document.createElement('div');
-        overlay.className = 'professor-overlay';
         overlay.innerHTML = `
-            <div class="professor-container" style="box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 1px solid rgba(20,184,166,0.2);">
-                <img src="${chrome.runtime.getURL('src/professor.png')}" class="professor-image">
-                <div class="professor-bubble">
-                    <div class="professor-title" style="display:flex; align-items:center; gap:8px;">
-                        ${ICONS.BRAIN} ${title}
+            <div class="professor-container" style="
+                background: #0f172a; 
+                border: 1px solid rgba(20,184,166,0.5); 
+                box-shadow: 0 20px 50px rgba(0,0,0,0.8); 
+                padding: 20px; 
+                border-radius: 12px; 
+                width: 320px; 
+                text-align: center;
+                animation: fadeIn 0.3s ease-out;
+                pointer-events: auto;
+            ">
+                <div style="font-size:32px; margin-bottom:12px;">${step.icon}</div>
+                <div style="font-size:16px; font-weight:700; color:#f8fafc; margin-bottom:8px;">${step.title}</div>
+                <div style="font-size:13px; color:#94a3b8; line-height:1.5; margin-bottom:20px; min-height:40px;">${step.body}</div>
+                
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <div style="display:flex; gap:4px;">
+                        ${this.steps.map((_, i) => `
+                            <div style="
+                                width:6px; height:6px; border-radius:50%; 
+                                background:${i === index ? '#14b8a6' : '#334155'};
+                                transition: background 0.3s;
+                            "></div>
+                        `).join('')}
                     </div>
-                    <div class="professor-message">${message}</div>
-                    <div style="margin-top:10px; display:flex; align-items:center; justify-content:space-between; gap:10px;">
-                        <label style="display:flex; align-items:center; gap:6px; font-size:10px; color:#64748b; cursor:pointer;">
-                            <input type="checkbox" class="professor-opt-out"> Don't show again
-                        </label>
-                        <button class="professor-dismiss" style="font-size:11px; padding:4px 8px;">Dismiss</button>
+                    <div style="display:flex; gap:10px;">
+                        ${!isLast ? `<button class="prof-skip" style="background:transparent; border:none; color:#64748b; font-size:12px; cursor:pointer;">Skip</button>` : ''}
+                        <button class="prof-next" style="
+                            background: rgba(20,184,166,0.2); 
+                            color: #14b8a6; 
+                            border: 1px solid rgba(20,184,166,0.3); 
+                            padding: 6px 16px; 
+                            border-radius: 6px; 
+                            font-size: 13px; 
+                            font-weight: 600;
+                            cursor: pointer;
+                        ">${isLast ? 'Finish' : 'Next'}</button>
                     </div>
                 </div>
             </div>
         `;
 
-        // Position under Buy HUD
-        const buyHud = container.querySelector('#paper-buyhud-root');
-        if (buyHud) {
-            const rect = buyHud.getBoundingClientRect();
-            overlay.style.top = (rect.bottom + 12) + 'px';
-            overlay.style.left = rect.left + 'px';
-            overlay.style.width = rect.width + 'px'; // Match width
-        } else {
-            // Fallback (Center Bottom)
-            overlay.style.bottom = '20px';
-            overlay.style.left = '50%';
-            overlay.style.transform = 'translateX(-50%)';
-        }
+        const nextBtn = overlay.querySelector('.prof-next');
+        const skipBtn = overlay.querySelector('.prof-skip');
 
-        container.appendChild(overlay);
-
-        // Bind Events
-        const checkbox = overlay.querySelector('.professor-opt-out');
-        const dismissBtn = overlay.querySelector('.professor-dismiss');
-
-        const close = async () => {
-            if (checkbox.checked) {
-                Store.state.settings.showProfessor = false;
-                await Store.save();
-            }
-            overlay.remove();
-        };
-
-        dismissBtn.onclick = close;
-
-        // Auto-close after 10s if not interacted? No, user wants it optional so let them read.
-        // But maybe auto-close is annoying if it's "under" and not blocking.
-        // I'll keep the timeout but make it longer.
-        setTimeout(() => { if (overlay.isConnected) close(); }, 15000);
+        nextBtn.onclick = () => this.next();
+        if (skipBtn) skipBtn.onclick = () => this.complete();
     },
 
-    generateMessage(trigger, value, analysis) {
-        let title = "Observation";
-        let message = "Keep pushing.";
-
-        const style = analysis?.style || 'balanced';
-        const tips = this.getTips(style);
-        const randomTip = tips[Math.floor(Math.random() * tips.length)];
-
-        if (trigger === 'win_streak') {
-            if (value === 5) {
-                title = "🔥 5 Win Streak!";
-                message = "You're finding your rhythm. The market is speaking and you're listening!";
-            } else if (value === 10) {
-                title = "🏆 10 Win Streak!";
-                message = "Double digits! This is what consistent profitability looks like.";
-            } else {
-                title = `⚡ ${value} Win Streak!`;
-                message = "Impressive run. Stay disciplined.";
-            }
-        } else if (trigger === 'loss_streak') {
-            title = "⚠️ Loss Streak Detected";
-            message = `${value} losses in a row. Take a breath. Are you forcing trades?`;
-        } else if (trigger === 'fomo_buying') {
-            title = "🚫 FOMO Detected";
-            message = "3+ buys in 2 minutes. You're chasing price. Let the setup come to you.";
-        } else if (trigger === 'revenge_trade') {
-            title = "⚠️ Revenge Trade Warning";
-            message = "Buying immediately after a loss? That's emotion, not strategy.";
-        } else if (trigger === 'overtrading') {
-            title = "🛑 High Volume Warning";
-            message = `${value} trades this session. Quality > Quantity. Consider taking a break.`;
-        } else if (trigger === 'portfolio_multiplier') {
-            title = `🎉 ${value}X PORTFOLIO!`;
-            message = `You've turned your starting balance into ${value}x! Incredible work.`;
-        }
-
-        return { title, message: message + '<br><br><span style="color:#94a3b8;font-size:12px">💡 ' + randomTip + '</span>' };
+    next() {
+        this.currentStep++;
+        this.renderStep(this.currentStep);
     },
 
-    getTips(style) {
-        const tips = {
-            scalper: [
-                "Scalping works best in high-volume markets. Watch those fees!",
-                "Consider setting a 5-trade limit per hour to avoid overtrading.",
-                "Quick flips need quick reflexes. Always have an exit plan!"
-            ],
-            swing: [
-                "Setting a trailing stop can protect your swing trade profits.",
-                "Patient hands make the most gains. Trust your analysis!",
-                "Consider scaling out in 25% chunks to lock in profits."
-            ],
-            degen: [
-                "Micro-caps are fun but size down! Never risk more than 5% on a single play.",
-                "In degen territory, the first green candle is often the exit signal.",
-                "Set a hard stop at -50%. Live to degen another day!"
-            ],
-            conservative: [
-                "Your conservative style keeps you in the game. Consider a small moon bag!",
-                "Larger caps mean smaller moves. Patience is your superpower.",
-                "Consider allocating 10% to higher-risk plays for balance."
-            ],
-            balanced: [
-                "Your balanced approach is sustainable. Keep mixing risk levels!",
-                "Track your best-performing market cap range and lean into it.",
-                "Journal your winners - patterns emerge over time!"
-            ]
-        };
-        return tips[style] || tips.balanced;
+    async complete() {
+        const overlay = OverlayManager.getContainer().querySelector('.professor-overlay');
+        if (overlay) overlay.remove();
+
+        // Mark as seen
+        if (!Store.state.settings.onboardingSeen) {
+            Store.state.settings.onboardingSeen = true;
+            Store.state.settings.onboardingCompletedAt = Date.now();
+            Store.state.settings.onboardingCompletedAt = Date.now();
+            Store.state.settings.onboardingVersion = Store.state.version || '1.11.8';
+            await Store.save();
+        }
     }
 };

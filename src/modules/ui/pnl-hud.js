@@ -1,4 +1,5 @@
 import { Store } from '../store.js';
+import { DiagnosticsStore } from '../diagnostics-store.js';
 import { OverlayManager } from './overlay.js';
 import { FeatureManager } from '../featureManager.js';
 import { Trading } from '../core/trading.js';
@@ -64,7 +65,7 @@ export const PnlHud = {
                     <input class="startSolInput" type="text" inputmode="decimal" />
                   </div>
                   <button class="pillBtn" data-act="shareX" style="background:rgba(29,155,240,0.15);color:#1d9bf0;border:1px solid rgba(29,155,240,0.3);font-family:'Arial',sans-serif;font-weight:600;display:none;" id="pnl-share-btn">Share 𝕏</button>
-                  <button class="pillBtn" data-act="getPro" style="background:rgba(99,102,241,0.15);color:#6366f1;border:1px solid rgba(99,102,241,0.3);font-weight:700;display:none;align-items:center;gap:4px;" id="pnl-pro-btn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>PRO</button>
+                  <button class="pillBtn" data-act="shareX" style="background:rgba(29,155,240,0.15);color:#1d9bf0;border:1px solid rgba(29,155,240,0.3);font-family:'Arial',sans-serif;font-weight:600;display:none;" id="pnl-share-btn">Share 𝕏</button>
                   <button class="pillBtn" data-act="trades">Trades</button>
                   <button class="pillBtn" data-act="dashboard" style="background:rgba(20,184,166,0.15);color:#14b8a6;border:1px solid rgba(20,184,166,0.3);font-weight:700;">Stats</button>
                   <button class="pillBtn" data-act="reset" style="color:#ef4444;">Reset</button>
@@ -223,10 +224,10 @@ export const PnlHud = {
         const proFlags = FeatureManager.resolveFlags(s, 'SHARE_TO_X'); // Combined check for now
 
         const shareBtn = root.querySelector('#pnl-share-btn');
-        const proBtn = root.querySelector('#pnl-pro-btn');
+
 
         if (shareBtn) shareBtn.style.display = shareFlags.visible && !shareFlags.gated ? '' : 'none';
-        if (proBtn) proBtn.style.display = (s.settings.tier === 'free') ? 'flex' : 'none';
+        if (shareBtn) shareBtn.style.display = shareFlags.visible && !shareFlags.gated ? '' : 'none';
 
         // Visibility Toggle
         if (!Store.state.settings.enabled) {
@@ -312,35 +313,12 @@ export const PnlHud = {
         // Update Discipline visibility and gating
         const discFlags = FeatureManager.resolveFlags(s, 'DISCIPLINE_SCORING');
         const discStatEl = root.querySelector('.stat.discipline');
-        const discProTag = root.querySelector('#discipline-pro-tag');
+        // const discProTag = root.querySelector('#discipline-pro-tag'); // Removed
+        const discValueEl = root.querySelector('[data-k="discipline"]');
 
+        // Strictly hide if not visible (Production Free Release)
         if (discStatEl) {
             discStatEl.style.display = discFlags.visible ? '' : 'none';
-            if (discProTag) discProTag.style.display = discFlags.gated ? '' : 'none';
-
-            if (discFlags.gated) {
-                discStatEl.style.opacity = '0.5';
-                discStatEl.style.cursor = 'pointer';
-                discStatEl.onclick = (e) => { e.stopPropagation(); Paywall.showUpgradeModal(); };
-            } else {
-                discStatEl.style.opacity = '1';
-                discStatEl.style.cursor = 'default';
-                discStatEl.onclick = null;
-            }
-        }
-
-        const discEl = root.querySelector('[data-k="discipline"]');
-        if (discEl) {
-            const score = s.session.disciplineScore !== undefined ? s.session.disciplineScore : 100;
-            discEl.textContent = score;
-
-            // Color logic
-            let color = '#94a3b8'; // Default
-            if (score >= 90) color = '#10b981'; // Green
-            else if (score < 70) color = '#ef4444'; // Red
-            else if (score < 90) color = '#f59e0b'; // Orange
-
-            discEl.style.color = color;
         }
 
         // Update token symbol in title
@@ -362,8 +340,8 @@ export const PnlHud = {
 
         overlay.innerHTML = `
             <div class="confirm-modal">
-                <h3>End Session?</h3>
-                <p>This will archive your current session and start fresh.</p>
+                <h3>Reset current session?</h3>
+                <p>This will clear current session stats and start a fresh run.<br>Your trade history and past sessions will not be deleted.</p>
                 ${summary && summary.tradeCount > 0 ? `
                     <div style="background:rgba(20,184,166,0.1); border:1px solid rgba(20,184,166,0.2); border-radius:8px; padding:10px; margin:12px 0; font-size:11px;">
                         <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
@@ -386,7 +364,7 @@ export const PnlHud = {
                 ` : ''}
                 <div class="confirm-modal-buttons">
                     <button class="confirm-modal-btn cancel">Cancel</button>
-                    <button class="confirm-modal-btn confirm">New Session</button>
+                    <button class="confirm-modal-btn confirm">Reset session</button>
                 </div>
             </div>
         `;
@@ -397,16 +375,39 @@ export const PnlHud = {
             // Use the new session management
             await Store.startNewSession();
 
-            // Clear positions for new session
             Store.state.positions = {};
             await Store.save();
+
+            // Clear markers from chart
+            window.postMessage({ __paper: true, type: "PAPER_CLEAR_MARKERS" }, "*");
 
             // Trigger update through HUD
             if (window.ZeroHUD && window.ZeroHUD.updateAll) {
                 window.ZeroHUD.updateAll();
             }
             overlay.remove();
+            overlay.remove();
         };
+    },
+
+    showDisciplineInfoModal() {
+        const overlay = document.createElement('div');
+        overlay.className = 'confirm-modal-overlay';
+        overlay.style.zIndex = '2147483648';
+        overlay.innerHTML = `
+                <div class="confirm-modal" style="max-width:380px; text-align:center;">
+                    <h3>Discipline scoring</h3>
+                    <p style="font-size:13px; line-height:1.6; color:#94a3b8; margin-bottom:16px;">
+                        Discipline scoring analyzes how consistently you follow your plan and manage risk. Available in Pro.
+                    </p>
+                    <div class="confirm-modal-buttons" style="justify-content:center;">
+                        <button class="confirm-modal-btn cancel">Close</button>
+                    </div>
+                </div>
+            `;
+        OverlayManager.getContainer().appendChild(overlay);
+        overlay.querySelector('.cancel').onclick = () => overlay.remove();
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
     },
 
     showSettingsModal() {

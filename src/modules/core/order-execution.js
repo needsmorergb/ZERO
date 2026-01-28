@@ -11,7 +11,21 @@ export const OrderExecution = {
         if (amountSol <= 0) return { success: false, error: "Invalid amount" };
         if (amountSol > state.session.balance) return { success: false, error: "Insufficient funds" };
 
-        let price = Market.price || 0.000001;
+        // FRESHNESS CHECK: Warn if price data is stale but allow trade if price exists
+        // This is more lenient to avoid blocking trades during beta testing
+        if (!Market.priceIsFresh && (Date.now() - Market.lastPriceTs) > 5000) {
+            console.warn(`[Trading] Price data is ${((Date.now() - Market.lastPriceTs) / 1000).toFixed(1)}s old`);
+            // Allow trade to proceed if we have ANY price data
+        }
+
+        let price = Market.price || 0;
+        if (price <= 0) return { success: false, error: "Waiting for price data..." };
+
+        // SOL PRICE CHECK: Reject if price looks like SOL price ($50-$500)
+        if (price >= 50 && price <= 500) {
+            return { success: false, error: `Price appears to be SOL price ($${price.toFixed(2)}). Wait for token price.` };
+        }
+
         let marketCap = Market.marketCap || 0;
 
         // CRITICAL SANITY CHECK: Detect if price/marketCap are swapped
@@ -113,8 +127,18 @@ export const OrderExecution = {
         const state = Store.state;
         if (!state.settings.enabled) return { success: false, error: "Paper trading disabled" };
 
+        // FRESHNESS CHECK: Warn if price data is stale but allow trade
+        if (!Market.priceIsFresh && (Date.now() - Market.lastPriceTs) > 5000) {
+            console.warn(`[Trading] Price data is ${((Date.now() - Market.lastPriceTs) / 1000).toFixed(1)}s old`);
+        }
+
         let currentPrice = Market.price || 0;
         if (currentPrice <= 0) return { success: false, error: "No price data" };
+
+        // SOL PRICE CHECK: Reject if price looks like SOL price ($50-$500)
+        if (currentPrice >= 50 && currentPrice <= 500) {
+            return { success: false, error: `Price appears to be SOL price ($${currentPrice.toFixed(2)})` };
+        }
 
         // VALIDATION: Reject if price is clearly wrong (market cap value)
         if (currentPrice > 10000) {

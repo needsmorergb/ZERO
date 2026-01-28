@@ -26,14 +26,18 @@ export const PnlCalculator = {
         console.log('[PNL] Fetching SOL price from CoinGecko...');
 
         try {
-            const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd', {
-                signal: AbortSignal.timeout(5000) // Increase timeout from 3s to 5s
+            const response = await chrome.runtime.sendMessage({
+                type: 'PROXY_FETCH',
+                url: 'https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd',
+                options: { method: 'GET' }
             });
-            const data = await response.json();
+
+            if (!response.ok) throw new Error(response.statusText || response.error || 'Fetch failed');
+            const data = response.data;
             const solPrice = data?.solana?.usd;
 
-            // VALIDATION: SOL price should be between $50-$500 (reasonable range)
-            if (solPrice && solPrice > 50 && solPrice < 500) {
+            // VALIDATION: SOL price should be between $10-$3000 (reasonable range)
+            if (solPrice && solPrice > 10 && solPrice < 3000) {
                 this.cachedSolPrice = solPrice;
                 this.lastValidSolPrice = solPrice; // Store as valid fallback
                 this.lastSolPriceFetch = Date.now();
@@ -65,7 +69,7 @@ export const PnlCalculator = {
         if (!Number.isFinite(n)) return "0.0000";
         // Use more precision for values < 1
         if (Math.abs(n) < 1 && n !== 0) {
-            return n.toFixed(6);
+            return n.toFixed(9);
         }
         return n.toFixed(4);
     },
@@ -101,6 +105,7 @@ export const PnlCalculator = {
                 // Update position's cached price for future calculations
                 const oldPrice = pos.lastPriceUsd || pos.entryPriceUsd;
                 if (!pos.lastPriceUsd || Math.abs(oldPrice - Market.price) / oldPrice > 0.001) {
+                    console.log(`[PNL] Updating ${pos.symbol} price: $${oldPrice.toFixed(8)} → $${Market.price.toFixed(8)}`);
                     pos.lastPriceUsd = Market.price;
                     priceWasUpdated = true;
                 }

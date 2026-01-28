@@ -390,16 +390,32 @@ export const Analytics = {
         const flags = FeatureManager.resolveFlags(state, 'TILT_DETECTION');
         if (!flags.enabled) return;
 
-        const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+        // RATE LIMIT: Check if we alerted recently (60s cooldown)
+        // Use activeAlerts history to be robust against state resets
+        if (state.session?.activeAlerts) {
+            const lastAlert = state.session.activeAlerts.slice().reverse().find(a => a.type === 'VELOCITY');
+            if (lastAlert && (Date.now() - lastAlert.ts < 60000)) {
+                return; // Suppressed by rate limit
+            }
+        }
+
+        const trades = Object.values(state.trades || {})
+            .filter(t => t.mode === (state.settings.tradingMode || 'paper'))
+            .sort((a, b) => a.ts - b.ts);
+
         if (trades.length < 5) return;
 
         const last5 = trades.slice(-5);
         const timeSpan = last5[4].ts - last5[0].ts;
+        const timeSinceLast = Date.now() - last5[4].ts;
 
         // 5 trades in less than 5 minutes
-        if (timeSpan < 300000) {
+        // AND the last trade must be recent (within last 5 minutes)
+        if (timeSpan < 300000 && timeSinceLast < 300000) {
+            console.log(`[ZERØ ALERT] Overtrading Detected: 5 trades in ${(timeSpan / 1000).toFixed(1)}s`, last5.map(t => t.id));
             this.addAlert(state, 'VELOCITY', "⚠️ OVERTRADING: You're trading too fast. Stop and evaluate setups.");
             state.behavior.overtradingFrequency = (state.behavior.overtradingFrequency || 0) + 1;
+            state.lastOvertradingAlert = Date.now();
         }
     },
 

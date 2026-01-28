@@ -3,6 +3,7 @@
  * Extended settings with Pro/Elite teased cards and Privacy & Data panel.
  */
 
+import { Professor } from './professor.js';
 import { Store } from '../store.js';
 import { DiagnosticsStore } from '../diagnostics-store.js';
 import { OverlayManager } from './overlay.js';
@@ -48,20 +49,40 @@ export const SettingsPanel = {
                     </label>
                 </div>
 
+                <div class="setting-row">
+                     <div class="setting-info">
+                        <div class="setting-name">Walkthrough</div>
+                        <div class="setting-desc">Replay the introductory walkthrough.</div>
+                    </div>
+                    <button class="settings-action-btn" data-setting-act="replayWalkthrough" style="width:auto; padding:6px 12px; font-size:12px;">View walkthrough</button>
+                </div>
+
                 <!-- Privacy & Data -->
-                <div class="settings-section-title">Privacy & Data</div>
+                <div class="settings-section-title">Optional diagnostics (off by default)</div>
 
                 <div class="privacy-info-box">
-                    <p>ZERØ stores simulated trades and session data locally on your device by default.</p>
-                    <p>ZERØ does not sell your data.</p>
-                    <p>Diagnostics uploads are optional and off by default. If enabled, ZERØ automatically sends anonymized diagnostics (simulated trades, session logs, feature interaction events, and errors) to help improve the product.</p>
-                    <p>You can disable diagnostics and delete local data at any time.</p>
+                    <p>ZERØ stores your paper trading data locally on your device by default.</p>
+                    <p>You can optionally enable diagnostics to help improve ZERØ and unlock deeper features over time. Diagnostics help us understand session flow, feature usage, and where tools break down — not your private trading decisions.</p>
+                    <ul style="margin:8px 0 8px 16px; padding:0; list-style-type:disc; color:#94a3b8; font-size:11px;">
+                        <li>Improves Pro and Elite features</li>
+                        <li>Helps analytics become more accurate</li>
+                        <li>Helps fix bugs faster</li>
+                        <li>Shapes future tools based on real usage</li>
+                    </ul>
+                    <p style="margin-top:12px; font-weight:600; color:#f8fafc;">What is NOT included:</p>
+                    <ul style="margin:4px 0 8px 16px; padding:0; list-style-type:disc; color:#ef4444; font-size:11px;">
+                        <li>Real funds or wallet access</li>
+                        <li>Private keys or credentials</li>
+                        <li>Raw page content or keystrokes</li>
+                        <li>Any data sold or shared with third parties</li>
+                    </ul>
                 </div>
 
                 <div class="setting-row">
                     <div class="setting-info">
-                        <div class="setting-name">Auto-send diagnostics</div>
-                        <div class="setting-desc">Help improve ZERØ by sending anonymized data.</div>
+                        <div class="setting-name">Enable diagnostics</div>
+                        <div class="setting-desc">Enable optional diagnostics to help improve ZERØ and future features.</div>
+                        <div class="setting-desc" style="opacity:0.6; margin-top:4px;">Some future features may improve faster with anonymized diagnostics enabled.</div>
                     </div>
                     <label class="toggle-switch">
                         <input type="checkbox" data-setting="autoSend" ${isAutoSend ? 'checked' : ''}>
@@ -97,41 +118,8 @@ export const SettingsPanel = {
                     <button class="settings-action-btn danger" data-setting-act="deleteLocal">Delete local ZERØ data</button>
                 </div>
 
-                <!-- Pro Features -->
-                <div class="settings-section-title">
-                    <span>PRO Features</span>
-                    <span class="tier-badge pro">PRO</span>
-                </div>
-                <div class="feature-cards">
-                    ${TEASED_FEATURES.PRO.map(f => `
-                        <div class="feature-card locked" data-feature="${f.id}">
-                            <div class="feature-card-lock">🔒</div>
-                            <div class="feature-card-body">
-                                <div class="feature-card-name">${f.name}</div>
-                                <div class="feature-card-desc">${f.desc}</div>
-                            </div>
-                            <div class="feature-card-badge">Coming soon</div>
-                        </div>
-                    `).join('')}
-                </div>
-
-                <!-- Elite Features -->
-                <div class="settings-section-title">
-                    <span>ELITE Features</span>
-                    <span class="tier-badge elite">ELITE</span>
-                </div>
-                <div class="feature-cards">
-                    ${TEASED_FEATURES.ELITE.map(f => `
-                        <div class="feature-card locked" data-feature="${f.id}">
-                            <div class="feature-card-lock">🔒</div>
-                            <div class="feature-card-body">
-                                <div class="feature-card-name">${f.name}</div>
-                                <div class="feature-card-desc">${f.desc}</div>
-                            </div>
-                            <div class="feature-card-badge">Coming soon</div>
-                        </div>
-                    `).join('')}
-                </div>
+                <!-- Pro Features (HIDDEN FOR FREE RELEASE) -->
+                <!-- Elite Features (HIDDEN FOR FREE RELEASE) -->
 
                 <div style="margin-top:20px; text-align:center; font-size:11px; color:#64748b;">
                     ZERØ v${Store.state.version || '1.11.6'}
@@ -199,6 +187,10 @@ export const SettingsPanel = {
             if (act === 'viewPayload') {
                 this._showSamplePayload(overlay);
             }
+            if (act === 'replayWalkthrough') {
+                overlay.remove(); // Close settings to show walkthrough
+                Professor.startWalkthrough(true);
+            }
             if (act === 'deleteQueue') {
                 await DiagnosticsStore.clearUploadQueue();
                 this._refreshDiagStatus(overlay, DiagnosticsStore.isAutoSendEnabled());
@@ -234,22 +226,16 @@ export const SettingsPanel = {
         modal.style.zIndex = '2147483648';
         modal.innerHTML = `
             <div class="confirm-modal" style="max-width:420px;">
-                <h3>Enable diagnostics?</h3>
+                <h3>Help improve ZERØ (optional)</h3>
                 <p style="font-size:13px; line-height:1.6;">
-                    When enabled, ZERØ will automatically send anonymized diagnostics including:
+                    By enabling diagnostics, ZERØ will automatically send anonymized session logs, simulated trades, and feature interaction events to help improve accuracy, performance, and future features.
                 </p>
-                <ul style="color:#94a3b8; font-size:12px; line-height:1.8; margin:8px 0 16px 16px; padding:0;">
-                    <li>Simulated trade data (no real wallet data)</li>
-                    <li>Session summaries</li>
-                    <li>Feature interaction events</li>
-                    <li>Error logs</li>
-                </ul>
-                <p style="font-size:12px; color:#64748b; margin-bottom:16px;">
-                    No wallet addresses, private keys, passwords, or personal information is ever collected. You can disable this at any time.
+                <p style="font-size:13px; line-height:1.6; margin-top:8px;">
+                    This is optional, off by default, and can be disabled at any time.
                 </p>
                 <div class="confirm-modal-buttons">
                     <button class="confirm-modal-btn cancel">Cancel</button>
-                    <button class="confirm-modal-btn confirm" style="background:rgba(20,184,166,0.8);">Enable</button>
+                    <button class="confirm-modal-btn confirm" style="background:rgba(20,184,166,0.8);">Enable diagnostics</button>
                 </div>
             </div>
         `;

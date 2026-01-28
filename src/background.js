@@ -103,6 +103,44 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return;
     }
 
+    // Generic Proxy Fetch (Avoids CORS on Content Scripts)
+    if (msg?.type === "PROXY_FETCH") {
+      const { url, options } = msg;
+
+      // Security: Safelist allowed domains to prevent abuse
+      const ALLOWED_DOMAINS = [
+        'api.coingecko.com',
+        'api.dexscreener.com',
+        'api.coinbase.com',
+        'api.kraken.com'
+      ];
+
+      try {
+        const hostname = new URL(url).hostname;
+        if (!ALLOWED_DOMAINS.includes(hostname)) {
+          console.warn(`[Proxy] Blocked domain: ${hostname}`);
+          sendResponse({ ok: false, error: 'Domain not allowed' });
+          return;
+        }
+
+        const r = await fetch(url, options || {});
+        if (!r.ok) {
+          sendResponse({ ok: false, status: r.status, statusText: r.statusText });
+          return;
+        }
+
+        const contentType = r.headers.get('content-type');
+        const data = contentType && contentType.includes('application/json')
+          ? await r.json()
+          : await r.text();
+
+        sendResponse({ ok: true, data });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.toString() });
+      }
+      return;
+    }
+
     sendResponse({ ok: false });
   })();
   return true;
