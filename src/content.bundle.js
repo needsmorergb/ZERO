@@ -2751,10 +2751,17 @@ input:checked + .slider:before {
 
   // src/modules/core/token-context.js
   var TokenContextResolver = {
+    _cache: {
+      lastUrl: null,
+      lastResult: { activeMint: null, activeSymbol: null, sourceSite: "unknown" },
+      lastDomScanAt: 0
+    },
     // Resolve the current context
     resolve() {
       const url = window.location.href;
       const hostname = window.location.hostname;
+      const now = Date.now();
+      const urlChanged = url !== this._cache.lastUrl;
       let sourceSite = "unknown";
       let activeMint = null;
       let activeSymbol = null;
@@ -2771,54 +2778,102 @@ input:checked + .slider:before {
       } else if (hostname.includes("padre.gg")) {
         sourceSite = "padre";
         const title = document.title || "";
-        const m = title.match(/([A-Z0-9]+)\s*\//i);
+        const cleaned = title.replace(/\s*[↓↑]\s*\$[\d,.]+[KMB]?\s*$/i, "").trim();
+        const m = cleaned.match(/([A-Z0-9]+)\s*\//i);
         if (m)
           activeSymbol = m[1].toUpperCase();
-      }
-      try {
-        const labels = Array.from(document.querySelectorAll("div, span, p, a, button")).filter((el) => el.textContent.includes("CA:") || el.textContent.includes("DA:"));
-        for (const label of labels) {
-          const neighborhood = [label, label.parentElement, ...label.parentElement ? Array.from(label.parentElement.querySelectorAll("a")) : []];
-          for (const node of neighborhood) {
-            if (!node)
-              continue;
-            if (node.tagName === "A" && node.href) {
-              const m = node.href.match(/([a-zA-Z0-9]{32,44})/);
-              if (m && m[1] && !node.href.includes("/account/")) {
-                activeMint = m[1];
-                return { activeMint, activeSymbol, sourceSite };
-              }
-            }
-            if (node.title && node.title.length >= 32 && node.title.length <= 44) {
-              activeMint = node.title;
-              return { activeMint, activeSymbol, sourceSite };
-            }
-          }
+        if (!activeSymbol && cleaned) {
+          const parts = cleaned.split("|")[0]?.trim();
+          if (parts && parts.length <= 12)
+            activeSymbol = parts.toUpperCase();
         }
-      } catch (e) {
       }
-      try {
-        const links = document.querySelectorAll("a");
-        for (const link of links) {
-          if (/solscan|solana\.fm|birdeye|bullx/.test(link.href)) {
-            const match = link.href.match(/([a-zA-Z0-9]{32,44})/);
-            if (match && match[1] && !link.href.includes("/account/")) {
-              activeMint = match[1];
-              return { activeMint, activeSymbol, sourceSite };
-            }
-          }
-        }
-      } catch (e) {
-      }
-      const mintMatch = url.match(/\/trade\/(?:solana\/)?([a-zA-Z0-9]{32,44})/) || url.match(/\/token\/(?:solana\/)?([a-zA-Z0-9]{32,44})/) || url.match(/\/meme\/([a-zA-Z0-9]{32,44})/);
+      const mintMatch = url.match(/\/trade\/(?:solana\/)?([a-zA-Z0-9]{32,44})/) || url.match(/\/token\/(?:solana\/)?([a-zA-Z0-9]{32,44})/) || url.match(/\/terminal\/(?:solana\/)?([a-zA-Z0-9]{32,44})/) || url.match(/\/meme\/([a-zA-Z0-9]{32,44})/);
       if (mintMatch && mintMatch[1]) {
         activeMint = mintMatch[1];
-      } else {
+      }
+      if (!activeMint) {
+        const urlParamMatch = url.match(/[?&](?:mint|token|address)=([1-9A-HJ-NP-Za-km-z]{32,44})/i);
+        if (urlParamMatch)
+          activeMint = urlParamMatch[1];
+      }
+      if (!activeMint) {
         const allMints = url.match(/[1-9A-HJ-NP-Za-km-z]{32,44}/g);
         if (allMints)
           activeMint = allMints.find((m) => m.length >= 32 && m.length <= 44);
       }
-      return { activeMint, activeSymbol, sourceSite };
+      const shouldScanDom = urlChanged || !activeMint && now - this._cache.lastDomScanAt > 1500;
+      if (!activeMint && shouldScanDom) {
+        this._cache.lastDomScanAt = now;
+        const attrSelectors = [
+          "[data-mint]",
+          "[data-token]",
+          "[data-token-address]",
+          "[data-address]",
+          "[data-ca]"
+        ];
+        try {
+          const attrNodes = document.querySelectorAll(attrSelectors.join(","));
+          for (const node of attrNodes) {
+            for (const attr of ["data-mint", "data-token", "data-token-address", "data-address", "data-ca"]) {
+              const val = node.getAttribute(attr);
+              if (val && /[1-9A-HJ-NP-Za-km-z]{32,44}/.test(val)) {
+                const match = val.match(/[1-9A-HJ-NP-Za-km-z]{32,44}/);
+                if (match) {
+                  activeMint = match[0];
+                  break;
+                }
+              }
+            }
+            if (activeMint)
+              break;
+          }
+        } catch (e) {
+        }
+        if (!activeMint) {
+          try {
+            const links = document.querySelectorAll('a[href*="solscan"], a[href*="solana.fm"], a[href*="birdeye"], a[href*="bullx"]');
+            for (const link of links) {
+              const match = link.href.match(/([a-zA-Z0-9]{32,44})/);
+              if (match && match[1] && !link.href.includes("/account/")) {
+                activeMint = match[1];
+                break;
+              }
+            }
+          } catch (e) {
+          }
+        }
+        if (!activeMint) {
+          try {
+            const walker = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT);
+            let seen = 0;
+            while (walker.nextNode() && seen < 50) {
+              const text = walker.currentNode?.nodeValue || "";
+              if (!text.includes("CA:") && !text.includes("DA:")) {
+                seen += 1;
+                continue;
+              }
+              const mm = text.match(/(?:CA|DA):\s*([1-9A-HJ-NP-Za-km-z]{32,44})/);
+              if (mm) {
+                activeMint = mm[1];
+                break;
+              }
+              seen += 1;
+            }
+          } catch (e) {
+          }
+        }
+      }
+      if (!activeMint && !urlChanged) {
+        activeMint = this._cache.lastResult.activeMint;
+      }
+      if (!activeSymbol && !urlChanged) {
+        activeSymbol = this._cache.lastResult.activeSymbol;
+      }
+      const result = { activeMint, activeSymbol, sourceSite };
+      this._cache.lastUrl = url;
+      this._cache.lastResult = result;
+      return result;
     }
   };
 
@@ -4253,8 +4308,11 @@ input:checked + .slider:before {
       let priceWasUpdated = false;
       let totalUnrealizedUsd = 0;
       const positions = Object.values(state.positions || {});
+      const currentSymbol = (Market2.currentSymbol || "").toUpperCase();
       positions.forEach((pos) => {
-        if (currentTokenMint && pos.mint === currentTokenMint && Market2.price > 0) {
+        const mintMatches = currentTokenMint && pos.mint === currentTokenMint;
+        const symbolMatches = !currentTokenMint && currentSymbol && pos.symbol && pos.symbol.toUpperCase() === currentSymbol;
+        if ((mintMatches || symbolMatches) && Market2.price > 0) {
           pos.lastMarkPriceUsd = Market2.price;
           pos.lastMarketCapUsd = Market2.marketCap;
           priceWasUpdated = true;

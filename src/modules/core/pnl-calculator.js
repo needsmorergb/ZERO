@@ -100,11 +100,15 @@ export const PnlCalculator = {
         let totalUnrealizedUsd = 0;
 
         const positions = Object.values(state.positions || {});
+        const currentSymbol = (Market.currentSymbol || "").toUpperCase();
 
         positions.forEach(pos => {
             // 1. Determine Mark Price
             // Use Live API Price if this is the active mint
-            if (currentTokenMint && pos.mint === currentTokenMint && Market.price > 0) {
+            const mintMatches = currentTokenMint && pos.mint === currentTokenMint;
+            const symbolMatches = !currentTokenMint && currentSymbol && pos.symbol && pos.symbol.toUpperCase() === currentSymbol;
+
+            if ((mintMatches || symbolMatches) && Market.price > 0) {
                 pos.lastMarkPriceUsd = Market.price; // Update Mark info
                 pos.lastMarketCapUsd = Market.marketCap;
                 priceWasUpdated = true;
