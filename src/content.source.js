@@ -839,6 +839,10 @@
 
     // Padre-specific: Push down fixed-positioned header elements
     if (PLATFORM.isPadre) {
+      body.style.boxSizing = "border-box";
+      body.style.minHeight = `calc(100vh + ${h}px)`;
+      document.documentElement.style.scrollPaddingTop = `${h}px`;
+
       // Find and offset the main header/nav bar
       const padreHeader = document.querySelector('header') ||
         document.querySelector('nav') ||
@@ -851,21 +855,6 @@
           if (currentTop < h) {
             padreHeader.style.top = `${h}px`;
           }
-        }
-      }
-
-      // Also try to push down the main content area if it has top padding/margin
-      const mainContent = document.querySelector('#root') ||
-        document.querySelector('[class*="main"]') ||
-        document.querySelector('main');
-      if (mainContent) {
-        const prevMargin = mainContent.getAttribute("data-paper-prev-margin-top");
-        if (!prevMargin) {
-          mainContent.setAttribute("data-paper-prev-margin-top", getComputedStyle(mainContent).marginTop || "0px");
-        }
-        const curMargin = safeParseFloat(getComputedStyle(mainContent).marginTop);
-        if (curMargin < h) {
-          mainContent.style.marginTop = `${h}px`;
         }
       }
     }

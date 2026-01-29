@@ -12,6 +12,7 @@ export const OverlayManager = {
         // Platform-specific initialization
         if (platformName === 'Padre') {
             console.log('[ZERØ] Padre detected - using DOM polling only');
+            this.injectPadreOffset();
         }
     },
 
@@ -62,15 +63,20 @@ export const OverlayManager = {
         const style = document.createElement('style');
         style.id = styleId;
         style.textContent = `
+          html, body {
+            scroll-padding-top: 28px;
+          }
+          body {
+            padding-top: 28px !important;
+            box-sizing: border-box;
+            min-height: calc(100vh + 28px);
+          }
           header, nav, [class*="Header"], [class*="Nav"], .MuiAppBar-root, [style*="sticky"], [style*="fixed"], [data-testid="top-bar"] {
             top: 28px !important;
             margin-top: 28px !important;
           }
           .MuiBox-root[style*="top: 0"], .MuiBox-root[style*="top:0"] {
             top: 28px !important;
-          }
-          #root, main, [class*="main"], body > div:first-child {
-            padding-top: 28px !important;
           }
         `;
         document.head.appendChild(style);
