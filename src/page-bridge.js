@@ -150,6 +150,9 @@
 
     if (!throttleEmit()) return;
 
+    // DEBUG LOG
+    console.log(`[Bridge] Emitting PRICE_TICK: $${r.price} (conf: ${r.confidence}) from ${url}`);
+
     send({
       type: "PRICE_TICK",
       source: "site",

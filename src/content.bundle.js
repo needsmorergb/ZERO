@@ -1,8 +1,6 @@
 (() => {
   var __defProp = Object.defineProperty;
-  var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
   var __getOwnPropNames = Object.getOwnPropertyNames;
-  var __hasOwnProp = Object.prototype.hasOwnProperty;
   var __esm = (fn, res) => function __init() {
     return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
   };
@@ -10,15 +8,6 @@
     for (var name in all)
       __defProp(target, name, { get: all[name], enumerable: true });
   };
-  var __copyProps = (to, from, except, desc) => {
-    if (from && typeof from === "object" || typeof from === "function") {
-      for (let key of __getOwnPropNames(from))
-        if (!__hasOwnProp.call(to, key) && key !== except)
-          __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
-    }
-    return to;
-  };
-  var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
   // src/modules/store.js
   function deepMerge(base, patch) {
@@ -330,1461 +319,6 @@
             realized: session.realized,
             disciplineScore: session.disciplineScore,
             status: session.status
-          };
-        }
-      };
-    }
-  });
-
-  // src/modules/featureManager.js
-  var TIERS, FEATURES, FeatureManager;
-  var init_featureManager = __esm({
-    "src/modules/featureManager.js"() {
-      TIERS = {
-        FREE: "free",
-        PRO: "pro",
-        ELITE: "elite"
-      };
-      FEATURES = {
-        // Phase 1-2: Core
-        BASIC_TRADING: "free",
-        REAL_TIME_PNL: "free",
-        // Phase 2-4: Pro Foundations
-        STRATEGY_TAGGING: "pro",
-        EMOTION_TRACKING: "pro",
-        DISCIPLINE_SCORING: "pro",
-        AI_DEBRIEF: "pro",
-        TRADE_PLAN: "pro",
-        // Stop loss, targets, thesis capture
-        // Phase 5-6: Advanced Pro
-        EQUITY_CHARTS: "pro",
-        DETAILED_LOGS: "pro",
-        ADVANCED_ANALYTICS: "pro",
-        RISK_ADJUSTED_METRICS: "pro",
-        SHARE_TO_X: "free",
-        // Phase 6+: Elite
-        TILT_DETECTION: "elite",
-        SESSION_REPLAY: "elite",
-        ADVANCED_COACHING: "elite",
-        BEHAVIOR_BASELINE: "elite",
-        MARKET_CONTEXT: "elite",
-        TRADER_PROFILE: "elite",
-        // Personal Trader Profile dashboard
-        // Explicit tease-card keys (alias existing features for Settings UI)
-        PRO_TRADE_PLAN: "pro",
-        PRO_DISCIPLINE: "pro",
-        PRO_STRATEGY_ANALYTICS: "pro",
-        PRO_EMOTION_ANALYTICS: "pro",
-        PRO_AI_DEBRIEF: "pro",
-        ELITE_TILT_DETECTION: "elite",
-        ELITE_RISK_METRICS: "elite",
-        ELITE_SESSION_REPLAY: "elite",
-        ELITE_TRADER_PROFILE: "elite",
-        ELITE_MARKET_CONTEXT: "elite"
-      };
-      FeatureManager = {
-        TIERS,
-        FEATURES,
-        resolveFlags(state, featureName) {
-          const userTier = state.settings?.tier || TIERS.FREE;
-          const requiredTier = FEATURES[featureName];
-          const flags = {
-            enabled: false,
-            visible: false,
-            interactive: false,
-            gated: false
-          };
-          if (!requiredTier)
-            return flags;
-          const hasEntitlement = this.hasTierAccess(userTier, requiredTier);
-          const phase = state.settings?.rolloutPhase || "full";
-          if (requiredTier === TIERS.FREE) {
-            flags.enabled = true;
-            flags.visible = true;
-            flags.interactive = true;
-            flags.gated = false;
-          } else {
-            flags.enabled = true;
-            if (hasEntitlement) {
-              flags.visible = true;
-              flags.interactive = true;
-              flags.gated = false;
-            } else {
-              flags.visible = false;
-              flags.interactive = false;
-              flags.gated = true;
-            }
-          }
-          if (state.settings?.featureOverrides?.[featureName] === false) {
-            flags.enabled = false;
-            flags.visible = false;
-            flags.interactive = false;
-          }
-          return flags;
-        },
-        hasTierAccess(userTier, requiredTier) {
-          if (requiredTier === TIERS.FREE)
-            return true;
-          if (requiredTier === TIERS.PRO)
-            return [TIERS.PRO, TIERS.ELITE].includes(userTier);
-          if (requiredTier === TIERS.ELITE)
-            return userTier === TIERS.ELITE;
-          return false;
-        }
-      };
-    }
-  });
-
-  // src/modules/core/market.js
-  var Market2;
-  var init_market = __esm({
-    "src/modules/core/market.js"() {
-      Market2 = {
-        price: 0,
-        marketCap: 0,
-        lastPriceTs: 0,
-        priceIsFresh: false,
-        // Tracks if price was updated recently (< 2s ago)
-        context: null,
-        // { vol24h, priceChange24h, liquidity, fdv }
-        currentMint: null,
-        lastContextFetch: 0,
-        listeners: [],
-        init() {
-          this.startPolling();
-          setInterval(() => {
-            if (Date.now() - this.lastPriceTs > 2e3) {
-              this.priceIsFresh = false;
-            }
-          }, 1e3);
-          window.addEventListener("message", (event) => {
-            if (event.source !== window || !event.data?.__paper)
-              return;
-            if (event.data.type === "PRICE_TICK") {
-              this.updatePrice(event.data.price);
-            }
-          });
-        },
-        subscribe(callback) {
-          this.listeners.push(callback);
-        },
-        startPolling() {
-          setInterval(() => {
-            const isTradePage = window.location.pathname.includes("/trade/") || window.location.pathname.includes("/token/") || window.location.pathname.includes("/meme/");
-            if (!isTradePage)
-              return;
-            this.pollMint();
-            this.pollDOM();
-          }, 250);
-        },
-        pollMint() {
-          const url = window.location.href;
-          let mintMatch = url.match(/\/trade\/(?:solana\/)?([a-zA-Z0-9]{32,44})/) || url.match(/\/token\/(?:solana\/)?([a-zA-Z0-9]{32,44})/);
-          if (!mintMatch) {
-            const allMints = url.match(/[1-9A-HJ-NP-Za-km-z]{32,44}/g);
-            if (allMints) {
-              const candidate = allMints[allMints.length - 1];
-              if (candidate && candidate.length > 30) {
-                mintMatch = [null, candidate];
-              }
-            }
-          }
-          const mint = mintMatch ? mintMatch[1] : null;
-          if (mint && mint !== this.currentMint) {
-            console.log(`[Market] New token detected: ${mint}`);
-            this.currentMint = mint;
-            this.context = null;
-            this.lastContextFetch = 0;
-            this.fetchMarketContext(mint);
-            this.notify();
-          } else if (mint && (!this.context || Date.now() - this.lastContextFetch > 6e4)) {
-            this.fetchMarketContext(mint);
-          }
-        },
-        pollDOM() {
-          if (window.location.hostname.includes("padre.gg")) {
-            const candidates2 = Array.from(document.querySelectorAll("h2")).filter((el) => {
-              const txt = el.textContent || "";
-              return txt.includes("$") && /\d/.test(txt) && !txt.includes("SOL") && !txt.includes("%") && !txt.includes("+") && !txt.includes("-") && txt.length < 30;
-            });
-            this.processCandidates(candidates2);
-            return;
-          }
-          if (window.location.hostname.includes("axiom.trade")) {
-            const headers = document.querySelectorAll("div.flex.max-h-\\[64px\\]");
-            for (let i = 0; i < headers.length; i++) {
-              const header = headers[i];
-              const children = Array.from(header.children);
-              const priceContainer = children.find(
-                (child) => child.textContent.includes("Price") && Array.from(child.querySelectorAll("span, div")).some((el) => el.textContent.trim() === "Price")
-              );
-              if (priceContainer) {
-                const label = Array.from(priceContainer.querySelectorAll("span, div")).find((el) => el.textContent.trim() === "Price");
-                if (label) {
-                  const allSpans2 = Array.from(priceContainer.querySelectorAll("span"));
-                  const labelIndex = allSpans2.indexOf(label);
-                  const candidateSpans = allSpans2.slice(labelIndex + 1);
-                  const valueSpan = candidateSpans.find(
-                    (s) => (
-                      // Must contain digits
-                      /\d/.test(s.textContent) && // Must NOT be just "%" or "+" or "-"
-                      !s.textContent.includes("%") && // Exclude Timeframes (5d, 1h, 15m, 4H) and Time dates (Jan 24, 12:00)
-                      !/^\d+[dhm]$/i.test(s.textContent.trim()) && !s.textContent.includes(":") && // Avoids "Liquidity" values if container is wrong
-                      (s.textContent.includes("$") || /^[0-9.]+/.test(s.textContent))
-                    )
-                  );
-                  if (valueSpan) {
-                    let raw = valueSpan.textContent;
-                    if (/[₀-₉]/.test(raw)) {
-                      this.processCandidates([valueSpan], true);
-                      return;
-                    }
-                    if (valueSpan.innerHTML && valueSpan.innerHTML.includes("<sub")) {
-                      const subMatch = valueSpan.innerHTML.match(/<sub[^>]*>(\d+)<\/sub>/i);
-                      if (subMatch) {
-                        const zeros = parseInt(subMatch[1]);
-                        const parts = valueSpan.innerText.split("\n");
-                        const digits = valueSpan.textContent.replace(/[^\d]/g, "");
-                        const htmlParts = valueSpan.innerHTML.split(/<sub[^>]*>/i);
-                        if (htmlParts.length > 1) {
-                          const prefix = htmlParts[0].replace(/<[^>]+>/g, "").trim();
-                          const suffix = htmlParts[1].replace(/<\/sub>/i, "").trim();
-                          const subContent = subMatch[1];
-                          const afterSub = valueSpan.innerHTML.split("</sub>")[1] || "";
-                          const cleanPrefix = prefix.replace(/[^\d.]/g, "");
-                          const cleanSuffix = afterSub.replace(/[^\d]/g, "");
-                          const expanded = `${cleanPrefix}${"0".repeat(parseInt(subContent))}${cleanSuffix}`;
-                          const val = parseFloat(expanded);
-                          if (val > 0) {
-                            this.updatePrice(val);
-                            return;
-                          }
-                        }
-                      }
-                    }
-                    this.processCandidates([valueSpan], true);
-                    return;
-                  }
-                }
-                const rawText = priceContainer.textContent.replace("Price", "").trim();
-                if (rawText) {
-                  const val = this.parsePriceStr(rawText);
-                  const isTimeframe = /^\d+[dhm]$/i.test(rawText.replace(/[^\w]/g, ""));
-                  if (!isTimeframe && val > 0) {
-                    this.updatePrice(val);
-                    return;
-                  }
-                }
-              }
-              const mcContainer = children.find((child) => {
-                const text = child.textContent || "";
-                return (text.includes("MC") || text.includes("Market Cap")) && !text.includes("Price") && // Don't confuse with price container
-                !text.includes("Liquidity") && // Don't confuse with liquidity
-                Array.from(child.querySelectorAll("span, div")).some(
-                  (el) => ["MC", "Market Cap", "MarketCap"].includes(el.textContent.replace(/[^\w ]/g, "").trim())
-                );
-              });
-              if (mcContainer) {
-                const label = Array.from(mcContainer.querySelectorAll("span, div")).find(
-                  (el) => ["MC", "Market Cap", "MarketCap"].includes(el.textContent.replace(/[^\w ]/g, "").trim())
-                );
-                if (label) {
-                  const allSpans2 = Array.from(mcContainer.querySelectorAll("span"));
-                  const labelIndex = allSpans2.indexOf(label);
-                  const candidateSpans = allSpans2.slice(labelIndex + 1);
-                  const valSpan = candidateSpans.find(
-                    (s) => /\d/.test(s.textContent) && (/[KMB]/i.test(s.textContent) || parseFloat(s.textContent.replace(/[^0-9.]/g, "")) > 1e4)
-                  );
-                  if (valSpan) {
-                    const raw = valSpan.textContent;
-                    const val = this.parsePriceStr(raw);
-                    if (val > 1e4) {
-                      this.marketCap = val;
-                      console.log(`[Market] MC: $${val.toLocaleString()} (${raw})`);
-                    } else if (val > 0) {
-                      console.warn(`[Market] Rejected MC candidate: $${val} (likely liquidity, not MC)`);
-                    }
-                  }
-                }
-              }
-            }
-            console.log("[Market] Axiom complex logic found no price, trying aggressive fallback...");
-            const allSpans = Array.from(document.querySelectorAll("span, div")).filter((el) => {
-              const txt = el.textContent || "";
-              return txt.includes("$") && /\d/.test(txt) && txt.length < 20 && el.children.length === 0 && !txt.includes("SOL") && !txt.includes("BTC") && !txt.includes("%") && !txt.includes("+") && !txt.includes("-") && !txt.includes("K") && !txt.includes("M") && !txt.includes("B");
-            }).slice(0, 20);
-            if (allSpans.length > 0) {
-              console.log(
-                `[Market] Axiom fallback found ${allSpans.length} price candidates:`,
-                allSpans.map((el) => el.textContent.trim()).slice(0, 10)
-              );
-            }
-            this.processCandidates(allSpans, true);
-            return;
-          }
-          const candidates = Array.from(document.querySelectorAll("h1, h2, .price")).filter((el) => {
-            const txt = el.textContent || "";
-            return txt.includes("$") && /\d/.test(txt) && !txt.includes("%") && !txt.includes("+") && !txt.includes("-") && txt.length < 30;
-          });
-          this.processCandidates(candidates);
-        },
-        processCandidates(candidates, isExplicitAxiom = false) {
-          for (const el of candidates) {
-            const raw = el.textContent.trim();
-            const val = this.parsePriceStr(raw);
-            const hasUnit = /[KMB]/.test(raw.toUpperCase());
-            if (hasUnit || val > 1e4) {
-              if (val > 0)
-                this.marketCap = val;
-            } else if (val > 0 && val < 5e4) {
-              if (this.isSolPrice(val)) {
-                console.warn(`[Market] REJECTED SOL PRICE: $${val}`);
-                continue;
-              }
-              if (!isExplicitAxiom && this.price > 0 && Date.now() - this.lastPriceTs < 5e3) {
-                const ratio = val / this.price;
-                if (ratio > 100 || ratio < 0.01) {
-                  console.warn(`[Market] SPIKE REJECTED: $${val} (${ratio.toFixed(1)}x change)`);
-                  continue;
-                }
-              }
-              this.updatePrice(val);
-            }
-          }
-        },
-        async fetchMarketContext(mintOverride) {
-          const query = mintOverride || this.currentMint;
-          if (!query)
-            return;
-          if (this.lastContextFetch && Date.now() - this.lastContextFetch < 1e4 && this.context)
-            return;
-          this.lastContextFetch = Date.now();
-          try {
-            console.log(`[Market] Searching context for ${query}...`);
-            const res = await chrome.runtime.sendMessage({
-              type: "PROXY_FETCH",
-              url: `https://api.dexscreener.com/latest/dex/search?q=${query}`
-            });
-            if (!res.ok)
-              throw new Error(`HTTP error! status: ${res.status || res.error}`);
-            const data = res.data;
-            const pairs = (data.pairs || []).sort((a, b) => {
-              return (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0);
-            });
-            const pair = pairs[0];
-            if (pair) {
-              this.context = {
-                vol24h: pair.volume?.h24 || 0,
-                priceChange24h: pair.priceChange?.h24 || 0,
-                liquidity: pair.liquidity?.usd || 0,
-                fdv: pair.fdv || 0,
-                symbol: pair.baseToken?.symbol || "",
-                dex: pair.dexId,
-                ts: Date.now()
-              };
-              console.log(`[Market] Context Ready: ${this.context.symbol} on ${this.context.dex} (Vol: $${(this.context.vol24h / 1e3).toFixed(0)}K)`);
-              this.notify();
-            } else {
-              console.warn(`[Market] No results found for ${query}`);
-            }
-          } catch (e) {
-            console.error("[Market] Context fetch failed:", e);
-          }
-        },
-        notify() {
-          this.listeners.forEach((cb) => cb({
-            price: this.price,
-            context: this.context,
-            mint: this.currentMint
-          }));
-        },
-        parsePriceStr(text) {
-          if (!text)
-            return 0;
-          let clean = text.trim();
-          const subscriptMap = {
-            "\u2080": 0,
-            "\u2081": 1,
-            "\u2082": 2,
-            "\u2083": 3,
-            "\u2084": 4,
-            "\u2085": 5,
-            "\u2086": 6,
-            "\u2087": 7,
-            "\u2088": 8,
-            "\u2089": 9
-          };
-          let processed = clean.replace(/[$,]/g, "");
-          const match = processed.match(/0\.0([₀₁₂₃₄₅₆₇₈₉])(\d+)/);
-          if (match) {
-            const numZeros = subscriptMap[match[1]];
-            const digits = match[2];
-            processed = "0.0" + "0".repeat(numZeros) + digits;
-          }
-          let val = parseFloat(processed);
-          const low = processed.toLowerCase();
-          if (low.includes("k"))
-            val *= 1e3;
-          else if (low.includes("m"))
-            val *= 1e6;
-          else if (low.includes("b"))
-            val *= 1e9;
-          return isNaN(val) ? 0 : val;
-        },
-        isSolPrice(price) {
-          return price >= 50 && price <= 500;
-        },
-        updatePrice(val) {
-          if (!val || val <= 1e-12)
-            return;
-          if (val !== this.price) {
-            const oldPrice = this.price || 0;
-            console.log(`[Market] Price: $${val.toFixed(8)} (was $${oldPrice.toFixed(8)}) | MC: $${this.marketCap.toFixed(0)}`);
-            this.price = val;
-            this.lastPriceTs = Date.now();
-            this.priceIsFresh = true;
-            this.notify();
-          }
-        }
-      };
-    }
-  });
-
-  // src/modules/core/analytics.js
-  var analytics_exports = {};
-  __export(analytics_exports, {
-    Analytics: () => Analytics,
-    EVENT_CATEGORIES: () => EVENT_CATEGORIES
-  });
-  var EVENT_CATEGORIES, Analytics;
-  var init_analytics = __esm({
-    "src/modules/core/analytics.js"() {
-      init_store();
-      init_featureManager();
-      init_market();
-      EVENT_CATEGORIES = {
-        TRADE: "TRADE",
-        ALERT: "ALERT",
-        DISCIPLINE: "DISCIPLINE",
-        SYSTEM: "SYSTEM",
-        MILESTONE: "MILESTONE"
-      };
-      Analytics = {
-        // ==========================================
-        // PERSISTENT EVENT LOGGING
-        // ==========================================
-        logEvent(state, type, category, message, data = {}) {
-          if (!state.eventLog)
-            state.eventLog = [];
-          const event = {
-            id: `evt_${Date.now()}_${Math.floor(Math.random() * 1e3)}`,
-            ts: Date.now(),
-            type,
-            category,
-            message,
-            data
-          };
-          state.eventLog.push(event);
-          if (state.eventLog.length > 100) {
-            state.eventLog = state.eventLog.slice(-100);
-          }
-          console.log(`[EVENT LOG] [${category}] ${type}: ${message}`);
-          return event;
-        },
-        logTradeEvent(state, trade) {
-          const pnlText = trade.realizedPnlSol ? `P&L: ${trade.realizedPnlSol > 0 ? "+" : ""}${trade.realizedPnlSol.toFixed(4)} SOL` : `Size: ${trade.solAmount.toFixed(4)} SOL`;
-          const message = `${trade.side} ${trade.symbol} @ $${trade.priceUsd?.toFixed(6) || "N/A"} | ${pnlText}`;
-          this.logEvent(state, trade.side, EVENT_CATEGORIES.TRADE, message, {
-            tradeId: trade.id,
-            symbol: trade.symbol,
-            priceUsd: trade.priceUsd,
-            solAmount: trade.solAmount,
-            realizedPnlSol: trade.realizedPnlSol,
-            strategy: trade.strategy,
-            riskDefined: trade.riskDefined
-          });
-        },
-        logDisciplineEvent(state, score, penalty, reasons) {
-          if (penalty <= 0)
-            return;
-          const message = `Discipline -${penalty} pts: ${reasons.join(", ")}`;
-          this.logEvent(state, "PENALTY", EVENT_CATEGORIES.DISCIPLINE, message, {
-            score,
-            penalty,
-            reasons
-          });
-        },
-        logAlertEvent(state, alertType, message) {
-          this.logEvent(state, alertType, EVENT_CATEGORIES.ALERT, message, { alertType });
-        },
-        logMilestone(state, type, message, data = {}) {
-          this.logEvent(state, type, EVENT_CATEGORIES.MILESTONE, message, data);
-        },
-        getEventLog(state, options = {}) {
-          const { category, limit = 50, offset = 0 } = options;
-          let events = state.eventLog || [];
-          if (category) {
-            events = events.filter((e) => e.category === category);
-          }
-          events = events.sort((a, b) => b.ts - a.ts);
-          return events.slice(offset, offset + limit);
-        },
-        getEventStats(state) {
-          const events = state.eventLog || [];
-          const stats = {
-            total: events.length,
-            trades: events.filter((e) => e.category === EVENT_CATEGORIES.TRADE).length,
-            alerts: events.filter((e) => e.category === EVENT_CATEGORIES.ALERT).length,
-            disciplineEvents: events.filter((e) => e.category === EVENT_CATEGORIES.DISCIPLINE).length,
-            milestones: events.filter((e) => e.category === EVENT_CATEGORIES.MILESTONE).length
-          };
-          return stats;
-        },
-        analyzeRecentTrades(state) {
-          const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
-          if (trades.length === 0)
-            return null;
-          const recentTrades = trades.slice(-10);
-          let wins = 0, losses = 0;
-          let totalHoldTimeMs = 0;
-          let totalPnlSol = 0;
-          let avgEntryMc = 0, avgExitMc = 0;
-          let entryMcCount = 0, exitMcCount = 0;
-          let quickFlips = 0;
-          let longHolds = 0;
-          for (const trade of recentTrades) {
-            const pnl = trade.realizedPnlSol || 0;
-            if (pnl > 0)
-              wins++;
-            else if (pnl < 0)
-              losses++;
-            totalPnlSol += pnl;
-            if (trade.marketCap) {
-              avgExitMc += trade.marketCap;
-              exitMcCount++;
-            }
-          }
-          const winRate = recentTrades.length > 0 ? wins / recentTrades.length * 100 : 0;
-          const grossProfits = recentTrades.reduce((sum, t) => sum + Math.max(0, t.realizedPnlSol || 0), 0);
-          const grossLosses = Math.abs(recentTrades.reduce((sum, t) => sum + Math.min(0, t.realizedPnlSol || 0), 0));
-          const profitFactor = grossLosses > 0 ? (grossProfits / grossLosses).toFixed(2) : grossProfits > 0 ? "MAX" : "0.00";
-          let peak = 0, maxDd = 0, currentBal = 0;
-          recentTrades.forEach((t) => {
-            currentBal += t.realizedPnlSol || 0;
-            if (currentBal > peak)
-              peak = currentBal;
-            const dd = peak - currentBal;
-            if (dd > maxDd)
-              maxDd = dd;
-          });
-          return {
-            totalTrades: recentTrades.length,
-            wins,
-            losses,
-            winRate: winRate.toFixed(1),
-            profitFactor,
-            maxDrawdown: maxDd.toFixed(4),
-            totalPnlSol
-          };
-        },
-        calculateDiscipline(trade, state) {
-          const flags = FeatureManager.resolveFlags(state, "DISCIPLINE_SCORING");
-          if (!flags.enabled)
-            return { score: state.session.disciplineScore || 100, penalty: 0, reasons: [] };
-          const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
-          const prevTrade = trades.length > 1 ? trades[trades.length - 2] : null;
-          let penalty = 0;
-          let reasons = [];
-          if (prevTrade && trade.ts - prevTrade.ts < 6e4) {
-            penalty += 10;
-            reasons.push("FOMO (Rapid logic)");
-          }
-          if (!trade.strategy || trade.strategy === "Unknown" || trade.strategy === "Other") {
-            penalty += 5;
-            reasons.push("No Strategy");
-          }
-          if (trade.side === "BUY") {
-            const currentBal = state.session.balance + trade.solSize;
-            if (trade.solSize > currentBal * 0.5) {
-              penalty += 20;
-              reasons.push("Oversizing (>50%)");
-            }
-            const planFlags = FeatureManager.resolveFlags(state, "TRADE_PLAN");
-            if (planFlags.interactive && !trade.riskDefined) {
-              penalty += 5;
-              reasons.push("No Stop Loss Defined");
-            }
-          }
-          if (trade.side === "SELL") {
-            const result = this.checkPlanAdherence(trade, state);
-            if (result.penalty > 0) {
-              penalty += result.penalty;
-              reasons.push(...result.reasons);
-            }
-          }
-          let score = state.session.disciplineScore !== void 0 ? state.session.disciplineScore : 100;
-          score = Math.max(0, score - penalty);
-          state.session.disciplineScore = score;
-          if (penalty > 0) {
-            console.log(`[DISCIPLINE] Score -${penalty} (${reasons.join(", ")})`);
-            this.logDisciplineEvent(state, score, penalty, reasons);
-          }
-          return { score, penalty, reasons };
-        },
-        // Check if trade exit adhered to the original plan
-        checkPlanAdherence(sellTrade, state) {
-          let penalty = 0;
-          const reasons = [];
-          const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
-          const buyTrade = trades.find(
-            (t) => t.side === "BUY" && t.mint === sellTrade.mint && t.ts < sellTrade.ts && t.riskDefined
-          );
-          if (!buyTrade || !buyTrade.plannedStop)
-            return { penalty: 0, reasons: [] };
-          const exitPrice = sellTrade.priceUsd;
-          const plannedStop = buyTrade.plannedStop;
-          const plannedTarget = buyTrade.plannedTarget;
-          const entryPrice = buyTrade.priceUsd;
-          if (exitPrice < plannedStop && sellTrade.realizedPnlSol < 0) {
-            const violationPct = ((plannedStop - exitPrice) / plannedStop * 100).toFixed(1);
-            penalty += 15;
-            reasons.push(`Stop Violated (-${violationPct}% below stop)`);
-          }
-          if (plannedTarget && exitPrice < plannedTarget && sellTrade.realizedPnlSol > 0) {
-            const targetDistance = (plannedTarget - exitPrice) / plannedTarget * 100;
-            if (targetDistance > 30) {
-              penalty += 5;
-              reasons.push("Early Exit (Left >30% gains)");
-            }
-          }
-          sellTrade.planAdherence = {
-            hadPlan: true,
-            plannedStop,
-            plannedTarget,
-            entryPrice,
-            exitPrice,
-            stopViolated: exitPrice < plannedStop && sellTrade.realizedPnlSol < 0,
-            hitTarget: plannedTarget && exitPrice >= plannedTarget
-          };
-          return { penalty, reasons };
-        },
-        // Calculate R-Multiple for a trade (requires defined risk)
-        calculateRMultiple(sellTrade, state) {
-          const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
-          const buyTrade = trades.find(
-            (t) => t.side === "BUY" && t.mint === sellTrade.mint && t.ts < sellTrade.ts && t.riskDefined
-          );
-          if (!buyTrade || !buyTrade.plannedStop)
-            return null;
-          const entryPrice = buyTrade.priceUsd;
-          const exitPrice = sellTrade.priceUsd;
-          const stopPrice = buyTrade.plannedStop;
-          const riskPerUnit = entryPrice - stopPrice;
-          if (riskPerUnit <= 0)
-            return null;
-          const pnlPerUnit = exitPrice - entryPrice;
-          const rMultiple = pnlPerUnit / riskPerUnit;
-          return {
-            rMultiple: parseFloat(rMultiple.toFixed(2)),
-            entryPrice,
-            exitPrice,
-            stopPrice,
-            riskPerUnit,
-            pnlPerUnit
-          };
-        },
-        updateStreaks(trade, state) {
-          if (trade.side !== "SELL")
-            return;
-          const pnl = trade.realizedPnlSol || 0;
-          if (pnl > 0) {
-            state.session.winStreak = (state.session.winStreak || 0) + 1;
-            state.session.lossStreak = 0;
-            console.log(`[ZER\xD8] Win! +${pnl.toFixed(4)} SOL. Win streak: ${state.session.winStreak}`);
-          } else if (pnl < 0) {
-            state.session.lossStreak = (state.session.lossStreak || 0) + 1;
-            state.session.winStreak = 0;
-            console.log(`[ZER\xD8] Loss. ${pnl.toFixed(4)} SOL. Loss streak: ${state.session.lossStreak}`);
-          }
-          if (!state.session.equityHistory)
-            state.session.equityHistory = [];
-          state.session.equityHistory.push({
-            ts: Date.now(),
-            equity: state.session.balance + (state.session.realized || 0)
-          });
-          if (state.session.equityHistory.length > 50)
-            state.session.equityHistory.shift();
-          this.detectTilt(trade, state);
-          this.detectFomo(trade, state);
-          this.detectPanicSell(trade, state);
-          this.detectSunkCost(trade, state);
-          this.detectStrategyDrift(trade, state);
-          this.monitorMarketRegime(state);
-          this.updateProfile(state);
-        },
-        monitorMarketRegime(state) {
-          const flags = FeatureManager.resolveFlags(state, "ADVANCED_COACHING");
-          if (!flags.enabled)
-            return;
-          const ctx = Market2.context;
-          if (!ctx)
-            return;
-          const vol = ctx.vol24h;
-          const chg = Math.abs(ctx.priceChange24h);
-          if (vol < 5e5 && Date.now() - (state.lastRegimeAlert || 0) > 36e5) {
-            this.addAlert(state, "MARKET_REGIME", "\u{1F4C9} LOW VOLUME: Liquidity is thin ($<500k). Slippage may be high.");
-            state.lastRegimeAlert = Date.now();
-          }
-          if (chg > 50 && Date.now() - (state.lastRegimeAlert || 0) > 36e5) {
-            this.addAlert(state, "MARKET_REGIME", "\u26A0\uFE0F HIGH VOLATILITY: 24h change is >50%. Expect rapid swings.");
-            state.lastRegimeAlert = Date.now();
-          }
-        },
-        detectTilt(trade, state) {
-          const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
-          if (!flags.enabled)
-            return;
-          const lossStreak = state.session.lossStreak || 0;
-          if (lossStreak >= 3) {
-            this.addAlert(state, "TILT", `\u26A0\uFE0F TILT DETECTED: ${lossStreak} Losses in a row. Take a break.`);
-            state.behavior.tiltFrequency = (state.behavior.tiltFrequency || 0) + 1;
-          }
-        },
-        detectSunkCost(trade, state) {
-          if (trade.side !== "BUY")
-            return;
-          const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
-          if (!flags.enabled)
-            return;
-          const pos = state.positions[trade.mint];
-          if (pos && (pos.pnlSol || 0) < 0) {
-            this.addAlert(state, "SUNK_COST", "\u{1F4C9} SUNK COST: Averaging down into a losing position increases risk.");
-            state.behavior.sunkCostFrequency = (state.behavior.sunkCostFrequency || 0) + 1;
-          }
-        },
-        detectOvertrading(state) {
-          const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
-          if (!flags.enabled)
-            return;
-          if (state.session?.activeAlerts) {
-            const lastAlert = state.session.activeAlerts.slice().reverse().find((a) => a.type === "VELOCITY");
-            if (lastAlert && Date.now() - lastAlert.ts < 6e4) {
-              return;
-            }
-          }
-          const trades = Object.values(state.trades || {}).filter((t) => t.mode === (state.settings.tradingMode || "paper")).sort((a, b) => a.ts - b.ts);
-          if (trades.length < 5)
-            return;
-          const last5 = trades.slice(-5);
-          const timeSpan = last5[4].ts - last5[0].ts;
-          const timeSinceLast = Date.now() - last5[4].ts;
-          if (timeSpan < 3e5 && timeSinceLast < 3e5) {
-            console.log(`[ZER\xD8 ALERT] Overtrading Detected: 5 trades in ${(timeSpan / 1e3).toFixed(1)}s`, last5.map((t) => t.id));
-            this.addAlert(state, "VELOCITY", "\u26A0\uFE0F OVERTRADING: You're trading too fast. Stop and evaluate setups.");
-            state.behavior.overtradingFrequency = (state.behavior.overtradingFrequency || 0) + 1;
-            state.lastOvertradingAlert = Date.now();
-          }
-        },
-        monitorProfitOverstay(state) {
-          const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
-          if (!flags.enabled)
-            return;
-          Object.values(state.positions).forEach((pos) => {
-            const pnlPct = pos.pnlPct || 0;
-            const peakPct = pos.peakPnlPct !== void 0 ? pos.peakPnlPct : 0;
-            if (peakPct > 10 && pnlPct < 0) {
-              if (!pos.alertedGreenToRed) {
-                this.addAlert(state, "PROFIT_NEGLECT", `\u{1F34F} GREEN-TO-RED: ${pos.symbol} was up 10%+. Don't let winners die.`);
-                pos.alertedGreenToRed = true;
-                state.behavior.profitNeglectFrequency = (state.behavior.profitNeglectFrequency || 0) + 1;
-              }
-            }
-          });
-        },
-        detectStrategyDrift(trade, state) {
-          if (trade.side !== "BUY")
-            return;
-          const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
-          if (!flags.enabled)
-            return;
-          if (trade.strategy === "Unknown" || trade.strategy === "Other") {
-            const trades = Object.values(state.trades || {});
-            const profitableStrategies = trades.filter((t) => (t.realizedPnlSol || 0) > 0 && t.strategy !== "Unknown").map((t) => t.strategy);
-            if (profitableStrategies.length >= 3) {
-              this.addAlert(state, "DRIFT", "\u{1F575}\uFE0F STRATEGY DRIFT: Playing 'Unknown' instead of your winning setups.");
-              state.behavior.strategyDriftFrequency = (state.behavior.strategyDriftFrequency || 0) + 1;
-            }
-          }
-        },
-        detectFomo(trade, state) {
-          if (trade.side !== "BUY")
-            return;
-          const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
-          if (!flags.enabled)
-            return;
-          const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
-          const prevTrade = trades.length > 1 ? trades[trades.length - 2] : null;
-          if (prevTrade && trade.ts - prevTrade.ts < 3e4 && prevTrade.side === "SELL" && (prevTrade.realizedPnlSol || 0) < 0) {
-            this.addAlert(state, "FOMO", "\u{1F6A8} FOMO ALERT: Revenge trading detected.");
-            state.behavior.fomoTrades = (state.behavior.fomoTrades || 0) + 1;
-          }
-        },
-        detectPanicSell(trade, state) {
-          if (trade.side !== "SELL")
-            return;
-          const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
-          if (!flags.enabled)
-            return;
-          if (trade.entryTs && trade.ts - trade.entryTs < 45e3 && (trade.realizedPnlSol || 0) < 0) {
-            this.addAlert(state, "PANIC", "\u{1F631} PANIC SELL: You're cutting too early. Trust your stops.");
-            state.behavior.panicSells = (state.behavior.panicSells || 0) + 1;
-          }
-        },
-        addAlert(state, type, message) {
-          if (!state.session.activeAlerts)
-            state.session.activeAlerts = [];
-          const alert = { type, message, ts: Date.now() };
-          state.session.activeAlerts.push(alert);
-          if (state.session.activeAlerts.length > 3)
-            state.session.activeAlerts.shift();
-          this.logAlertEvent(state, type, message);
-          console.log(`[ELITE ALERT] ${type}: ${message}`);
-        },
-        updateProfile(state) {
-          const b = state.behavior;
-          const totalMistakes = (b.tiltFrequency || 0) + (b.fomoTrades || 0) + (b.panicSells || 0);
-          if (totalMistakes === 0)
-            b.profile = "Disciplined";
-          else if (b.tiltFrequency > 2)
-            b.profile = "Emotional";
-          else if (b.fomoTrades > 2)
-            b.profile = "Impulsive";
-          else if (b.panicSells > 2)
-            b.profile = "Hesitant";
-          else
-            b.profile = "Improving";
-        },
-        getProfessorDebrief(state) {
-          const score = state.session.disciplineScore !== void 0 ? state.session.disciplineScore : 100;
-          const stats = this.analyzeRecentTrades(state) || { winRate: 0, style: "balanced" };
-          let critique = "Keep your discipline score high to trade like a pro.";
-          if (score < 70) {
-            critique = "You're trading emotionally. Stop, breathe, and stick to your strategy.";
-          } else if (stats.winRate > 60 && score >= 90) {
-            critique = "Excellent execution. You're trading with professional-grade discipline.";
-          } else if (stats.style === "scalper" && score < 90) {
-            critique = "Scalping requires perfect discipline. Watch your sizing.";
-          } else if (stats.totalTrades >= 3 && stats.winRate < 40) {
-            critique = "Market conditions are tough. Focus on high-conviction setups only.";
-          }
-          return { score, critique };
-        },
-        generateXShareText(state) {
-          const trades = Object.values(state.trades || {});
-          const sellTrades = trades.filter((t) => t.side === "SELL");
-          const wins = sellTrades.filter((t) => (t.realizedPnlSol || 0) > 0).length;
-          const losses = sellTrades.filter((t) => (t.realizedPnlSol || 0) < 0).length;
-          const totalPnl = state.session.realized || 0;
-          const winRate = sellTrades.length > 0 ? (wins / sellTrades.length * 100).toFixed(0) : 0;
-          const disciplineScore = state.session.disciplineScore || 100;
-          const winStreak = state.session.winStreak || 0;
-          const lossStreak = state.session.lossStreak || 0;
-          const currentStreak = winStreak > 0 ? `${winStreak}W` : lossStreak > 0 ? `${lossStreak}L` : "0";
-          const pnlFormatted = totalPnl >= 0 ? `+${totalPnl.toFixed(3)}` : totalPnl.toFixed(3);
-          const pnlTag = totalPnl >= 0 ? "[PROFIT]" : "[DRAWDOWN]";
-          let text = `ZER\xD8 Trading Session Complete
-
-`;
-          text += `${pnlTag} P&L: ${pnlFormatted} SOL
-`;
-          text += `WIN RATE: ${winRate}%
-`;
-          text += `HISTORY: ${wins}W / ${losses}L
-`;
-          text += `STREAK: ${currentStreak}
-`;
-          text += `DISCIPLINE: ${disciplineScore}/100
-
-`;
-          if (winRate >= 70) {
-            text += `Systematic Excellence. \u{1F4AA}
-
-`;
-          } else if (winRate >= 50) {
-            text += `Disciplined Execution. \u{1F4CA}
-
-`;
-          } else if (sellTrades.length >= 3) {
-            text += `Baseline Established. \u{1F4DA}
-
-`;
-          }
-          text += `Paper trading with ZER\xD8 on Solana
-`;
-          text += `#Solana #PaperTrading #Crypto`;
-          return text;
-        },
-        // ==========================================
-        // EXPORT FUNCTIONALITY
-        // ==========================================
-        exportToCSV(state) {
-          const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
-          if (trades.length === 0)
-            return null;
-          const headers = [
-            "Trade ID",
-            "Timestamp",
-            "Side",
-            "Symbol",
-            "Token Mint",
-            "SOL Amount",
-            "Token Qty",
-            "Price USD",
-            "Market Cap",
-            "Realized PnL (SOL)",
-            "Strategy",
-            "Emotion",
-            "Mode",
-            "Planned Stop",
-            "Planned Target",
-            "Risk Defined",
-            "Entry Thesis"
-          ];
-          const rows = trades.map((t) => [
-            t.id,
-            new Date(t.ts).toISOString(),
-            t.side,
-            t.symbol || "",
-            t.mint || "",
-            t.solAmount?.toFixed(6) || "",
-            t.tokenQty?.toFixed(6) || "",
-            t.priceUsd?.toFixed(8) || "",
-            t.marketCap?.toFixed(2) || "",
-            t.realizedPnlSol?.toFixed(6) || "",
-            t.strategy || "",
-            t.emotion || "",
-            t.mode || "paper",
-            t.plannedStop?.toFixed(8) || "",
-            t.plannedTarget?.toFixed(8) || "",
-            t.riskDefined ? "Yes" : "No",
-            `"${(t.entryThesis || "").replace(/"/g, '""')}"`
-          ]);
-          const csvContent = [
-            headers.join(","),
-            ...rows.map((r) => r.join(","))
-          ].join("\n");
-          return csvContent;
-        },
-        exportToJSON(state) {
-          const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
-          const session = state.session || {};
-          const behavior = state.behavior || {};
-          const exportData = {
-            exportedAt: (/* @__PURE__ */ new Date()).toISOString(),
-            version: state.version || "1.0.0",
-            session: {
-              balance: session.balance,
-              equity: session.equity,
-              realized: session.realized,
-              winStreak: session.winStreak,
-              lossStreak: session.lossStreak,
-              disciplineScore: session.disciplineScore,
-              tradeCount: trades.length
-            },
-            behavior: {
-              profile: behavior.profile,
-              tiltFrequency: behavior.tiltFrequency,
-              fomoTrades: behavior.fomoTrades,
-              panicSells: behavior.panicSells,
-              sunkCostFrequency: behavior.sunkCostFrequency,
-              overtradingFrequency: behavior.overtradingFrequency,
-              profitNeglectFrequency: behavior.profitNeglectFrequency
-            },
-            analytics: this.analyzeRecentTrades(state),
-            trades: trades.map((t) => ({
-              id: t.id,
-              timestamp: new Date(t.ts).toISOString(),
-              side: t.side,
-              symbol: t.symbol,
-              mint: t.mint,
-              solAmount: t.solAmount,
-              tokenQty: t.tokenQty,
-              priceUsd: t.priceUsd,
-              marketCap: t.marketCap,
-              realizedPnlSol: t.realizedPnlSol,
-              strategy: t.strategy,
-              emotion: t.emotion,
-              mode: t.mode,
-              tradePlan: {
-                plannedStop: t.plannedStop,
-                plannedTarget: t.plannedTarget,
-                entryThesis: t.entryThesis,
-                riskDefined: t.riskDefined
-              },
-              planAdherence: t.planAdherence || null
-            }))
-          };
-          return JSON.stringify(exportData, null, 2);
-        },
-        downloadExport(content, filename, mimeType) {
-          const blob = new Blob([content], { type: mimeType });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = filename;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-        },
-        exportTradesAsCSV(state) {
-          const csv = this.exportToCSV(state);
-          if (!csv) {
-            console.warn("[Export] No trades to export");
-            return false;
-          }
-          const filename = `zero_trades_${(/* @__PURE__ */ new Date()).toISOString().split("T")[0]}.csv`;
-          this.downloadExport(csv, filename, "text/csv;charset=utf-8;");
-          return true;
-        },
-        exportSessionAsJSON(state) {
-          const json = this.exportToJSON(state);
-          const filename = `zero_session_${(/* @__PURE__ */ new Date()).toISOString().split("T")[0]}.json`;
-          this.downloadExport(json, filename, "application/json");
-          return true;
-        },
-        // ==========================================
-        // CONSISTENCY SCORE
-        // ==========================================
-        /**
-         * Calculate Consistency Score (0-100)
-         * Measures:
-         * - Win Rate Stability (variance in rolling win rate)
-         * - Position Sizing Consistency (variance in trade sizes)
-         * - Trade Frequency Stability (time between trades)
-         * - Strategy Focus (% of trades using top 2 strategies)
-         */
-        // ==========================================
-        // PERSONAL TRADER PROFILE (ELITE)
-        // ==========================================
-        /**
-         * Generate a comprehensive trader profile based on historical data
-         * Analyzes: Best strategies, worst conditions, optimal session length, best time of day
-         */
-        generateTraderProfile(state) {
-          const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
-          if (trades.length < 10) {
-            return {
-              ready: false,
-              message: "Need 10+ trades to generate your profile",
-              tradesNeeded: 10 - trades.length
-            };
-          }
-          const sellTrades = trades.filter((t) => t.side === "SELL");
-          const buyTrades = trades.filter((t) => t.side === "BUY");
-          return {
-            ready: true,
-            generatedAt: Date.now(),
-            tradeCount: trades.length,
-            bestStrategies: this._analyzeBestStrategies(buyTrades, sellTrades, trades),
-            worstConditions: this._analyzeWorstConditions(trades, state),
-            optimalSessionLength: this._analyzeOptimalSessionLength(trades, state),
-            bestTimeOfDay: this._analyzeBestTimeOfDay(sellTrades),
-            tradingStyle: this._determineTradingStyle(trades),
-            riskProfile: this._analyzeRiskProfile(buyTrades, state),
-            emotionalPatterns: this._analyzeEmotionalPatterns(trades, state)
-          };
-        },
-        _analyzeBestStrategies(buyTrades, sellTrades, allTrades) {
-          const strategyStats = {};
-          buyTrades.forEach((buy) => {
-            const strat = buy.strategy || "Unknown";
-            if (!strategyStats[strat]) {
-              strategyStats[strat] = { count: 0, wins: 0, totalPnl: 0, avgHoldTime: 0, trades: [] };
-            }
-            strategyStats[strat].count++;
-            strategyStats[strat].trades.push(buy);
-          });
-          sellTrades.forEach((sell) => {
-            const matchingBuy = allTrades.find(
-              (t) => t.side === "BUY" && t.mint === sell.mint && t.ts < sell.ts
-            );
-            if (matchingBuy) {
-              const strat = matchingBuy.strategy || "Unknown";
-              if (strategyStats[strat]) {
-                const pnl = sell.realizedPnlSol || 0;
-                strategyStats[strat].totalPnl += pnl;
-                if (pnl > 0)
-                  strategyStats[strat].wins++;
-                strategyStats[strat].avgHoldTime += sell.ts - matchingBuy.ts;
-              }
-            }
-          });
-          const results = Object.entries(strategyStats).filter(([_, s]) => s.count >= 2).map(([name, s]) => ({
-            name,
-            count: s.count,
-            winRate: s.count > 0 ? (s.wins / s.count * 100).toFixed(1) : 0,
-            totalPnl: s.totalPnl,
-            avgPnl: s.count > 0 ? s.totalPnl / s.count : 0,
-            avgHoldTime: s.wins > 0 ? Math.round(s.avgHoldTime / s.wins / 6e4) : 0
-            // in minutes
-          })).sort((a, b) => b.totalPnl - a.totalPnl);
-          return {
-            top: results.slice(0, 3),
-            worst: results.filter((s) => s.totalPnl < 0).sort((a, b) => a.totalPnl - b.totalPnl).slice(0, 2),
-            mostUsed: results.sort((a, b) => b.count - a.count)[0] || null
-          };
-        },
-        _analyzeWorstConditions(trades, state) {
-          const conditions = [];
-          let afterLossWins = 0, afterLossTotal = 0;
-          for (let i = 1; i < trades.length; i++) {
-            if (trades[i - 1].side === "SELL" && (trades[i - 1].realizedPnlSol || 0) < 0) {
-              afterLossTotal++;
-              if (trades[i].side === "SELL" && (trades[i].realizedPnlSol || 0) > 0) {
-                afterLossWins++;
-              }
-            }
-          }
-          if (afterLossTotal >= 3) {
-            const afterLossWinRate = (afterLossWins / afterLossTotal * 100).toFixed(0);
-            if (afterLossWinRate < 40) {
-              conditions.push({
-                type: "AFTER_LOSS",
-                label: "After Losing Trades",
-                severity: "high",
-                stat: `${afterLossWinRate}% win rate`,
-                advice: "Take a 5-minute break after losses before your next trade."
-              });
-            }
-          }
-          let rapidWins = 0, rapidTotal = 0;
-          for (let i = 1; i < trades.length; i++) {
-            if (trades[i].ts - trades[i - 1].ts < 12e4) {
-              rapidTotal++;
-              if (trades[i].side === "SELL" && (trades[i].realizedPnlSol || 0) > 0) {
-                rapidWins++;
-              }
-            }
-          }
-          if (rapidTotal >= 3) {
-            const rapidWinRate = (rapidWins / rapidTotal * 100).toFixed(0);
-            if (rapidWinRate < 35) {
-              conditions.push({
-                type: "RAPID_TRADING",
-                label: "Rapid-Fire Trading",
-                severity: "high",
-                stat: `${rapidWinRate}% win rate`,
-                advice: "Slow down. Wait at least 2 minutes between trades."
-              });
-            }
-          }
-          const avgSize = trades.filter((t) => t.side === "BUY").reduce((sum, t) => sum + (t.solAmount || 0), 0) / trades.filter((t) => t.side === "BUY").length;
-          let largeWins = 0, largeTotal = 0;
-          trades.filter((t) => t.side === "SELL").forEach((t) => {
-            const matchingBuy = trades.find((b) => b.side === "BUY" && b.mint === t.mint && b.ts < t.ts);
-            if (matchingBuy && matchingBuy.solAmount > avgSize * 1.5) {
-              largeTotal++;
-              if ((t.realizedPnlSol || 0) > 0)
-                largeWins++;
-            }
-          });
-          if (largeTotal >= 2) {
-            const largeWinRate = (largeWins / largeTotal * 100).toFixed(0);
-            if (largeWinRate < 40) {
-              conditions.push({
-                type: "LARGE_POSITIONS",
-                label: "Oversized Positions",
-                severity: "medium",
-                stat: `${largeWinRate}% win rate`,
-                advice: "Your large trades underperform. Stick to consistent sizing."
-              });
-            }
-          }
-          const sessionTrades = this._groupBySession(trades, state);
-          let lateWins = 0, lateTotal = 0;
-          sessionTrades.forEach((session) => {
-            if (session.length < 5)
-              return;
-            const sessionStart = session[0].ts;
-            const lateThreshold = sessionStart + 60 * 60 * 1e3;
-            session.filter((t) => t.ts > lateThreshold && t.side === "SELL").forEach((t) => {
-              lateTotal++;
-              if ((t.realizedPnlSol || 0) > 0)
-                lateWins++;
-            });
-          });
-          if (lateTotal >= 3) {
-            const lateWinRate = (lateWins / lateTotal * 100).toFixed(0);
-            if (lateWinRate < 35) {
-              conditions.push({
-                type: "LATE_SESSION",
-                label: "Extended Sessions",
-                severity: "medium",
-                stat: `${lateWinRate}% win rate`,
-                advice: "Your performance drops after 1 hour. Consider shorter sessions."
-              });
-            }
-          }
-          return conditions.sort((a, b) => (b.severity === "high" ? 1 : 0) - (a.severity === "high" ? 1 : 0));
-        },
-        _analyzeOptimalSessionLength(trades, state) {
-          const sessionTrades = this._groupBySession(trades, state);
-          if (sessionTrades.length < 2) {
-            return { optimal: null, message: "Need more session data" };
-          }
-          const sessionPerformance = sessionTrades.map((session) => {
-            const duration = session.length > 0 ? (session[session.length - 1].ts - session[0].ts) / 6e4 : 0;
-            const sells = session.filter((t) => t.side === "SELL");
-            const pnl = sells.reduce((sum, t) => sum + (t.realizedPnlSol || 0), 0);
-            const wins = sells.filter((t) => (t.realizedPnlSol || 0) > 0).length;
-            const winRate = sells.length > 0 ? wins / sells.length * 100 : 0;
-            return { duration, pnl, winRate, tradeCount: session.length };
-          });
-          const buckets = {
-            short: { range: "< 30 min", sessions: [], avgPnl: 0, avgWinRate: 0 },
-            medium: { range: "30-60 min", sessions: [], avgPnl: 0, avgWinRate: 0 },
-            long: { range: "60-120 min", sessions: [], avgPnl: 0, avgWinRate: 0 },
-            extended: { range: "> 120 min", sessions: [], avgPnl: 0, avgWinRate: 0 }
-          };
-          sessionPerformance.forEach((s) => {
-            if (s.duration < 30)
-              buckets.short.sessions.push(s);
-            else if (s.duration < 60)
-              buckets.medium.sessions.push(s);
-            else if (s.duration < 120)
-              buckets.long.sessions.push(s);
-            else
-              buckets.extended.sessions.push(s);
-          });
-          Object.values(buckets).forEach((b) => {
-            if (b.sessions.length > 0) {
-              b.avgPnl = b.sessions.reduce((sum, s) => sum + s.pnl, 0) / b.sessions.length;
-              b.avgWinRate = b.sessions.reduce((sum, s) => sum + s.winRate, 0) / b.sessions.length;
-            }
-          });
-          const best = Object.entries(buckets).filter(([_, b]) => b.sessions.length >= 1).sort((a, b) => b[1].avgPnl - a[1].avgPnl)[0];
-          return {
-            optimal: best ? best[1].range : null,
-            bestPnl: best ? best[1].avgPnl.toFixed(4) : 0,
-            bestWinRate: best ? best[1].avgWinRate.toFixed(1) : 0,
-            buckets: Object.fromEntries(
-              Object.entries(buckets).map(([k, v]) => [k, {
-                range: v.range,
-                count: v.sessions.length,
-                avgPnl: v.avgPnl.toFixed(4),
-                avgWinRate: v.avgWinRate.toFixed(1)
-              }])
-            )
-          };
-        },
-        _analyzeBestTimeOfDay(sellTrades) {
-          if (sellTrades.length < 5) {
-            return { best: null, message: "Need more trades" };
-          }
-          const timeSlots = {
-            morning: { range: "6AM-12PM", wins: 0, total: 0, pnl: 0 },
-            afternoon: { range: "12PM-6PM", wins: 0, total: 0, pnl: 0 },
-            evening: { range: "6PM-12AM", wins: 0, total: 0, pnl: 0 },
-            night: { range: "12AM-6AM", wins: 0, total: 0, pnl: 0 }
-          };
-          sellTrades.forEach((t) => {
-            const hour = new Date(t.ts).getHours();
-            let slot;
-            if (hour >= 6 && hour < 12)
-              slot = "morning";
-            else if (hour >= 12 && hour < 18)
-              slot = "afternoon";
-            else if (hour >= 18 && hour < 24)
-              slot = "evening";
-            else
-              slot = "night";
-            timeSlots[slot].total++;
-            timeSlots[slot].pnl += t.realizedPnlSol || 0;
-            if ((t.realizedPnlSol || 0) > 0)
-              timeSlots[slot].wins++;
-          });
-          const results = Object.entries(timeSlots).filter(([_, s]) => s.total >= 2).map(([name, s]) => ({
-            name,
-            range: s.range,
-            winRate: s.total > 0 ? (s.wins / s.total * 100).toFixed(1) : 0,
-            pnl: s.pnl,
-            count: s.total
-          })).sort((a, b) => b.pnl - a.pnl);
-          return {
-            best: results[0] || null,
-            worst: results[results.length - 1] || null,
-            breakdown: results
-          };
-        },
-        _determineTradingStyle(trades) {
-          const sellTrades = trades.filter((t) => t.side === "SELL");
-          if (sellTrades.length < 5)
-            return { style: "Unknown", description: "Need more data" };
-          let totalHoldTime = 0, holdCount = 0;
-          sellTrades.forEach((sell) => {
-            const buy = trades.find((t) => t.side === "BUY" && t.mint === sell.mint && t.ts < sell.ts);
-            if (buy) {
-              totalHoldTime += sell.ts - buy.ts;
-              holdCount++;
-            }
-          });
-          const avgHoldMinutes = holdCount > 0 ? totalHoldTime / holdCount / 6e4 : 0;
-          if (avgHoldMinutes < 5) {
-            return { style: "Scalper", description: "Quick in-and-out trades, high frequency", avgHold: avgHoldMinutes.toFixed(1) };
-          } else if (avgHoldMinutes < 30) {
-            return { style: "Day Trader", description: "Short-term positions, momentum focused", avgHold: avgHoldMinutes.toFixed(1) };
-          } else if (avgHoldMinutes < 120) {
-            return { style: "Swing Trader", description: "Medium holds, trend following", avgHold: avgHoldMinutes.toFixed(1) };
-          } else {
-            return { style: "Position Trader", description: "Long holds, conviction plays", avgHold: avgHoldMinutes.toFixed(1) };
-          }
-        },
-        _analyzeRiskProfile(buyTrades, state) {
-          if (buyTrades.length < 3)
-            return { profile: "Unknown", avgRisk: 0 };
-          const startSol = state.settings?.startSol || 10;
-          const riskPcts = buyTrades.map((t) => t.solAmount / startSol * 100);
-          const avgRisk = riskPcts.reduce((a, b) => a + b, 0) / riskPcts.length;
-          const maxRisk = Math.max(...riskPcts);
-          const plansUsed = buyTrades.filter((t) => t.riskDefined).length;
-          const planRate = (plansUsed / buyTrades.length * 100).toFixed(0);
-          let profile;
-          if (avgRisk < 5)
-            profile = "Conservative";
-          else if (avgRisk < 15)
-            profile = "Moderate";
-          else if (avgRisk < 30)
-            profile = "Aggressive";
-          else
-            profile = "High Risk";
-          return {
-            profile,
-            avgRisk: avgRisk.toFixed(1),
-            maxRisk: maxRisk.toFixed(1),
-            planUsageRate: planRate,
-            plansUsed
-          };
-        },
-        _analyzeEmotionalPatterns(trades, state) {
-          const behavior = state.behavior || {};
-          const patterns = [];
-          if ((behavior.fomoTrades || 0) > 2) {
-            patterns.push({ type: "FOMO", frequency: behavior.fomoTrades, advice: "Wait 60 seconds before entering after seeing green candles." });
-          }
-          if ((behavior.panicSells || 0) > 2) {
-            patterns.push({ type: "Panic Selling", frequency: behavior.panicSells, advice: "Set stop losses in advance and trust them." });
-          }
-          if ((behavior.tiltFrequency || 0) > 1) {
-            patterns.push({ type: "Tilt Trading", frequency: behavior.tiltFrequency, advice: "Take a mandatory break after 3 consecutive losses." });
-          }
-          if ((behavior.sunkCostFrequency || 0) > 1) {
-            patterns.push({ type: "Sunk Cost Bias", frequency: behavior.sunkCostFrequency, advice: "Never average down more than once per position." });
-          }
-          return patterns;
-        },
-        _groupBySession(trades, state) {
-          const sessions = [];
-          let currentSession = [];
-          const SESSION_GAP = 30 * 60 * 1e3;
-          trades.forEach((trade, i) => {
-            if (i === 0) {
-              currentSession.push(trade);
-            } else if (trade.ts - trades[i - 1].ts > SESSION_GAP) {
-              if (currentSession.length > 0)
-                sessions.push(currentSession);
-              currentSession = [trade];
-            } else {
-              currentSession.push(trade);
-            }
-          });
-          if (currentSession.length > 0)
-            sessions.push(currentSession);
-          return sessions;
-        },
-        calculateConsistencyScore(state) {
-          const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
-          if (trades.length < 5) {
-            return { score: null, message: "Need 5+ trades for consistency score", breakdown: null };
-          }
-          const breakdown = {
-            winRateStability: 0,
-            sizingConsistency: 0,
-            frequencyStability: 0,
-            strategyFocus: 0
-          };
-          const sellTrades = trades.filter((t) => t.side === "SELL");
-          if (sellTrades.length >= 5) {
-            const windowSize = Math.min(5, Math.floor(sellTrades.length / 2));
-            const rollingWinRates = [];
-            for (let i = windowSize; i <= sellTrades.length; i++) {
-              const window2 = sellTrades.slice(i - windowSize, i);
-              const wins = window2.filter((t) => (t.realizedPnlSol || 0) > 0).length;
-              rollingWinRates.push(wins / windowSize);
-            }
-            if (rollingWinRates.length > 1) {
-              const avg = rollingWinRates.reduce((a, b) => a + b, 0) / rollingWinRates.length;
-              const variance = rollingWinRates.reduce((sum, r) => sum + Math.pow(r - avg, 2), 0) / rollingWinRates.length;
-              const stdDev = Math.sqrt(variance);
-              breakdown.winRateStability = Math.max(0, 25 - stdDev * 100);
-            } else {
-              breakdown.winRateStability = 20;
-            }
-          } else {
-            breakdown.winRateStability = 15;
-          }
-          const buyTrades = trades.filter((t) => t.side === "BUY");
-          if (buyTrades.length >= 3) {
-            const sizes = buyTrades.map((t) => t.solAmount);
-            const avgSize = sizes.reduce((a, b) => a + b, 0) / sizes.length;
-            const variance = sizes.reduce((sum, s) => sum + Math.pow(s - avgSize, 2), 0) / sizes.length;
-            const cv = Math.sqrt(variance) / avgSize;
-            breakdown.sizingConsistency = Math.max(0, 25 - cv * 25);
-          } else {
-            breakdown.sizingConsistency = 15;
-          }
-          if (trades.length >= 4) {
-            const intervals = [];
-            for (let i = 1; i < trades.length; i++) {
-              intervals.push(trades[i].ts - trades[i - 1].ts);
-            }
-            const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
-            const variance = intervals.reduce((sum, i) => sum + Math.pow(i - avgInterval, 2), 0) / intervals.length;
-            const cv = Math.sqrt(variance) / avgInterval;
-            breakdown.frequencyStability = Math.max(0, 25 - cv * 12.5);
-          } else {
-            breakdown.frequencyStability = 15;
-          }
-          const strategyCounts = {};
-          buyTrades.forEach((t) => {
-            const strat = t.strategy || "Unknown";
-            strategyCounts[strat] = (strategyCounts[strat] || 0) + 1;
-          });
-          const sortedStrategies = Object.entries(strategyCounts).sort((a, b) => b[1] - a[1]);
-          const top2Count = sortedStrategies.slice(0, 2).reduce((sum, [_, count]) => sum + count, 0);
-          const focusRatio = buyTrades.length > 0 ? top2Count / buyTrades.length : 0;
-          breakdown.strategyFocus = focusRatio * 25;
-          const score = Math.round(
-            breakdown.winRateStability + breakdown.sizingConsistency + breakdown.frequencyStability + breakdown.strategyFocus
-          );
-          let message = "";
-          if (score >= 80)
-            message = "Highly consistent trading patterns";
-          else if (score >= 60)
-            message = "Good consistency, minor variations";
-          else if (score >= 40)
-            message = "Moderate consistency, room for improvement";
-          else
-            message = "Inconsistent patterns detected";
-          return {
-            score,
-            message,
-            breakdown: {
-              winRateStability: Math.round(breakdown.winRateStability),
-              sizingConsistency: Math.round(breakdown.sizingConsistency),
-              frequencyStability: Math.round(breakdown.frequencyStability),
-              strategyFocus: Math.round(breakdown.strategyFocus)
-            }
           };
         }
       };
@@ -3898,21 +2432,12 @@ input:checked + .slider:before {
     shadowHost: null,
     shadowRoot: null,
     init(platformName) {
+      console.log(`[ZER\xD8] OverlayManager.init() called with platform: "${platformName}"`);
       this.createShadowRoot();
       this.injectStyles();
-      this.injectPageBridge();
       if (platformName === "Padre") {
+        console.log("[ZER\xD8] Padre detected - using DOM polling only");
       }
-    },
-    injectPageBridge() {
-      if (document.getElementById("paper-page-bridge"))
-        return;
-      const script = document.createElement("script");
-      script.id = "paper-page-bridge";
-      script.src = chrome.runtime.getURL("src/page-bridge.js");
-      script.onload = () => console.log("[ZER\xD8] Page bridge injected for network price interception");
-      script.onerror = (e) => console.error("[ZER\xD8] Failed to inject page bridge:", e);
-      (document.head || document.documentElement).appendChild(script);
     },
     getShadowRoot() {
       if (this.shadowRoot && this.shadowHost && this.shadowHost.isConnected) {
@@ -4113,16 +2638,405 @@ input:checked + .slider:before {
 
   // src/content.boot.js
   init_store();
-  init_featureManager();
-  init_market();
+
+  // src/modules/featureManager.js
+  var TIERS = {
+    FREE: "free",
+    PRO: "pro",
+    ELITE: "elite"
+  };
+  var FEATURES = {
+    // Phase 1-2: Core
+    BASIC_TRADING: "free",
+    REAL_TIME_PNL: "free",
+    // Phase 2-4: Pro Foundations
+    STRATEGY_TAGGING: "pro",
+    EMOTION_TRACKING: "pro",
+    DISCIPLINE_SCORING: "pro",
+    AI_DEBRIEF: "pro",
+    TRADE_PLAN: "pro",
+    // Stop loss, targets, thesis capture
+    // Phase 5-6: Advanced Pro
+    EQUITY_CHARTS: "pro",
+    DETAILED_LOGS: "pro",
+    ADVANCED_ANALYTICS: "pro",
+    RISK_ADJUSTED_METRICS: "pro",
+    SHARE_TO_X: "free",
+    // Phase 6+: Elite
+    TILT_DETECTION: "elite",
+    SESSION_REPLAY: "elite",
+    ADVANCED_COACHING: "elite",
+    BEHAVIOR_BASELINE: "elite",
+    MARKET_CONTEXT: "elite",
+    TRADER_PROFILE: "elite",
+    // Personal Trader Profile dashboard
+    // Explicit tease-card keys (alias existing features for Settings UI)
+    PRO_TRADE_PLAN: "pro",
+    PRO_DISCIPLINE: "pro",
+    PRO_STRATEGY_ANALYTICS: "pro",
+    PRO_EMOTION_ANALYTICS: "pro",
+    PRO_AI_DEBRIEF: "pro",
+    ELITE_TILT_DETECTION: "elite",
+    ELITE_RISK_METRICS: "elite",
+    ELITE_SESSION_REPLAY: "elite",
+    ELITE_TRADER_PROFILE: "elite",
+    ELITE_MARKET_CONTEXT: "elite"
+  };
+  var TEASED_FEATURES = {
+    PRO: [
+      { id: "PRO_TRADE_PLAN", name: "Trade Planning", desc: "Set stop losses, targets, and capture your thesis before every trade." },
+      { id: "PRO_DISCIPLINE", name: "Discipline Scoring", desc: "Track how well you stick to your trading rules with an objective score." },
+      { id: "PRO_STRATEGY_ANALYTICS", name: "Strategy Analytics", desc: "See which strategies perform best and refine your edge." },
+      { id: "PRO_EMOTION_ANALYTICS", name: "Emotion Analytics", desc: "Understand how your emotional state affects your trading outcomes." },
+      { id: "PRO_AI_DEBRIEF", name: "AI Trade Debrief", desc: "Get AI-powered post-trade analysis to accelerate your learning." }
+    ],
+    ELITE: [
+      { id: "ELITE_TILT_DETECTION", name: "Tilt Detection", desc: "Real-time alerts when your behavior signals emotional trading." },
+      { id: "ELITE_RISK_METRICS", name: "Risk Metrics", desc: "Advanced risk-adjusted performance metrics for serious traders." },
+      { id: "ELITE_SESSION_REPLAY", name: "Session Replay", desc: "Replay your sessions to review decisions and improve execution." },
+      { id: "ELITE_TRADER_PROFILE", name: "Trader Profile", desc: "Your personal trading identity \u2014 strengths, weaknesses, and growth." },
+      { id: "ELITE_MARKET_CONTEXT", name: "Market Context", desc: "Overlay market conditions to see how context affected your trades." }
+    ]
+  };
+  var FeatureManager = {
+    TIERS,
+    FEATURES,
+    resolveFlags(state, featureName) {
+      const userTier = state.settings?.tier || TIERS.FREE;
+      const requiredTier = FEATURES[featureName];
+      const flags = {
+        enabled: false,
+        visible: false,
+        interactive: false,
+        gated: false
+      };
+      if (!requiredTier)
+        return flags;
+      const hasEntitlement = this.hasTierAccess(userTier, requiredTier);
+      const phase = state.settings?.rolloutPhase || "full";
+      if (requiredTier === TIERS.FREE) {
+        flags.enabled = true;
+        flags.visible = true;
+        flags.interactive = true;
+        flags.gated = false;
+      } else {
+        flags.enabled = true;
+        if (hasEntitlement) {
+          flags.visible = true;
+          flags.interactive = true;
+          flags.gated = false;
+        } else {
+          flags.visible = false;
+          flags.interactive = false;
+          flags.gated = true;
+        }
+      }
+      if (state.settings?.featureOverrides?.[featureName] === false) {
+        flags.enabled = false;
+        flags.visible = false;
+        flags.interactive = false;
+      }
+      return flags;
+    },
+    hasTierAccess(userTier, requiredTier) {
+      if (requiredTier === TIERS.FREE)
+        return true;
+      if (requiredTier === TIERS.PRO)
+        return [TIERS.PRO, TIERS.ELITE].includes(userTier);
+      if (requiredTier === TIERS.ELITE)
+        return userTier === TIERS.ELITE;
+      return false;
+    }
+  };
+
+  // src/modules/core/token-context.js
+  var TokenContextResolver = {
+    // Resolve the current context
+    resolve() {
+      const url = window.location.href;
+      const hostname = window.location.hostname;
+      let sourceSite = "unknown";
+      let activeMint = null;
+      let activeSymbol = null;
+      if (hostname.includes("axiom.trade")) {
+        sourceSite = "axiom";
+        const title = document.title || "";
+        const words = title.replace(/[|$-]/g, " ").trim().split(/\s+/);
+        for (const w of words) {
+          if (w.length >= 2 && w.length <= 10 && /^[A-Z0-9]+$/.test(w)) {
+            activeSymbol = w;
+            break;
+          }
+        }
+      } else if (hostname.includes("padre.gg")) {
+        sourceSite = "padre";
+        const title = document.title || "";
+        const m = title.match(/([A-Z0-9]+)\s*\//i);
+        if (m)
+          activeSymbol = m[1].toUpperCase();
+      }
+      try {
+        const labels = Array.from(document.querySelectorAll("div, span, p, a, button")).filter((el) => el.textContent.includes("CA:") || el.textContent.includes("DA:"));
+        for (const label of labels) {
+          const neighborhood = [label, label.parentElement, ...label.parentElement ? Array.from(label.parentElement.querySelectorAll("a")) : []];
+          for (const node of neighborhood) {
+            if (!node)
+              continue;
+            if (node.tagName === "A" && node.href) {
+              const m = node.href.match(/([a-zA-Z0-9]{32,44})/);
+              if (m && m[1] && !node.href.includes("/account/")) {
+                activeMint = m[1];
+                return { activeMint, activeSymbol, sourceSite };
+              }
+            }
+            if (node.title && node.title.length >= 32 && node.title.length <= 44) {
+              activeMint = node.title;
+              return { activeMint, activeSymbol, sourceSite };
+            }
+          }
+        }
+      } catch (e) {
+      }
+      try {
+        const links = document.querySelectorAll("a");
+        for (const link of links) {
+          if (/solscan|solana\.fm|birdeye|bullx/.test(link.href)) {
+            const match = link.href.match(/([a-zA-Z0-9]{32,44})/);
+            if (match && match[1] && !link.href.includes("/account/")) {
+              activeMint = match[1];
+              return { activeMint, activeSymbol, sourceSite };
+            }
+          }
+        }
+      } catch (e) {
+      }
+      const mintMatch = url.match(/\/trade\/(?:solana\/)?([a-zA-Z0-9]{32,44})/) || url.match(/\/token\/(?:solana\/)?([a-zA-Z0-9]{32,44})/) || url.match(/\/meme\/([a-zA-Z0-9]{32,44})/);
+      if (mintMatch && mintMatch[1]) {
+        activeMint = mintMatch[1];
+      } else {
+        const allMints = url.match(/[1-9A-HJ-NP-Za-km-z]{32,44}/g);
+        if (allMints)
+          activeMint = allMints.find((m) => m.length >= 32 && m.length <= 44);
+      }
+      return { activeMint, activeSymbol, sourceSite };
+    }
+  };
+
+  // src/modules/core/token-market-data.js
+  var TokenMarketDataService = {
+    currentMint: null,
+    pollInterval: null,
+    lastUpdateTs: 0,
+    isStale: false,
+    // Data State
+    data: {
+      priceUsd: 0,
+      marketCapUsd: 0,
+      liquidityUsd: 0,
+      symbol: null,
+      name: null
+    },
+    listeners: [],
+    init() {
+    },
+    subscribe(callback) {
+      this.listeners.push(callback);
+    },
+    notify() {
+      this.listeners.forEach((cb) => cb({
+        mint: this.currentMint,
+        ...this.data,
+        isStale: this.isStale,
+        ts: this.lastUpdateTs
+      }));
+    },
+    setMint(mint) {
+      if (this.currentMint === mint)
+        return;
+      this.currentMint = mint;
+      this.stopPolling();
+      this.data = { priceUsd: 0, marketCapUsd: 0, liquidityUsd: 0, symbol: null, name: null };
+      this.isStale = false;
+      if (mint) {
+        console.log(`[MarketData] New Mint: ${mint}. Starting Poll.`);
+        this.startPolling();
+      } else {
+        console.log(`[MarketData] Mint cleared. Stopping Poll.`);
+      }
+    },
+    startPolling() {
+      if (this.pollInterval)
+        return;
+      this.fetchData();
+      this.pollInterval = setInterval(() => {
+        if (this.currentMint) {
+          this.fetchData();
+          this.checkStale();
+        }
+      }, 1e3);
+    },
+    stopPolling() {
+      if (this.pollInterval) {
+        clearInterval(this.pollInterval);
+        this.pollInterval = null;
+      }
+    },
+    checkStale() {
+      if (Date.now() - this.lastUpdateTs > 1e4) {
+        if (!this.isStale) {
+          this.isStale = true;
+          console.warn("[MarketData] Data Stale (no update > 10s)");
+          this.notify();
+        }
+      }
+    },
+    async fetchData() {
+      if (!this.currentMint)
+        return;
+      try {
+        const url = `https://api.dexscreener.com/latest/dex/tokens/${this.currentMint}`;
+        const response = await chrome.runtime.sendMessage({
+          type: "PROXY_FETCH",
+          url,
+          options: { method: "GET" }
+        });
+        if (!response.ok) {
+          console.warn(`[MarketData] Fetch Failed: ${response.status} ${response.error || ""}`);
+          return;
+        }
+        const json = response.data;
+        if (!json || !json.pairs || json.pairs.length === 0) {
+          console.warn(`[MarketData] No pairs found for ${this.currentMint}`);
+          return;
+        }
+        const bestPair = json.pairs.sort((a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0))[0];
+        if (bestPair) {
+          const price = parseFloat(bestPair.priceUsd) || 0;
+          let mc = bestPair.marketCap || bestPair.fdv || 0;
+          this.data = {
+            priceUsd: price,
+            marketCapUsd: mc,
+            liquidityUsd: bestPair.liquidity?.usd || 0,
+            symbol: bestPair.baseToken?.symbol,
+            name: bestPair.baseToken?.name
+          };
+          this.lastUpdateTs = Date.now();
+          this.isStale = false;
+          this.notify();
+        } else {
+          console.warn(`[MarketData] No best pair found`);
+        }
+      } catch (e) {
+        console.error("[MarketData] Fetch Exception:", e);
+      }
+    },
+    // Public getter for sync access
+    getSnapshot() {
+      return {
+        mint: this.currentMint,
+        ...this.data,
+        isStale: this.isStale,
+        ts: this.lastUpdateTs
+      };
+    }
+  };
+
+  // src/modules/core/market.js
+  var Market2 = {
+    price: 0,
+    marketCap: 0,
+    liquidity: 0,
+    currentMint: null,
+    currentSymbol: null,
+    sourceSite: null,
+    listeners: [],
+    // Legacy support flags if needed
+    lastTickTs: 0,
+    lastSource: null,
+    // 'site', 'dom', 'api'
+    init() {
+      console.log("[Market] Initializing API-Driven Market Service");
+      TokenMarketDataService.subscribe((data) => {
+        const now = Date.now();
+        if (this.lastSource && this.lastSource !== "api" && now - this.lastTickTs < 2e3) {
+          this.marketCap = data.marketCapUsd;
+          this.liquidity = data.liquidityUsd;
+          return;
+        }
+        this.price = data.priceUsd;
+        this.marketCap = data.marketCapUsd;
+        this.liquidity = data.liquidityUsd;
+        this.currentSymbol = data.symbol;
+        this.priceIsFresh = !data.isStale;
+        this.lastSource = "api";
+        this.notify();
+      });
+      this.pollContext();
+      setInterval(() => this.pollContext(), 250);
+      window.addEventListener("message", (e) => {
+        if (e.source !== window || !e.data?.__paper)
+          return;
+        const d = e.data;
+        if (d.type === "PRICE_TICK") {
+          if (d.price > 0 && d.confidence >= 1) {
+            const now = Date.now();
+            if (this.price > 0 && Math.abs(d.price - this.price) / this.price > 0.8 && d.confidence < 3)
+              return;
+            console.log(`[Market] Real-time Price Integration (${d.source}): $${d.price}`);
+            this.price = d.price;
+            this.priceIsFresh = true;
+            this.lastTickTs = now;
+            this.lastSource = d.source || "site";
+            this.notify();
+          }
+        }
+      });
+    },
+    pollContext() {
+      const { activeMint, activeSymbol, sourceSite } = TokenContextResolver.resolve();
+      if (activeMint !== this.currentMint) {
+        console.log(`[Market] Context Changed: ${this.currentMint} -> ${activeMint} (${sourceSite})`);
+        this.currentMint = activeMint;
+        this.sourceSite = sourceSite;
+        this.currentSymbol = activeSymbol;
+        window.postMessage({
+          __paper: true,
+          type: "PAPER_SET_CONTEXT",
+          mint: activeMint,
+          symbol: activeSymbol
+        }, "*");
+        TokenMarketDataService.setMint(activeMint);
+        this.notify();
+      }
+    },
+    subscribe(callback) {
+      this.listeners.push(callback);
+    },
+    notify() {
+      this.listeners.forEach((cb) => cb({
+        price: this.price,
+        marketCap: this.marketCap,
+        mint: this.currentMint,
+        symbol: this.currentSymbol,
+        context: {
+          // Legacy shape adaptation for 'context' if needed by HUD
+          liquidity: this.liquidity,
+          fdv: this.marketCap,
+          symbol: this.currentSymbol
+        }
+      }));
+    },
+    // Explicit getter if needed
+    getSnapshot() {
+      return TokenMarketDataService.getSnapshot();
+    }
+  };
 
   // src/modules/ui/hud.js
   init_store();
-  init_market();
 
   // src/modules/ui/banner.js
   init_store();
-  init_featureManager();
   var Banner = {
     mountBanner() {
       const root = OverlayManager.getShadowRoot();
@@ -4215,56 +3129,1037 @@ input:checked + .slider:before {
 
   // src/modules/ui/pnl-hud.js
   init_store();
-  init_featureManager();
+  init_diagnostics_store();
 
   // src/modules/core/pnl-calculator.js
-  init_market();
   init_store();
 
-  // src/modules/core/precision.js
-  var Precision = {
-    /**
-     * Round to N decimals with epsilon handling to prevent float errors
-     */
-    round(value, decimals) {
-      if (!Number.isFinite(value))
-        return 0;
-      const multiplier = Math.pow(10, decimals);
-      return Math.round((value + Number.EPSILON) * multiplier) / multiplier;
+  // src/modules/core/analytics.js
+  init_store();
+  var EVENT_CATEGORIES = {
+    TRADE: "TRADE",
+    ALERT: "ALERT",
+    DISCIPLINE: "DISCIPLINE",
+    SYSTEM: "SYSTEM",
+    MILESTONE: "MILESTONE"
+  };
+  var Analytics = {
+    // ==========================================
+    // PERSISTENT EVENT LOGGING
+    // ==========================================
+    logEvent(state, type, category, message, data = {}) {
+      if (!state.eventLog)
+        state.eventLog = [];
+      const event = {
+        id: `evt_${Date.now()}_${Math.floor(Math.random() * 1e3)}`,
+        ts: Date.now(),
+        type,
+        category,
+        message,
+        data
+      };
+      state.eventLog.push(event);
+      if (state.eventLog.length > 100) {
+        state.eventLog = state.eventLog.slice(-100);
+      }
+      console.log(`[EVENT LOG] [${category}] ${type}: ${message}`);
+      return event;
     },
-    /**
-     * Token quantities (6 decimals - SPL token standard)
-     */
-    tokenQty(value) {
-      return this.round(value, 6);
+    logTradeEvent(state, trade) {
+      const pnlText = trade.realizedPnlSol ? `P&L: ${trade.realizedPnlSol > 0 ? "+" : ""}${trade.realizedPnlSol.toFixed(4)} SOL` : `Size: ${trade.solAmount.toFixed(4)} SOL`;
+      const message = `${trade.side} ${trade.symbol} @ $${trade.priceUsd?.toFixed(6) || "N/A"} | ${pnlText}`;
+      this.logEvent(state, trade.side, EVENT_CATEGORIES.TRADE, message, {
+        tradeId: trade.id,
+        symbol: trade.symbol,
+        priceUsd: trade.priceUsd,
+        solAmount: trade.solAmount,
+        realizedPnlSol: trade.realizedPnlSol,
+        strategy: trade.strategy,
+        riskDefined: trade.riskDefined
+      });
     },
-    /**
-     * SOL amounts (4 decimals - matches display precision)
-     */
-    sol(value) {
-      return this.round(value, 4);
+    logDisciplineEvent(state, score, penalty, reasons) {
+      if (penalty <= 0)
+        return;
+      const message = `Discipline -${penalty} pts: ${reasons.join(", ")}`;
+      this.logEvent(state, "PENALTY", EVENT_CATEGORIES.DISCIPLINE, message, {
+        score,
+        penalty,
+        reasons
+      });
     },
-    /**
-     * USD prices (8 decimals - handles micro-cap tokens)
-     */
-    usdPrice(value) {
-      return this.round(value, 8);
+    logAlertEvent(state, alertType, message) {
+      this.logEvent(state, alertType, EVENT_CATEGORIES.ALERT, message, { alertType });
     },
-    /**
-     * Percentages (2 decimals)
-     */
-    pct(value) {
-      return this.round(value, 2);
+    logMilestone(state, type, message, data = {}) {
+      this.logEvent(state, type, EVENT_CATEGORIES.MILESTONE, message, data);
     },
+    getEventLog(state, options = {}) {
+      const { category, limit = 50, offset = 0 } = options;
+      let events = state.eventLog || [];
+      if (category) {
+        events = events.filter((e) => e.category === category);
+      }
+      events = events.sort((a, b) => b.ts - a.ts);
+      return events.slice(offset, offset + limit);
+    },
+    getEventStats(state) {
+      const events = state.eventLog || [];
+      const stats = {
+        total: events.length,
+        trades: events.filter((e) => e.category === EVENT_CATEGORIES.TRADE).length,
+        alerts: events.filter((e) => e.category === EVENT_CATEGORIES.ALERT).length,
+        disciplineEvents: events.filter((e) => e.category === EVENT_CATEGORIES.DISCIPLINE).length,
+        milestones: events.filter((e) => e.category === EVENT_CATEGORIES.MILESTONE).length
+      };
+      return stats;
+    },
+    analyzeRecentTrades(state) {
+      const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+      if (trades.length === 0)
+        return null;
+      const recentTrades = trades.slice(-10);
+      let wins = 0, losses = 0;
+      let totalHoldTimeMs = 0;
+      let totalPnlSol = 0;
+      let avgEntryMc = 0, avgExitMc = 0;
+      let entryMcCount = 0, exitMcCount = 0;
+      let quickFlips = 0;
+      let longHolds = 0;
+      for (const trade of recentTrades) {
+        const pnl = trade.realizedPnlSol || 0;
+        if (pnl > 0)
+          wins++;
+        else if (pnl < 0)
+          losses++;
+        totalPnlSol += pnl;
+        if (trade.marketCap) {
+          avgExitMc += trade.marketCap;
+          exitMcCount++;
+        }
+      }
+      const winRate = recentTrades.length > 0 ? wins / recentTrades.length * 100 : 0;
+      const grossProfits = recentTrades.reduce((sum, t) => sum + Math.max(0, t.realizedPnlSol || 0), 0);
+      const grossLosses = Math.abs(recentTrades.reduce((sum, t) => sum + Math.min(0, t.realizedPnlSol || 0), 0));
+      const profitFactor = grossLosses > 0 ? (grossProfits / grossLosses).toFixed(2) : grossProfits > 0 ? "MAX" : "0.00";
+      let peak = 0, maxDd = 0, currentBal = 0;
+      recentTrades.forEach((t) => {
+        currentBal += t.realizedPnlSol || 0;
+        if (currentBal > peak)
+          peak = currentBal;
+        const dd = peak - currentBal;
+        if (dd > maxDd)
+          maxDd = dd;
+      });
+      return {
+        totalTrades: recentTrades.length,
+        wins,
+        losses,
+        winRate: winRate.toFixed(1),
+        profitFactor,
+        maxDrawdown: maxDd.toFixed(4),
+        totalPnlSol
+      };
+    },
+    calculateDiscipline(trade, state) {
+      const flags = FeatureManager.resolveFlags(state, "DISCIPLINE_SCORING");
+      if (!flags.enabled)
+        return { score: state.session.disciplineScore || 100, penalty: 0, reasons: [] };
+      const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+      const prevTrade = trades.length > 1 ? trades[trades.length - 2] : null;
+      let penalty = 0;
+      let reasons = [];
+      if (prevTrade && trade.ts - prevTrade.ts < 6e4) {
+        penalty += 10;
+        reasons.push("FOMO (Rapid logic)");
+      }
+      if (!trade.strategy || trade.strategy === "Unknown" || trade.strategy === "Other") {
+        penalty += 5;
+        reasons.push("No Strategy");
+      }
+      if (trade.side === "BUY") {
+        const currentBal = state.session.balance + trade.solSize;
+        if (trade.solSize > currentBal * 0.5) {
+          penalty += 20;
+          reasons.push("Oversizing (>50%)");
+        }
+        const planFlags = FeatureManager.resolveFlags(state, "TRADE_PLAN");
+        if (planFlags.interactive && !trade.riskDefined) {
+          penalty += 5;
+          reasons.push("No Stop Loss Defined");
+        }
+      }
+      if (trade.side === "SELL") {
+        const result = this.checkPlanAdherence(trade, state);
+        if (result.penalty > 0) {
+          penalty += result.penalty;
+          reasons.push(...result.reasons);
+        }
+      }
+      let score = state.session.disciplineScore !== void 0 ? state.session.disciplineScore : 100;
+      score = Math.max(0, score - penalty);
+      state.session.disciplineScore = score;
+      if (penalty > 0) {
+        console.log(`[DISCIPLINE] Score -${penalty} (${reasons.join(", ")})`);
+        this.logDisciplineEvent(state, score, penalty, reasons);
+      }
+      return { score, penalty, reasons };
+    },
+    // Check if trade exit adhered to the original plan
+    checkPlanAdherence(sellTrade, state) {
+      let penalty = 0;
+      const reasons = [];
+      const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+      const buyTrade = trades.find(
+        (t) => t.side === "BUY" && t.mint === sellTrade.mint && t.ts < sellTrade.ts && t.riskDefined
+      );
+      if (!buyTrade || !buyTrade.plannedStop)
+        return { penalty: 0, reasons: [] };
+      const exitPrice = sellTrade.priceUsd;
+      const plannedStop = buyTrade.plannedStop;
+      const plannedTarget = buyTrade.plannedTarget;
+      const entryPrice = buyTrade.priceUsd;
+      if (exitPrice < plannedStop && sellTrade.realizedPnlSol < 0) {
+        const violationPct = ((plannedStop - exitPrice) / plannedStop * 100).toFixed(1);
+        penalty += 15;
+        reasons.push(`Stop Violated (-${violationPct}% below stop)`);
+      }
+      if (plannedTarget && exitPrice < plannedTarget && sellTrade.realizedPnlSol > 0) {
+        const targetDistance = (plannedTarget - exitPrice) / plannedTarget * 100;
+        if (targetDistance > 30) {
+          penalty += 5;
+          reasons.push("Early Exit (Left >30% gains)");
+        }
+      }
+      sellTrade.planAdherence = {
+        hadPlan: true,
+        plannedStop,
+        plannedTarget,
+        entryPrice,
+        exitPrice,
+        stopViolated: exitPrice < plannedStop && sellTrade.realizedPnlSol < 0,
+        hitTarget: plannedTarget && exitPrice >= plannedTarget
+      };
+      return { penalty, reasons };
+    },
+    // Calculate R-Multiple for a trade (requires defined risk)
+    calculateRMultiple(sellTrade, state) {
+      const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+      const buyTrade = trades.find(
+        (t) => t.side === "BUY" && t.mint === sellTrade.mint && t.ts < sellTrade.ts && t.riskDefined
+      );
+      if (!buyTrade || !buyTrade.plannedStop)
+        return null;
+      const entryPrice = buyTrade.priceUsd;
+      const exitPrice = sellTrade.priceUsd;
+      const stopPrice = buyTrade.plannedStop;
+      const riskPerUnit = entryPrice - stopPrice;
+      if (riskPerUnit <= 0)
+        return null;
+      const pnlPerUnit = exitPrice - entryPrice;
+      const rMultiple = pnlPerUnit / riskPerUnit;
+      return {
+        rMultiple: parseFloat(rMultiple.toFixed(2)),
+        entryPrice,
+        exitPrice,
+        stopPrice,
+        riskPerUnit,
+        pnlPerUnit
+      };
+    },
+    updateStreaks(trade, state) {
+      if (trade.side !== "SELL")
+        return;
+      const pnl = trade.realizedPnlSol || 0;
+      if (pnl > 0) {
+        state.session.winStreak = (state.session.winStreak || 0) + 1;
+        state.session.lossStreak = 0;
+        console.log(`[ZER\xD8] Win! +${pnl.toFixed(4)} SOL. Win streak: ${state.session.winStreak}`);
+      } else if (pnl < 0) {
+        state.session.lossStreak = (state.session.lossStreak || 0) + 1;
+        state.session.winStreak = 0;
+        console.log(`[ZER\xD8] Loss. ${pnl.toFixed(4)} SOL. Loss streak: ${state.session.lossStreak}`);
+      }
+      if (!state.session.equityHistory)
+        state.session.equityHistory = [];
+      state.session.equityHistory.push({
+        ts: Date.now(),
+        equity: state.session.balance + (state.session.realized || 0)
+      });
+      if (state.session.equityHistory.length > 50)
+        state.session.equityHistory.shift();
+      this.detectTilt(trade, state);
+      this.detectFomo(trade, state);
+      this.detectPanicSell(trade, state);
+      this.detectSunkCost(trade, state);
+      this.detectStrategyDrift(trade, state);
+      this.monitorMarketRegime(state);
+      this.updateProfile(state);
+    },
+    monitorMarketRegime(state) {
+      const flags = FeatureManager.resolveFlags(state, "ADVANCED_COACHING");
+      if (!flags.enabled)
+        return;
+      const ctx = Market2.context;
+      if (!ctx)
+        return;
+      const vol = ctx.vol24h;
+      const chg = Math.abs(ctx.priceChange24h);
+      if (vol < 5e5 && Date.now() - (state.lastRegimeAlert || 0) > 36e5) {
+        this.addAlert(state, "MARKET_REGIME", "\u{1F4C9} LOW VOLUME: Liquidity is thin ($<500k). Slippage may be high.");
+        state.lastRegimeAlert = Date.now();
+      }
+      if (chg > 50 && Date.now() - (state.lastRegimeAlert || 0) > 36e5) {
+        this.addAlert(state, "MARKET_REGIME", "\u26A0\uFE0F HIGH VOLATILITY: 24h change is >50%. Expect rapid swings.");
+        state.lastRegimeAlert = Date.now();
+      }
+    },
+    detectTilt(trade, state) {
+      const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
+      if (!flags.enabled)
+        return;
+      const lossStreak = state.session.lossStreak || 0;
+      if (lossStreak >= 3) {
+        this.addAlert(state, "TILT", `\u26A0\uFE0F TILT DETECTED: ${lossStreak} Losses in a row. Take a break.`);
+        state.behavior.tiltFrequency = (state.behavior.tiltFrequency || 0) + 1;
+      }
+    },
+    detectSunkCost(trade, state) {
+      if (trade.side !== "BUY")
+        return;
+      const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
+      if (!flags.enabled)
+        return;
+      const pos = state.positions[trade.mint];
+      if (pos && (pos.pnlSol || 0) < 0) {
+        this.addAlert(state, "SUNK_COST", "\u{1F4C9} SUNK COST: Averaging down into a losing position increases risk.");
+        state.behavior.sunkCostFrequency = (state.behavior.sunkCostFrequency || 0) + 1;
+      }
+    },
+    detectOvertrading(state) {
+      const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
+      if (!flags.enabled)
+        return;
+      if (state.session?.activeAlerts) {
+        const lastAlert = state.session.activeAlerts.slice().reverse().find((a) => a.type === "VELOCITY");
+        if (lastAlert && Date.now() - lastAlert.ts < 6e4) {
+          return;
+        }
+      }
+      const trades = Object.values(state.trades || {}).filter((t) => t.mode === (state.settings.tradingMode || "paper")).sort((a, b) => a.ts - b.ts);
+      if (trades.length < 5)
+        return;
+      const last5 = trades.slice(-5);
+      const timeSpan = last5[4].ts - last5[0].ts;
+      const timeSinceLast = Date.now() - last5[4].ts;
+      if (timeSpan < 3e5 && timeSinceLast < 3e5) {
+        console.log(`[ZER\xD8 ALERT] Overtrading Detected: 5 trades in ${(timeSpan / 1e3).toFixed(1)}s`, last5.map((t) => t.id));
+        this.addAlert(state, "VELOCITY", "\u26A0\uFE0F OVERTRADING: You're trading too fast. Stop and evaluate setups.");
+        state.behavior.overtradingFrequency = (state.behavior.overtradingFrequency || 0) + 1;
+        state.lastOvertradingAlert = Date.now();
+      }
+    },
+    monitorProfitOverstay(state) {
+      const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
+      if (!flags.enabled)
+        return;
+      Object.values(state.positions).forEach((pos) => {
+        const pnlPct = pos.pnlPct || 0;
+        const peakPct = pos.peakPnlPct !== void 0 ? pos.peakPnlPct : 0;
+        if (peakPct > 10 && pnlPct < 0) {
+          if (!pos.alertedGreenToRed) {
+            this.addAlert(state, "PROFIT_NEGLECT", `\u{1F34F} GREEN-TO-RED: ${pos.symbol} was up 10%+. Don't let winners die.`);
+            pos.alertedGreenToRed = true;
+            state.behavior.profitNeglectFrequency = (state.behavior.profitNeglectFrequency || 0) + 1;
+          }
+        }
+      });
+    },
+    detectStrategyDrift(trade, state) {
+      if (trade.side !== "BUY")
+        return;
+      const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
+      if (!flags.enabled)
+        return;
+      if (trade.strategy === "Unknown" || trade.strategy === "Other") {
+        const trades = Object.values(state.trades || {});
+        const profitableStrategies = trades.filter((t) => (t.realizedPnlSol || 0) > 0 && t.strategy !== "Unknown").map((t) => t.strategy);
+        if (profitableStrategies.length >= 3) {
+          this.addAlert(state, "DRIFT", "\u{1F575}\uFE0F STRATEGY DRIFT: Playing 'Unknown' instead of your winning setups.");
+          state.behavior.strategyDriftFrequency = (state.behavior.strategyDriftFrequency || 0) + 1;
+        }
+      }
+    },
+    detectFomo(trade, state) {
+      if (trade.side !== "BUY")
+        return;
+      const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
+      if (!flags.enabled)
+        return;
+      const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+      const prevTrade = trades.length > 1 ? trades[trades.length - 2] : null;
+      if (prevTrade && trade.ts - prevTrade.ts < 3e4 && prevTrade.side === "SELL" && (prevTrade.realizedPnlSol || 0) < 0) {
+        this.addAlert(state, "FOMO", "\u{1F6A8} FOMO ALERT: Revenge trading detected.");
+        state.behavior.fomoTrades = (state.behavior.fomoTrades || 0) + 1;
+      }
+    },
+    detectPanicSell(trade, state) {
+      if (trade.side !== "SELL")
+        return;
+      const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
+      if (!flags.enabled)
+        return;
+      if (trade.entryTs && trade.ts - trade.entryTs < 45e3 && (trade.realizedPnlSol || 0) < 0) {
+        this.addAlert(state, "PANIC", "\u{1F631} PANIC SELL: You're cutting too early. Trust your stops.");
+        state.behavior.panicSells = (state.behavior.panicSells || 0) + 1;
+      }
+    },
+    addAlert(state, type, message) {
+      if (!state.session.activeAlerts)
+        state.session.activeAlerts = [];
+      const alert = { type, message, ts: Date.now() };
+      state.session.activeAlerts.push(alert);
+      if (state.session.activeAlerts.length > 3)
+        state.session.activeAlerts.shift();
+      this.logAlertEvent(state, type, message);
+      console.log(`[ELITE ALERT] ${type}: ${message}`);
+    },
+    updateProfile(state) {
+      const b = state.behavior;
+      const totalMistakes = (b.tiltFrequency || 0) + (b.fomoTrades || 0) + (b.panicSells || 0);
+      if (totalMistakes === 0)
+        b.profile = "Disciplined";
+      else if (b.tiltFrequency > 2)
+        b.profile = "Emotional";
+      else if (b.fomoTrades > 2)
+        b.profile = "Impulsive";
+      else if (b.panicSells > 2)
+        b.profile = "Hesitant";
+      else
+        b.profile = "Improving";
+    },
+    getProfessorDebrief(state) {
+      const score = state.session.disciplineScore !== void 0 ? state.session.disciplineScore : 100;
+      const stats = this.analyzeRecentTrades(state) || { winRate: 0, style: "balanced" };
+      let critique = "Keep your discipline score high to trade like a pro.";
+      if (score < 70) {
+        critique = "You're trading emotionally. Stop, breathe, and stick to your strategy.";
+      } else if (stats.winRate > 60 && score >= 90) {
+        critique = "Excellent execution. You're trading with professional-grade discipline.";
+      } else if (stats.style === "scalper" && score < 90) {
+        critique = "Scalping requires perfect discipline. Watch your sizing.";
+      } else if (stats.totalTrades >= 3 && stats.winRate < 40) {
+        critique = "Market conditions are tough. Focus on high-conviction setups only.";
+      }
+      return { score, critique };
+    },
+    generateXShareText(state) {
+      const trades = Object.values(state.trades || {});
+      const sellTrades = trades.filter((t) => t.side === "SELL");
+      const wins = sellTrades.filter((t) => (t.realizedPnlSol || 0) > 0).length;
+      const losses = sellTrades.filter((t) => (t.realizedPnlSol || 0) < 0).length;
+      const totalPnl = state.session.realized || 0;
+      const winRate = sellTrades.length > 0 ? (wins / sellTrades.length * 100).toFixed(0) : 0;
+      const disciplineScore = state.session.disciplineScore || 100;
+      const winStreak = state.session.winStreak || 0;
+      const lossStreak = state.session.lossStreak || 0;
+      const currentStreak = winStreak > 0 ? `${winStreak}W` : lossStreak > 0 ? `${lossStreak}L` : "0";
+      const pnlFormatted = totalPnl >= 0 ? `+${totalPnl.toFixed(3)}` : totalPnl.toFixed(3);
+      const pnlTag = totalPnl >= 0 ? "[PROFIT]" : "[DRAWDOWN]";
+      let text = `ZER\xD8 Trading Session Complete
+
+`;
+      text += `${pnlTag} P&L: ${pnlFormatted} SOL
+`;
+      text += `WIN RATE: ${winRate}%
+`;
+      text += `HISTORY: ${wins}W / ${losses}L
+`;
+      text += `STREAK: ${currentStreak}
+`;
+      text += `DISCIPLINE: ${disciplineScore}/100
+
+`;
+      if (winRate >= 70) {
+        text += `Systematic Excellence. \u{1F4AA}
+
+`;
+      } else if (winRate >= 50) {
+        text += `Disciplined Execution. \u{1F4CA}
+
+`;
+      } else if (sellTrades.length >= 3) {
+        text += `Baseline Established. \u{1F4DA}
+
+`;
+      }
+      text += `Paper trading with ZER\xD8 on Solana
+`;
+      text += `#Solana #PaperTrading #Crypto`;
+      return text;
+    },
+    // ==========================================
+    // EXPORT FUNCTIONALITY
+    // ==========================================
+    exportToCSV(state) {
+      const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+      if (trades.length === 0)
+        return null;
+      const headers = [
+        "Trade ID",
+        "Timestamp",
+        "Side",
+        "Symbol",
+        "Token Mint",
+        "SOL Amount",
+        "Token Qty",
+        "Price USD",
+        "Market Cap",
+        "Realized PnL (SOL)",
+        "Strategy",
+        "Emotion",
+        "Mode",
+        "Planned Stop",
+        "Planned Target",
+        "Risk Defined",
+        "Entry Thesis"
+      ];
+      const rows = trades.map((t) => [
+        t.id,
+        new Date(t.ts).toISOString(),
+        t.side,
+        t.symbol || "",
+        t.mint || "",
+        t.solAmount?.toFixed(6) || "",
+        t.qtyTokens?.toFixed(6) || "",
+        t.priceUsd?.toFixed(8) || "",
+        t.marketCap?.toFixed(2) || "",
+        t.realizedPnlSol?.toFixed(6) || "",
+        t.strategy || "",
+        t.emotion || "",
+        t.mode || "paper",
+        t.plannedStop?.toFixed(8) || "",
+        t.plannedTarget?.toFixed(8) || "",
+        t.riskDefined ? "Yes" : "No",
+        `"${(t.entryThesis || "").replace(/"/g, '""')}"`
+      ]);
+      const csvContent = [
+        headers.join(","),
+        ...rows.map((r) => r.join(","))
+      ].join("\n");
+      return csvContent;
+    },
+    exportToJSON(state) {
+      const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+      const session = state.session || {};
+      const behavior = state.behavior || {};
+      const exportData = {
+        exportedAt: (/* @__PURE__ */ new Date()).toISOString(),
+        version: state.version || "1.0.0",
+        session: {
+          balance: session.balance,
+          equity: session.equity,
+          realized: session.realized,
+          winStreak: session.winStreak,
+          lossStreak: session.lossStreak,
+          disciplineScore: session.disciplineScore,
+          tradeCount: trades.length
+        },
+        behavior: {
+          profile: behavior.profile,
+          tiltFrequency: behavior.tiltFrequency,
+          fomoTrades: behavior.fomoTrades,
+          panicSells: behavior.panicSells,
+          sunkCostFrequency: behavior.sunkCostFrequency,
+          overtradingFrequency: behavior.overtradingFrequency,
+          profitNeglectFrequency: behavior.profitNeglectFrequency
+        },
+        analytics: this.analyzeRecentTrades(state),
+        trades: trades.map((t) => ({
+          id: t.id,
+          timestamp: new Date(t.ts).toISOString(),
+          side: t.side,
+          symbol: t.symbol,
+          mint: t.mint,
+          solAmount: t.solAmount,
+          qtyTokens: t.qtyTokens,
+          priceUsd: t.priceUsd,
+          marketCap: t.marketCap,
+          realizedPnlSol: t.realizedPnlSol,
+          strategy: t.strategy,
+          emotion: t.emotion,
+          mode: t.mode,
+          tradePlan: {
+            plannedStop: t.plannedStop,
+            plannedTarget: t.plannedTarget,
+            entryThesis: t.entryThesis,
+            riskDefined: t.riskDefined
+          },
+          planAdherence: t.planAdherence || null
+        }))
+      };
+      return JSON.stringify(exportData, null, 2);
+    },
+    downloadExport(content, filename, mimeType) {
+      const blob = new Blob([content], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    },
+    exportTradesAsCSV(state) {
+      const csv = this.exportToCSV(state);
+      if (!csv) {
+        console.warn("[Export] No trades to export");
+        return false;
+      }
+      const filename = `zero_trades_${(/* @__PURE__ */ new Date()).toISOString().split("T")[0]}.csv`;
+      this.downloadExport(csv, filename, "text/csv;charset=utf-8;");
+      return true;
+    },
+    exportSessionAsJSON(state) {
+      const json = this.exportToJSON(state);
+      const filename = `zero_session_${(/* @__PURE__ */ new Date()).toISOString().split("T")[0]}.json`;
+      this.downloadExport(json, filename, "application/json");
+      return true;
+    },
+    // ==========================================
+    // CONSISTENCY SCORE
+    // ==========================================
     /**
-     * Weighted average with precision protection
+     * Calculate Consistency Score (0-100)
+     * Measures:
+     * - Win Rate Stability (variance in rolling win rate)
+     * - Position Sizing Consistency (variance in trade sizes)
+     * - Trade Frequency Stability (time between trades)
+     * - Strategy Focus (% of trades using top 2 strategies)
      */
-    weightedAvg(val1, weight1, val2, weight2) {
-      const totalWeight = weight1 + weight2;
-      if (totalWeight === 0)
-        return 0;
-      const result = (val1 * weight1 + val2 * weight2) / totalWeight;
-      return this.round(result, 8);
+    // ==========================================
+    // PERSONAL TRADER PROFILE (ELITE)
+    // ==========================================
+    /**
+     * Generate a comprehensive trader profile based on historical data
+     * Analyzes: Best strategies, worst conditions, optimal session length, best time of day
+     */
+    generateTraderProfile(state) {
+      const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+      if (trades.length < 10) {
+        return {
+          ready: false,
+          message: "Need 10+ trades to generate your profile",
+          tradesNeeded: 10 - trades.length
+        };
+      }
+      const sellTrades = trades.filter((t) => t.side === "SELL");
+      const buyTrades = trades.filter((t) => t.side === "BUY");
+      return {
+        ready: true,
+        generatedAt: Date.now(),
+        tradeCount: trades.length,
+        bestStrategies: this._analyzeBestStrategies(buyTrades, sellTrades, trades),
+        worstConditions: this._analyzeWorstConditions(trades, state),
+        optimalSessionLength: this._analyzeOptimalSessionLength(trades, state),
+        bestTimeOfDay: this._analyzeBestTimeOfDay(sellTrades),
+        tradingStyle: this._determineTradingStyle(trades),
+        riskProfile: this._analyzeRiskProfile(buyTrades, state),
+        emotionalPatterns: this._analyzeEmotionalPatterns(trades, state)
+      };
+    },
+    _analyzeBestStrategies(buyTrades, sellTrades, allTrades) {
+      const strategyStats = {};
+      buyTrades.forEach((buy) => {
+        const strat = buy.strategy || "Unknown";
+        if (!strategyStats[strat]) {
+          strategyStats[strat] = { count: 0, wins: 0, totalPnl: 0, avgHoldTime: 0, trades: [] };
+        }
+        strategyStats[strat].count++;
+        strategyStats[strat].trades.push(buy);
+      });
+      sellTrades.forEach((sell) => {
+        const matchingBuy = allTrades.find(
+          (t) => t.side === "BUY" && t.mint === sell.mint && t.ts < sell.ts
+        );
+        if (matchingBuy) {
+          const strat = matchingBuy.strategy || "Unknown";
+          if (strategyStats[strat]) {
+            const pnl = sell.realizedPnlSol || 0;
+            strategyStats[strat].totalPnl += pnl;
+            if (pnl > 0)
+              strategyStats[strat].wins++;
+            strategyStats[strat].avgHoldTime += sell.ts - matchingBuy.ts;
+          }
+        }
+      });
+      const results = Object.entries(strategyStats).filter(([_, s]) => s.count >= 2).map(([name, s]) => ({
+        name,
+        count: s.count,
+        winRate: s.count > 0 ? (s.wins / s.count * 100).toFixed(1) : 0,
+        totalPnl: s.totalPnl,
+        avgPnl: s.count > 0 ? s.totalPnl / s.count : 0,
+        avgHoldTime: s.wins > 0 ? Math.round(s.avgHoldTime / s.wins / 6e4) : 0
+        // in minutes
+      })).sort((a, b) => b.totalPnl - a.totalPnl);
+      return {
+        top: results.slice(0, 3),
+        worst: results.filter((s) => s.totalPnl < 0).sort((a, b) => a.totalPnl - b.totalPnl).slice(0, 2),
+        mostUsed: results.sort((a, b) => b.count - a.count)[0] || null
+      };
+    },
+    _analyzeWorstConditions(trades, state) {
+      const conditions = [];
+      let afterLossWins = 0, afterLossTotal = 0;
+      for (let i = 1; i < trades.length; i++) {
+        if (trades[i - 1].side === "SELL" && (trades[i - 1].realizedPnlSol || 0) < 0) {
+          afterLossTotal++;
+          if (trades[i].side === "SELL" && (trades[i].realizedPnlSol || 0) > 0) {
+            afterLossWins++;
+          }
+        }
+      }
+      if (afterLossTotal >= 3) {
+        const afterLossWinRate = (afterLossWins / afterLossTotal * 100).toFixed(0);
+        if (afterLossWinRate < 40) {
+          conditions.push({
+            type: "AFTER_LOSS",
+            label: "After Losing Trades",
+            severity: "high",
+            stat: `${afterLossWinRate}% win rate`,
+            advice: "Take a 5-minute break after losses before your next trade."
+          });
+        }
+      }
+      let rapidWins = 0, rapidTotal = 0;
+      for (let i = 1; i < trades.length; i++) {
+        if (trades[i].ts - trades[i - 1].ts < 12e4) {
+          rapidTotal++;
+          if (trades[i].side === "SELL" && (trades[i].realizedPnlSol || 0) > 0) {
+            rapidWins++;
+          }
+        }
+      }
+      if (rapidTotal >= 3) {
+        const rapidWinRate = (rapidWins / rapidTotal * 100).toFixed(0);
+        if (rapidWinRate < 35) {
+          conditions.push({
+            type: "RAPID_TRADING",
+            label: "Rapid-Fire Trading",
+            severity: "high",
+            stat: `${rapidWinRate}% win rate`,
+            advice: "Slow down. Wait at least 2 minutes between trades."
+          });
+        }
+      }
+      const avgSize = trades.filter((t) => t.side === "BUY").reduce((sum, t) => sum + (t.solAmount || 0), 0) / trades.filter((t) => t.side === "BUY").length;
+      let largeWins = 0, largeTotal = 0;
+      trades.filter((t) => t.side === "SELL").forEach((t) => {
+        const matchingBuy = trades.find((b) => b.side === "BUY" && b.mint === t.mint && b.ts < t.ts);
+        if (matchingBuy && matchingBuy.solAmount > avgSize * 1.5) {
+          largeTotal++;
+          if ((t.realizedPnlSol || 0) > 0)
+            largeWins++;
+        }
+      });
+      if (largeTotal >= 2) {
+        const largeWinRate = (largeWins / largeTotal * 100).toFixed(0);
+        if (largeWinRate < 40) {
+          conditions.push({
+            type: "LARGE_POSITIONS",
+            label: "Oversized Positions",
+            severity: "medium",
+            stat: `${largeWinRate}% win rate`,
+            advice: "Your large trades underperform. Stick to consistent sizing."
+          });
+        }
+      }
+      const sessionTrades = this._groupBySession(trades, state);
+      let lateWins = 0, lateTotal = 0;
+      sessionTrades.forEach((session) => {
+        if (session.length < 5)
+          return;
+        const sessionStart = session[0].ts;
+        const lateThreshold = sessionStart + 60 * 60 * 1e3;
+        session.filter((t) => t.ts > lateThreshold && t.side === "SELL").forEach((t) => {
+          lateTotal++;
+          if ((t.realizedPnlSol || 0) > 0)
+            lateWins++;
+        });
+      });
+      if (lateTotal >= 3) {
+        const lateWinRate = (lateWins / lateTotal * 100).toFixed(0);
+        if (lateWinRate < 35) {
+          conditions.push({
+            type: "LATE_SESSION",
+            label: "Extended Sessions",
+            severity: "medium",
+            stat: `${lateWinRate}% win rate`,
+            advice: "Your performance drops after 1 hour. Consider shorter sessions."
+          });
+        }
+      }
+      return conditions.sort((a, b) => (b.severity === "high" ? 1 : 0) - (a.severity === "high" ? 1 : 0));
+    },
+    _analyzeOptimalSessionLength(trades, state) {
+      const sessionTrades = this._groupBySession(trades, state);
+      if (sessionTrades.length < 2) {
+        return { optimal: null, message: "Need more session data" };
+      }
+      const sessionPerformance = sessionTrades.map((session) => {
+        const duration = session.length > 0 ? (session[session.length - 1].ts - session[0].ts) / 6e4 : 0;
+        const sells = session.filter((t) => t.side === "SELL");
+        const pnl = sells.reduce((sum, t) => sum + (t.realizedPnlSol || 0), 0);
+        const wins = sells.filter((t) => (t.realizedPnlSol || 0) > 0).length;
+        const winRate = sells.length > 0 ? wins / sells.length * 100 : 0;
+        return { duration, pnl, winRate, tradeCount: session.length };
+      });
+      const buckets = {
+        short: { range: "< 30 min", sessions: [], avgPnl: 0, avgWinRate: 0 },
+        medium: { range: "30-60 min", sessions: [], avgPnl: 0, avgWinRate: 0 },
+        long: { range: "60-120 min", sessions: [], avgPnl: 0, avgWinRate: 0 },
+        extended: { range: "> 120 min", sessions: [], avgPnl: 0, avgWinRate: 0 }
+      };
+      sessionPerformance.forEach((s) => {
+        if (s.duration < 30)
+          buckets.short.sessions.push(s);
+        else if (s.duration < 60)
+          buckets.medium.sessions.push(s);
+        else if (s.duration < 120)
+          buckets.long.sessions.push(s);
+        else
+          buckets.extended.sessions.push(s);
+      });
+      Object.values(buckets).forEach((b) => {
+        if (b.sessions.length > 0) {
+          b.avgPnl = b.sessions.reduce((sum, s) => sum + s.pnl, 0) / b.sessions.length;
+          b.avgWinRate = b.sessions.reduce((sum, s) => sum + s.winRate, 0) / b.sessions.length;
+        }
+      });
+      const best = Object.entries(buckets).filter(([_, b]) => b.sessions.length >= 1).sort((a, b) => b[1].avgPnl - a[1].avgPnl)[0];
+      return {
+        optimal: best ? best[1].range : null,
+        bestPnl: best ? best[1].avgPnl.toFixed(4) : 0,
+        bestWinRate: best ? best[1].avgWinRate.toFixed(1) : 0,
+        buckets: Object.fromEntries(
+          Object.entries(buckets).map(([k, v]) => [k, {
+            range: v.range,
+            count: v.sessions.length,
+            avgPnl: v.avgPnl.toFixed(4),
+            avgWinRate: v.avgWinRate.toFixed(1)
+          }])
+        )
+      };
+    },
+    _analyzeBestTimeOfDay(sellTrades) {
+      if (sellTrades.length < 5) {
+        return { best: null, message: "Need more trades" };
+      }
+      const timeSlots = {
+        morning: { range: "6AM-12PM", wins: 0, total: 0, pnl: 0 },
+        afternoon: { range: "12PM-6PM", wins: 0, total: 0, pnl: 0 },
+        evening: { range: "6PM-12AM", wins: 0, total: 0, pnl: 0 },
+        night: { range: "12AM-6AM", wins: 0, total: 0, pnl: 0 }
+      };
+      sellTrades.forEach((t) => {
+        const hour = new Date(t.ts).getHours();
+        let slot;
+        if (hour >= 6 && hour < 12)
+          slot = "morning";
+        else if (hour >= 12 && hour < 18)
+          slot = "afternoon";
+        else if (hour >= 18 && hour < 24)
+          slot = "evening";
+        else
+          slot = "night";
+        timeSlots[slot].total++;
+        timeSlots[slot].pnl += t.realizedPnlSol || 0;
+        if ((t.realizedPnlSol || 0) > 0)
+          timeSlots[slot].wins++;
+      });
+      const results = Object.entries(timeSlots).filter(([_, s]) => s.total >= 2).map(([name, s]) => ({
+        name,
+        range: s.range,
+        winRate: s.total > 0 ? (s.wins / s.total * 100).toFixed(1) : 0,
+        pnl: s.pnl,
+        count: s.total
+      })).sort((a, b) => b.pnl - a.pnl);
+      return {
+        best: results[0] || null,
+        worst: results[results.length - 1] || null,
+        breakdown: results
+      };
+    },
+    _determineTradingStyle(trades) {
+      const sellTrades = trades.filter((t) => t.side === "SELL");
+      if (sellTrades.length < 5)
+        return { style: "Unknown", description: "Need more data" };
+      let totalHoldTime = 0, holdCount = 0;
+      sellTrades.forEach((sell) => {
+        const buy = trades.find((t) => t.side === "BUY" && t.mint === sell.mint && t.ts < sell.ts);
+        if (buy) {
+          totalHoldTime += sell.ts - buy.ts;
+          holdCount++;
+        }
+      });
+      const avgHoldMinutes = holdCount > 0 ? totalHoldTime / holdCount / 6e4 : 0;
+      if (avgHoldMinutes < 5) {
+        return { style: "Scalper", description: "Quick in-and-out trades, high frequency", avgHold: avgHoldMinutes.toFixed(1) };
+      } else if (avgHoldMinutes < 30) {
+        return { style: "Day Trader", description: "Short-term positions, momentum focused", avgHold: avgHoldMinutes.toFixed(1) };
+      } else if (avgHoldMinutes < 120) {
+        return { style: "Swing Trader", description: "Medium holds, trend following", avgHold: avgHoldMinutes.toFixed(1) };
+      } else {
+        return { style: "Position Trader", description: "Long holds, conviction plays", avgHold: avgHoldMinutes.toFixed(1) };
+      }
+    },
+    _analyzeRiskProfile(buyTrades, state) {
+      if (buyTrades.length < 3)
+        return { profile: "Unknown", avgRisk: 0 };
+      const startSol = state.settings?.startSol || 10;
+      const riskPcts = buyTrades.map((t) => t.solAmount / startSol * 100);
+      const avgRisk = riskPcts.reduce((a, b) => a + b, 0) / riskPcts.length;
+      const maxRisk = Math.max(...riskPcts);
+      const plansUsed = buyTrades.filter((t) => t.riskDefined).length;
+      const planRate = (plansUsed / buyTrades.length * 100).toFixed(0);
+      let profile;
+      if (avgRisk < 5)
+        profile = "Conservative";
+      else if (avgRisk < 15)
+        profile = "Moderate";
+      else if (avgRisk < 30)
+        profile = "Aggressive";
+      else
+        profile = "High Risk";
+      return {
+        profile,
+        avgRisk: avgRisk.toFixed(1),
+        maxRisk: maxRisk.toFixed(1),
+        planUsageRate: planRate,
+        plansUsed
+      };
+    },
+    _analyzeEmotionalPatterns(trades, state) {
+      const behavior = state.behavior || {};
+      const patterns = [];
+      if ((behavior.fomoTrades || 0) > 2) {
+        patterns.push({ type: "FOMO", frequency: behavior.fomoTrades, advice: "Wait 60 seconds before entering after seeing green candles." });
+      }
+      if ((behavior.panicSells || 0) > 2) {
+        patterns.push({ type: "Panic Selling", frequency: behavior.panicSells, advice: "Set stop losses in advance and trust them." });
+      }
+      if ((behavior.tiltFrequency || 0) > 1) {
+        patterns.push({ type: "Tilt Trading", frequency: behavior.tiltFrequency, advice: "Take a mandatory break after 3 consecutive losses." });
+      }
+      if ((behavior.sunkCostFrequency || 0) > 1) {
+        patterns.push({ type: "Sunk Cost Bias", frequency: behavior.sunkCostFrequency, advice: "Never average down more than once per position." });
+      }
+      return patterns;
+    },
+    _groupBySession(trades, state) {
+      const sessions = [];
+      let currentSession = [];
+      const SESSION_GAP = 30 * 60 * 1e3;
+      trades.forEach((trade, i) => {
+        if (i === 0) {
+          currentSession.push(trade);
+        } else if (trade.ts - trades[i - 1].ts > SESSION_GAP) {
+          if (currentSession.length > 0)
+            sessions.push(currentSession);
+          currentSession = [trade];
+        } else {
+          currentSession.push(trade);
+        }
+      });
+      if (currentSession.length > 0)
+        sessions.push(currentSession);
+      return sessions;
+    },
+    calculateConsistencyScore(state) {
+      const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+      if (trades.length < 5) {
+        return { score: null, message: "Need 5+ trades for consistency score", breakdown: null };
+      }
+      const breakdown = {
+        winRateStability: 0,
+        sizingConsistency: 0,
+        frequencyStability: 0,
+        strategyFocus: 0
+      };
+      const sellTrades = trades.filter((t) => t.side === "SELL");
+      if (sellTrades.length >= 5) {
+        const windowSize = Math.min(5, Math.floor(sellTrades.length / 2));
+        const rollingWinRates = [];
+        for (let i = windowSize; i <= sellTrades.length; i++) {
+          const window2 = sellTrades.slice(i - windowSize, i);
+          const wins = window2.filter((t) => (t.realizedPnlSol || 0) > 0).length;
+          rollingWinRates.push(wins / windowSize);
+        }
+        if (rollingWinRates.length > 1) {
+          const avg = rollingWinRates.reduce((a, b) => a + b, 0) / rollingWinRates.length;
+          const variance = rollingWinRates.reduce((sum, r) => sum + Math.pow(r - avg, 2), 0) / rollingWinRates.length;
+          const stdDev = Math.sqrt(variance);
+          breakdown.winRateStability = Math.max(0, 25 - stdDev * 100);
+        } else {
+          breakdown.winRateStability = 20;
+        }
+      } else {
+        breakdown.winRateStability = 15;
+      }
+      const buyTrades = trades.filter((t) => t.side === "BUY");
+      if (buyTrades.length >= 3) {
+        const sizes = buyTrades.map((t) => t.solAmount);
+        const avgSize = sizes.reduce((a, b) => a + b, 0) / sizes.length;
+        const variance = sizes.reduce((sum, s) => sum + Math.pow(s - avgSize, 2), 0) / sizes.length;
+        const cv = Math.sqrt(variance) / avgSize;
+        breakdown.sizingConsistency = Math.max(0, 25 - cv * 25);
+      } else {
+        breakdown.sizingConsistency = 15;
+      }
+      if (trades.length >= 4) {
+        const intervals = [];
+        for (let i = 1; i < trades.length; i++) {
+          intervals.push(trades[i].ts - trades[i - 1].ts);
+        }
+        const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+        const variance = intervals.reduce((sum, i) => sum + Math.pow(i - avgInterval, 2), 0) / intervals.length;
+        const cv = Math.sqrt(variance) / avgInterval;
+        breakdown.frequencyStability = Math.max(0, 25 - cv * 12.5);
+      } else {
+        breakdown.frequencyStability = 15;
+      }
+      const strategyCounts = {};
+      buyTrades.forEach((t) => {
+        const strat = t.strategy || "Unknown";
+        strategyCounts[strat] = (strategyCounts[strat] || 0) + 1;
+      });
+      const sortedStrategies = Object.entries(strategyCounts).sort((a, b) => b[1] - a[1]);
+      const top2Count = sortedStrategies.slice(0, 2).reduce((sum, [_, count]) => sum + count, 0);
+      const focusRatio = buyTrades.length > 0 ? top2Count / buyTrades.length : 0;
+      breakdown.strategyFocus = focusRatio * 25;
+      const score = Math.round(
+        breakdown.winRateStability + breakdown.sizingConsistency + breakdown.frequencyStability + breakdown.strategyFocus
+      );
+      let message = "";
+      if (score >= 80)
+        message = "Highly consistent trading patterns";
+      else if (score >= 60)
+        message = "Good consistency, minor variations";
+      else if (score >= 40)
+        message = "Moderate consistency, room for improvement";
+      else
+        message = "Inconsistent patterns detected";
+      return {
+        score,
+        message,
+        breakdown: {
+          winRateStability: Math.round(breakdown.winRateStability),
+          sizingConsistency: Math.round(breakdown.sizingConsistency),
+          frequencyStability: Math.round(breakdown.frequencyStability),
+          strategyFocus: Math.round(breakdown.strategyFocus)
+        }
+      };
     }
   };
 
@@ -4273,321 +4168,255 @@ input:checked + .slider:before {
     cachedSolPrice: 200,
     // Default fallback
     lastValidSolPrice: null,
-    // Stores last successful API fetch
     lastSolPriceFetch: 0,
     priceUpdateInterval: null,
     lastPriceSave: 0,
-    // Initialize price fetching on load
     init() {
-      this.fetchSolPriceBackground();
+      console.log("[PNL] Initializing WAC PnL Calculator");
+      this.fetchSolPrice();
       if (!this.priceUpdateInterval) {
         this.priceUpdateInterval = setInterval(() => {
-          this.fetchSolPriceBackground();
-        }, 1e4);
+          this.fetchSolPrice();
+        }, 3e5);
       }
     },
-    // Background fetch - never blocks, updates cache silently
-    async fetchSolPriceBackground() {
-      console.log("[PNL] Fetching SOL price from CoinGecko...");
-      try {
-        const response = await chrome.runtime.sendMessage({
-          type: "PROXY_FETCH",
-          url: "https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd",
-          options: { method: "GET" }
-        });
-        if (!response.ok)
-          throw new Error(response.statusText || response.error || "Fetch failed");
-        const data = response.data;
-        const solPrice = data?.solana?.usd;
-        if (solPrice && solPrice > 10 && solPrice < 3e3) {
-          this.cachedSolPrice = solPrice;
-          this.lastValidSolPrice = solPrice;
-          this.lastSolPriceFetch = Date.now();
-          console.log(`[PNL] \u2713 SOL price: $${solPrice.toFixed(2)} (CoinGecko)`);
-          return;
-        } else if (solPrice) {
-          console.error(`[PNL] \u2717 Invalid SOL price from CoinGecko: $${solPrice} (expected $50-$500)`);
+    /**
+     * Fetches SOL/USD from Kraken + Coinbase and computes Median.
+     */
+    async fetchSolPrice() {
+      console.log("[PNL] Fetching SOL Price (Kraken + Coinbase)...");
+      const fetchKraken = async () => {
+        try {
+          const res = await chrome.runtime.sendMessage({
+            type: "PROXY_FETCH",
+            url: "https://api.kraken.com/0/public/Ticker?pair=SOLUSD",
+            options: { method: "GET" }
+          });
+          if (res.ok && res.data?.result?.SOLUSD?.c?.[0]) {
+            return parseFloat(res.data.result.SOLUSD.c[0]);
+          }
+        } catch (e) {
+          console.warn("[PNL] Kraken failed", e);
         }
-      } catch (e) {
-        console.error(`[PNL] \u2717 CoinGecko failed: ${e.message}`);
-      }
-      if (this.lastValidSolPrice) {
-        console.warn(`[PNL] Using last valid price: $${this.lastValidSolPrice.toFixed(2)}`);
-        this.cachedSolPrice = this.lastValidSolPrice;
+        return null;
+      };
+      const fetchCoinbase = async () => {
+        try {
+          const res = await chrome.runtime.sendMessage({
+            type: "PROXY_FETCH",
+            url: "https://api.coinbase.com/v2/prices/SOL-USD/spot",
+            options: { method: "GET" }
+          });
+          if (res.ok && res.data?.data?.amount) {
+            return parseFloat(res.data.data.amount);
+          }
+        } catch (e) {
+          console.warn("[PNL] Coinbase failed", e);
+        }
+        return null;
+      };
+      const [kPrice, cPrice] = await Promise.all([fetchKraken(), fetchCoinbase()]);
+      let validPrices = [];
+      if (kPrice)
+        validPrices.push(kPrice);
+      if (cPrice)
+        validPrices.push(cPrice);
+      if (validPrices.length > 0) {
+        const sum = validPrices.reduce((a, b) => a + b, 0);
+        const median = sum / validPrices.length;
+        this.cachedSolPrice = median;
+        this.lastValidSolPrice = median;
+        this.lastSolPriceFetch = Date.now();
+        console.log(`[PNL] SOL/USD Updated: $${median.toFixed(2)} (Sources: ${validPrices.length})`);
       } else {
-        console.error(`[PNL] \u2717 No valid price available. Using safe default $140`);
-        this.cachedSolPrice = 140;
+        console.error("[PNL] All SOL price sources failed. Using fallback.");
+        if (this.lastValidSolPrice)
+          this.cachedSolPrice = this.lastValidSolPrice;
       }
     },
-    // Always returns immediately - never blocks on fetch
     getSolPrice() {
       return this.cachedSolPrice;
     },
     fmtSol(n) {
       if (!Number.isFinite(n))
         return "0.0000";
-      if (Math.abs(n) < 1 && n !== 0) {
+      if (Math.abs(n) < 1 && n !== 0)
         return n.toFixed(9);
-      }
       return n.toFixed(4);
     },
+    /**
+     * Calculates WAC-based PnL for all positions.
+     */
     getUnrealizedPnl(state, currentTokenMint = null) {
-      let totalUnrealized = 0;
+      let totalUnrealizedSol = 0;
       const solUsd = this.getSolPrice();
       let priceWasUpdated = false;
+      let totalUnrealizedUsd = 0;
       const positions = Object.values(state.positions || {});
-      console.log(`[PNL] Calculating for ${positions.length} position(s), SOL=$${solUsd.toFixed(2)}`);
       positions.forEach((pos) => {
-        const reasons = [];
-        if (pos.entryPriceUsd > 1e4)
-          reasons.push(`entryPrice=$${pos.entryPriceUsd.toFixed(0)}`);
-        if (pos.lastPriceUsd > 1e4)
-          reasons.push(`lastPrice=$${pos.lastPriceUsd.toFixed(0)}`);
-        if (pos.totalSolSpent < 1e-5)
-          reasons.push(`spent=${pos.totalSolSpent.toFixed(6)}`);
-        if (reasons.length > 0) {
-          console.error(`[PNL] \u2717 DELETING CORRUPTED ${pos.symbol}: ${reasons.join(", ")}`);
-          delete state.positions[pos.mint];
+        if (currentTokenMint && pos.mint === currentTokenMint && Market2.price > 0) {
+          pos.lastMarkPriceUsd = Market2.price;
+          pos.lastMarketCapUsd = Market2.marketCap;
           priceWasUpdated = true;
+        }
+        const markPriceUsd = pos.lastMarkPriceUsd || 0;
+        if (markPriceUsd <= 0 || pos.qtyTokens <= 0) {
           return;
         }
-        let currentPrice = pos.lastPriceUsd || pos.entryPriceUsd;
-        if (currentTokenMint && pos.mint === currentTokenMint && Market2.price > 0 && Market2.price < 1e4) {
-          currentPrice = Market2.price;
-          const oldPrice = pos.lastPriceUsd || pos.entryPriceUsd;
-          if (!pos.lastPriceUsd || Math.abs(oldPrice - Market2.price) / oldPrice > 1e-3) {
-            console.log(`[PNL] Updating ${pos.symbol} price: $${oldPrice.toFixed(8)} \u2192 $${Market2.price.toFixed(8)}`);
-            pos.lastPriceUsd = Market2.price;
-            priceWasUpdated = true;
-          }
-        }
-        if (!currentPrice || currentPrice <= 0)
-          return;
-        const valueUsd = Precision.tokenQty(pos.tokenQty) * Precision.usdPrice(currentPrice);
-        const valueSol = Precision.sol(valueUsd / solUsd);
-        const pnl = Precision.sol(valueSol - pos.totalSolSpent);
-        const pnlPct = Precision.pct(pnl / pos.totalSolSpent * 100);
-        if (pos.peakPnlPct === void 0 || pnlPct > pos.peakPnlPct) {
-          pos.peakPnlPct = pnlPct;
-        }
+        const currentValueUsd = pos.qtyTokens * markPriceUsd;
+        const unrealizedPnlUsd = currentValueUsd - pos.costBasisUsd;
+        const unrealizedPnlSol = unrealizedPnlUsd / solUsd;
+        const pnlPct = pos.costBasisUsd > 0 ? unrealizedPnlUsd / pos.costBasisUsd * 100 : 0;
         pos.pnlPct = pnlPct;
-        console.log(`[PNL] ${pos.symbol}: qty=${pos.tokenQty.toFixed(2)}, price=$${currentPrice.toFixed(6)}, pnl=${pnl.toFixed(4)} SOL (${pnlPct.toFixed(1)}%)`);
-        totalUnrealized += pnl;
+        if (pos.peakPnlPct === void 0 || pnlPct > pos.peakPnlPct)
+          pos.peakPnlPct = pnlPct;
+        totalUnrealizedUsd += unrealizedPnlUsd;
+        totalUnrealizedSol += unrealizedPnlSol;
       });
-      const { Analytics: Analytics2 } = (init_analytics(), __toCommonJS(analytics_exports));
-      Analytics2.monitorProfitOverstay(state);
-      Analytics2.detectOvertrading(state);
+      Analytics.monitorProfitOverstay(state);
+      Analytics.detectOvertrading(state);
       const now = Date.now();
       if (priceWasUpdated && now - this.lastPriceSave > 5e3) {
         this.lastPriceSave = now;
         Store2.save();
       }
-      return totalUnrealized;
+      return totalUnrealizedSol;
     }
   };
 
-  // src/modules/core/trading.js
-  init_analytics();
-
   // src/modules/core/order-execution.js
   init_store();
-  init_market();
-  init_analytics();
-  init_featureManager();
   var OrderExecution = {
-    async buy(amountSol, strategy = "Trend", tokenInfo = null, tradePlan = null) {
+    // ENTRY Action
+    // tokenInfo arg matches existing UI signature but we rely on Market.currentMint for truth
+    async buy(solAmount, strategy = "MANUAL", tokenInfo = null, tradePlan = null) {
       const state = Store2.state;
-      if (!state.settings.enabled)
-        return { success: false, error: "Paper trading disabled" };
-      if (amountSol <= 0)
-        return { success: false, error: "Invalid amount" };
-      if (amountSol > state.session.balance)
-        return { success: false, error: "Insufficient funds" };
-      if (!Market2.priceIsFresh && Date.now() - Market2.lastPriceTs > 5e3) {
-        console.warn(`[Trading] Price data is ${((Date.now() - Market2.lastPriceTs) / 1e3).toFixed(1)}s old`);
-      }
-      let price = Market2.price || 0;
-      if (price <= 0)
-        return { success: false, error: "Waiting for price data..." };
-      if (price >= 50 && price <= 500) {
-        return { success: false, error: `Price appears to be SOL price ($${price.toFixed(2)}). Wait for token price.` };
-      }
-      let marketCap = Market2.marketCap || 0;
-      if (price > 1e4 && marketCap > 0 && marketCap < 1e4) {
-        console.warn(`[Trading] SWAP DETECTED! Price=${price} MarketCap=${marketCap}. Swapping...`);
-        [price, marketCap] = [marketCap, price];
-      }
-      if (price > 1e4) {
-        console.error(`[Trading] INVALID PRICE: $${price} - refusing to execute trade`);
-        return { success: false, error: `Price data invalid ($${price.toFixed(2)}). Wait for chart to load.` };
-      }
+      const mint = Market2.currentMint;
+      const priceUsd = Market2.price;
+      const symbol = Market2.currentSymbol || "UNKNOWN";
+      if (!mint)
+        return { success: false, error: "No active token context" };
+      if (solAmount <= 0)
+        return { success: false, error: "Invalid SOL amount" };
+      if (priceUsd <= 0)
+        return { success: false, error: `Market Data Unavailable (Price: ${priceUsd})` };
       const solUsd = PnlCalculator.getSolPrice();
-      const usdAmount = Precision.sol(amountSol) * solUsd;
-      const tokenQty = Precision.tokenQty(usdAmount / price);
-      const symbol = tokenInfo?.symbol || "SOL";
-      const mint = tokenInfo?.mint || "So111...";
-      console.log(`[Trading] BUY: ${amountSol} SOL \u2192 ${tokenQty.toFixed(2)} ${symbol} @ $${price} | SOL=$${solUsd} | MC=$${marketCap}`);
-      state.session.balance -= amountSol;
-      const posKey = mint;
-      if (!state.positions[posKey]) {
-        state.positions[posKey] = {
-          tokenQty: 0,
-          entryPriceUsd: price,
-          lastPriceUsd: price,
-          symbol,
+      const buyUsd = solAmount * solUsd;
+      const qtyDelta = buyUsd / priceUsd;
+      if (!state.positions[mint]) {
+        state.positions[mint] = {
           mint,
-          entryTs: Date.now(),
-          totalSolSpent: 0
+          symbol,
+          qtyTokens: 0,
+          costBasisUsd: 0,
+          avgCostUsdPerToken: 0,
+          realizedPnlUsd: 0,
+          totalSolSpent: 0,
+          // Legacy tracking
+          entryMarketCapUsdReference: null,
+          lastMarkPriceUsd: priceUsd,
+          ts: Date.now()
         };
       }
-      const pos = state.positions[posKey];
-      const oldQty = pos.tokenQty;
-      const totalQty = Precision.tokenQty(oldQty + tokenQty);
-      pos.tokenQty = totalQty;
-      pos.entryPriceUsd = totalQty > 0 ? Precision.weightedAvg(pos.entryPriceUsd, oldQty, price, tokenQty) : price;
-      pos.lastPriceUsd = price;
-      pos.totalSolSpent = Precision.sol(pos.totalSolSpent + amountSol);
-      const tradeId = `trade_${Date.now()}_${Math.floor(Math.random() * 1e3)}`;
-      const plan = tradePlan || {};
-      const trade = {
-        id: tradeId,
-        ts: Date.now(),
-        side: "BUY",
-        symbol,
+      const pos = state.positions[mint];
+      pos.qtyTokens += qtyDelta;
+      pos.costBasisUsd += buyUsd;
+      pos.totalSolSpent += solAmount;
+      pos.avgCostUsdPerToken = pos.qtyTokens > 0 ? pos.costBasisUsd / pos.qtyTokens : 0;
+      if (pos.entryMarketCapUsdReference === null && Market2.marketCap > 0) {
+        pos.entryMarketCapUsdReference = Market2.marketCap;
+      }
+      console.log(`[EXEC] BUY ${symbol}: +${qtyDelta.toFixed(2)} ($${buyUsd.toFixed(2)}) @ $${priceUsd}`);
+      const fillData = {
+        side: "ENTRY",
         mint,
-        solAmount: amountSol,
-        tokenQty,
-        priceUsd: price,
-        marketCap,
-        strategy: FeatureManager.resolveFlags(state, "STRATEGY_TAGGING").interactive ? strategy || "Trend" : "Trend",
-        mode: state.settings.tradingMode || "paper",
-        // Trade Plan (PRO feature)
-        plannedStop: plan.plannedStop || null,
-        plannedTarget: plan.plannedTarget || null,
-        entryThesis: plan.entryThesis || "",
-        riskDefined: plan.riskDefined || false
+        symbol,
+        solAmount,
+        usdNotional: buyUsd,
+        qtyTokensDelta: qtyDelta,
+        fillPriceUsd: priceUsd,
+        marketCapUsdAtFill: Market2.marketCap,
+        strategy,
+        tradePlan
+        // Store if provided
       };
-      if (!state.trades)
-        state.trades = {};
-      state.trades[tradeId] = trade;
-      if (!state.session.trades)
-        state.session.trades = [];
-      state.session.trades.push(tradeId);
-      Analytics.calculateDiscipline(trade, state);
-      Analytics.logTradeEvent(state, trade);
-      this.checkMilestones(trade, state);
-      window.postMessage({ __paper: true, type: "PAPER_DRAW_MARKER", trade }, "*");
-      await Store2.saveImmediate();
-      return { success: true, trade, position: pos };
+      const fillId = this.recordFill(state, fillData);
+      await Store2.save();
+      return { success: true, message: `Bought ${symbol}`, trade: { id: fillId } };
     },
-    async sell(pct = 100, strategy = "Trend", tokenInfo = null) {
+    // EXIT Action
+    async sell(percent, strategy = "MANUAL", tokenInfo = null) {
       const state = Store2.state;
-      if (!state.settings.enabled)
-        return { success: false, error: "Paper trading disabled" };
-      if (!Market2.priceIsFresh && Date.now() - Market2.lastPriceTs > 5e3) {
-        console.warn(`[Trading] Price data is ${((Date.now() - Market2.lastPriceTs) / 1e3).toFixed(1)}s old`);
-      }
-      let currentPrice = Market2.price || 0;
-      if (currentPrice <= 0)
-        return { success: false, error: "No price data" };
-      if (currentPrice >= 50 && currentPrice <= 500) {
-        return { success: false, error: `Price appears to be SOL price ($${currentPrice.toFixed(2)})` };
-      }
-      if (currentPrice > 1e4) {
-        console.error(`[Trading] INVALID PRICE for SELL: $${currentPrice}`);
-        return { success: false, error: `Price data invalid ($${currentPrice.toFixed(2)}). Wait for chart to load.` };
-      }
-      const symbol = tokenInfo?.symbol || "SOL";
-      const mint = tokenInfo?.mint || "So111...";
-      const posKey = mint;
-      console.log(`[Trading] Executing SELL ${pct}% of ${symbol} (${mint}) @ $${currentPrice}`);
-      const position = state.positions[posKey];
-      if (!position || position.tokenQty <= 0)
-        return { success: false, error: "No position" };
-      const qtyToSell = Precision.tokenQty(position.tokenQty * (pct / 100));
-      if (qtyToSell <= 0)
-        return { success: false, error: "Invalid qty" };
+      const mint = Market2.currentMint;
+      const priceUsd = Market2.price;
+      const symbol = Market2.currentSymbol || "UNKNOWN";
+      if (!mint)
+        return { success: false, error: "No active token context" };
+      if (!state.positions[mint] || state.positions[mint].qtyTokens <= 0)
+        return { success: false, error: "No open position" };
+      const pos = state.positions[mint];
+      const pct = percent === void 0 || percent === null ? 100 : Math.min(Math.max(percent, 0), 100);
+      const rawDelta = pos.qtyTokens * (pct / 100);
+      const qtyDelta = Math.min(rawDelta, pos.qtyTokens);
+      if (qtyDelta <= 0)
+        return { success: false, error: "Zero quantity exit" };
+      const proceedsUsd = qtyDelta * priceUsd;
+      const costRemovedUsd = qtyDelta * pos.avgCostUsdPerToken;
+      const pnlEventUsd = proceedsUsd - costRemovedUsd;
+      pos.realizedPnlUsd += pnlEventUsd;
+      pos.qtyTokens -= qtyDelta;
+      pos.costBasisUsd -= costRemovedUsd;
       const solUsd = PnlCalculator.getSolPrice();
-      const proceedsUsd = Precision.tokenQty(qtyToSell) * Precision.usdPrice(currentPrice);
-      const solReceived = Precision.sol(proceedsUsd / solUsd);
-      const solSpentPortion = Precision.sol(position.totalSolSpent * (qtyToSell / position.tokenQty));
-      const realizedPnlSol = Precision.sol(solReceived - solSpentPortion);
-      position.tokenQty = Precision.tokenQty(Math.max(0, position.tokenQty - qtyToSell));
-      position.totalSolSpent = Precision.sol(Math.max(0, position.totalSolSpent - solSpentPortion));
-      state.session.balance = Precision.sol(state.session.balance + solReceived);
-      state.session.realized = Precision.sol(state.session.realized + realizedPnlSol);
-      if (position.tokenQty < 1e-6)
-        delete state.positions[posKey];
-      const tradeId = `trade_${Date.now()}_${Math.floor(Math.random() * 1e3)}`;
-      const trade = {
-        id: tradeId,
-        ts: Date.now(),
-        side: "SELL",
-        symbol,
+      pos.totalSolSpent -= costRemovedUsd / solUsd;
+      if (pos.qtyTokens < 1e-6) {
+        pos.qtyTokens = 0;
+        pos.costBasisUsd = 0;
+        pos.avgCostUsdPerToken = 0;
+        pos.entryMarketCapUsdReference = null;
+      }
+      console.log(`[EXEC] SELL ${symbol}: -${qtyDelta.toFixed(2)} ($${proceedsUsd.toFixed(2)}) PnL: $${pnlEventUsd.toFixed(2)}`);
+      const fillData = {
+        side: "EXIT",
         mint,
-        pct,
-        solAmount: solReceived,
-        tokenQty: qtyToSell,
-        priceUsd: currentPrice,
-        marketCap: Market2.marketCap || 0,
-        realizedPnlSol,
-        strategy: strategy || "Unknown",
-        mode: state.settings.tradingMode || "paper"
+        symbol,
+        percent: pct,
+        qtyTokensDelta: -qtyDelta,
+        proceedsUsd,
+        fillPriceUsd: priceUsd,
+        marketCapUsdAtFill: Market2.marketCap,
+        strategy
       };
-      if (!state.trades)
-        state.trades = {};
-      state.trades[tradeId] = trade;
-      if (!state.session.trades)
-        state.session.trades = [];
-      state.session.trades.push(tradeId);
-      Analytics.calculateDiscipline(trade, state);
-      Analytics.updateStreaks(trade, state);
-      Analytics.logTradeEvent(state, trade);
-      this.checkMilestones(trade, state);
-      window.postMessage({ __paper: true, type: "PAPER_DRAW_MARKER", trade }, "*");
-      await Store2.saveImmediate();
-      return { success: true, trade };
+      const fillId = this.recordFill(state, fillData);
+      await Store2.save();
+      return { success: true, message: `Sold ${pct}% ${symbol}`, trade: { id: fillId } };
     },
+    // Tagging (Emotion/Notes)
     async tagTrade(tradeId, updates) {
       const state = Store2.state;
-      if (!state.trades || !state.trades[tradeId])
-        return false;
-      Object.assign(state.trades[tradeId], updates);
-      await Store2.save();
-      return true;
+      const fill = state.fills ? state.fills.find((f) => f.id === tradeId) : null;
+      if (fill) {
+        Object.assign(fill, updates);
+        await Store2.save();
+        return true;
+      }
+      return false;
     },
-    checkMilestones(trade, state) {
-      const tradeCount = Object.keys(state.trades || {}).length;
-      const sellTrades = Object.values(state.trades || {}).filter((t) => t.side === "SELL");
-      const wins = sellTrades.filter((t) => (t.realizedPnlSol || 0) > 0).length;
-      if (tradeCount === 1) {
-        Analytics.logMilestone(state, "FIRST_TRADE", "First trade executed! Welcome to ZER\xD8.", { tradeCount });
-      } else if (tradeCount === 10) {
-        Analytics.logMilestone(state, "TRADE_10", "10 trades completed. Building your baseline.", { tradeCount });
-      } else if (tradeCount === 50) {
-        Analytics.logMilestone(state, "TRADE_50", "50 trades! You have a solid trading history.", { tradeCount });
-      } else if (tradeCount === 100) {
-        Analytics.logMilestone(state, "TRADE_100", "100 trades milestone! Veteran status unlocked.", { tradeCount });
-      }
-      const winStreak = state.session.winStreak || 0;
-      if (winStreak === 5) {
-        Analytics.logMilestone(state, "WIN_STREAK_5", "5 wins in a row! Keep the discipline.", { winStreak });
-      } else if (winStreak === 10) {
-        Analytics.logMilestone(state, "WIN_STREAK_10", "10 consecutive wins! Elite performance.", { winStreak });
-      }
-      const startSol = state.settings.startSol || 10;
-      const currentEquity = state.session.balance + (state.session.realized || 0);
-      const equityMultiple = currentEquity / startSol;
-      if (equityMultiple >= 2 && !state._milestone_2x) {
-        Analytics.logMilestone(state, "EQUITY_2X", "Portfolio doubled! 2x achieved.", { equityMultiple: equityMultiple.toFixed(2) });
-        state._milestone_2x = true;
-      } else if (equityMultiple >= 3 && !state._milestone_3x) {
-        Analytics.logMilestone(state, "EQUITY_3X", "Portfolio tripled! 3x achieved.", { equityMultiple: equityMultiple.toFixed(2) });
-        state._milestone_3x = true;
-      } else if (equityMultiple >= 5 && !state._milestone_5x) {
-        Analytics.logMilestone(state, "EQUITY_5X", "Portfolio 5x! Legendary.", { equityMultiple: equityMultiple.toFixed(2) });
-        state._milestone_5x = true;
-      }
+    recordFill(state, fillData) {
+      if (!state.fills)
+        state.fills = [];
+      if (!state.trades)
+        state.trades = {};
+      const id = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+      const fill = {
+        id,
+        ts: Date.now(),
+        ...fillData
+      };
+      state.fills.unshift(fill);
+      state.trades[id] = fill;
+      if (state.fills.length > 500)
+        state.fills.pop();
+      return id;
     }
   };
 
@@ -4610,60 +4439,15 @@ input:checked + .slider:before {
   // src/modules/ui/token-detector.js
   var TokenDetector = {
     getCurrentToken() {
-      let symbol = "SOL";
-      let mint = "So11111111111111111111111111111111111111112";
-      try {
-        const url = window.location.href;
-        const mintMatch = url.match(/[1-9A-HJ-NP-Za-km-z]{32,44}/g);
-        if (mintMatch) {
-          const candidate = mintMatch[mintMatch.length - 1];
-          if (candidate && candidate.length > 30) {
-            mint = candidate;
-          }
-        }
-        const title = document.title;
-        const titleParts = title.trim().split(/[\s|/]+/);
-        if (titleParts.length > 0) {
-          let first = titleParts[0].toUpperCase();
-          const generics = ["PADRE", "TERMINAL", "AXIOM", "SOLANA", "TRADE", "DEX", "CHART"];
-          if (!generics.includes(first) && first.length < 15 && first.length > 1) {
-            symbol = first;
-          }
-        }
-        if (symbol === "SOL" || symbol === "TERMINAL" || symbol.includes("SEARCH")) {
-          const tickerSpans = document.querySelectorAll('span[class*="css-1oo1vsz"]');
-          for (const s of tickerSpans) {
-            const txt = s.textContent.trim().toUpperCase();
-            const bad = ["PADRE", "TERMINAL", "AXIOM", "SOLANA", "TRADE", "DEX", "CHART", "SEARCH BY NAME OR CA..."];
-            if (txt && !bad.includes(txt) && txt.length < 15 && txt.length > 1) {
-              symbol = txt;
-              break;
-            }
-          }
-          if (symbol === "SOL" || symbol.includes("SEARCH")) {
-            const spans = document.querySelectorAll("span, div");
-            for (const s of spans) {
-              const t = s.textContent.trim();
-              if (t.includes("/") && t.includes("SOL") && t.length < 20) {
-                const potential = t.split("/")[0].trim().toUpperCase();
-                if (potential.length > 1 && potential.length < 10) {
-                  symbol = potential;
-                  break;
-                }
-              }
-            }
-          }
-        }
-      } catch (e) {
-        console.warn("[TokenDetector] Token scrape failed", e);
-      }
-      return { symbol, mint };
+      return {
+        symbol: Market2.currentSymbol || "SOL",
+        mint: Market2.currentMint || "So11111111111111111111111111111111111111112"
+      };
     }
   };
 
   // src/modules/ui/paywall.js
   init_store();
-  init_featureManager();
   var Paywall = {
     showUpgradeModal(lockedFeature = null) {
       const root = OverlayManager.getShadowRoot();
@@ -4831,12 +4615,8 @@ input:checked + .slider:before {
     }
   };
 
-  // src/modules/ui/pnl-hud.js
-  init_analytics();
-
   // src/modules/ui/dashboard.js
   init_store();
-  init_analytics();
 
   // src/modules/ui/dashboard-styles.js
   var DASHBOARD_CSS = `
@@ -4990,7 +4770,6 @@ canvas#equity-canvas {
 `;
 
   // src/modules/ui/dashboard.js
-  init_featureManager();
   var Dashboard = {
     isOpen: false,
     toggle() {
@@ -5255,6 +5034,350 @@ canvas#equity-canvas {
     }
   };
 
+  // src/modules/ui/settings-panel.js
+  init_store();
+  init_diagnostics_store();
+  var SettingsPanel = {
+    /**
+     * Show the full settings modal (replaces old mini-settings).
+     */
+    show() {
+      const container = OverlayManager.getContainer();
+      const existing = container.querySelector(".zero-settings-overlay");
+      if (existing)
+        existing.remove();
+      const overlay = document.createElement("div");
+      overlay.className = "confirm-modal-overlay zero-settings-overlay";
+      const isShadow = Store2.state.settings.tradingMode === "shadow";
+      const diagState = DiagnosticsStore.state || {};
+      const isAutoSend = diagState.settings?.privacy?.autoSendDiagnostics || false;
+      const lastUpload = diagState.settings?.diagnostics?.lastUploadedEventTs || 0;
+      const lastError = diagState.upload?.lastError || null;
+      const queueLen = (diagState.upload?.queue || []).length;
+      overlay.innerHTML = `
+            <div class="settings-modal" style="width:440px; max-height:85vh; overflow-y:auto;">
+                <div class="settings-header">
+                    <div class="settings-title"><span>\u2699\uFE0F</span> Settings</div>
+                    <button class="settings-close">\xD7</button>
+                </div>
+
+                <!-- General -->
+                <div class="settings-section-title">General</div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <div class="setting-name">Shadow Real Mode</div>
+                        <div class="setting-desc">Tag trades as "Real" for journaling.</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" data-setting="shadow" ${isShadow ? "checked" : ""}>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <div class="setting-row">
+                     <div class="setting-info">
+                        <div class="setting-name">Walkthrough</div>
+                        <div class="setting-desc">Replay the introductory walkthrough.</div>
+                    </div>
+                    <button class="settings-action-btn" data-setting-act="replayWalkthrough" style="width:auto; padding:6px 12px; font-size:12px;">View walkthrough</button>
+                </div>
+
+                <!-- Privacy & Data -->
+                <div class="settings-section-title">Optional diagnostics (off by default)</div>
+
+                <div class="privacy-info-box">
+                    <p>ZER\xD8 stores your paper trading data locally on your device by default.</p>
+                    <p>You can optionally enable diagnostics to help improve ZER\xD8 and unlock deeper features over time. Diagnostics help us understand session flow, feature usage, and where tools break down \u2014 not your private trading decisions.</p>
+                    <ul style="margin:8px 0 8px 16px; padding:0; list-style-type:disc; color:#94a3b8; font-size:11px;">
+                        <li>Improves Pro and Elite features</li>
+                        <li>Helps analytics become more accurate</li>
+                        <li>Helps fix bugs faster</li>
+                        <li>Shapes future tools based on real usage</li>
+                    </ul>
+                    <p style="margin-top:12px; font-weight:600; color:#f8fafc;">What is NOT included:</p>
+                    <ul style="margin:4px 0 8px 16px; padding:0; list-style-type:disc; color:#ef4444; font-size:11px;">
+                        <li>Real funds or wallet access</li>
+                        <li>Private keys or credentials</li>
+                        <li>Raw page content or keystrokes</li>
+                        <li>Any data sold or shared with third parties</li>
+                    </ul>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <div class="setting-name">Enable diagnostics</div>
+                        <div class="setting-desc">Enable optional diagnostics to help improve ZER\xD8 and future features.</div>
+                        <div class="setting-desc" style="opacity:0.6; margin-top:4px;">Some future features may improve faster with anonymized diagnostics enabled.</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" data-setting="autoSend" ${isAutoSend ? "checked" : ""}>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <div class="diag-status">
+                    <div class="diag-status-row">
+                        <span class="diag-label">Uploads</span>
+                        <span class="diag-value ${isAutoSend ? "enabled" : "disabled"}">${isAutoSend ? "Enabled" : "Disabled"}</span>
+                    </div>
+                    ${lastUpload > 0 ? `
+                    <div class="diag-status-row">
+                        <span class="diag-label">Last upload</span>
+                        <span class="diag-value">${new Date(lastUpload).toLocaleString()}</span>
+                    </div>` : ""}
+                    ${lastError ? `
+                    <div class="diag-status-row">
+                        <span class="diag-label">Last error</span>
+                        <span class="diag-value error">${lastError}</span>
+                    </div>` : ""}
+                    ${queueLen > 0 ? `
+                    <div class="diag-status-row">
+                        <span class="diag-label">Queued packets</span>
+                        <span class="diag-value">${queueLen}</span>
+                    </div>` : ""}
+                </div>
+
+                <div class="settings-btn-row">
+                    <button class="settings-action-btn" data-setting-act="viewPayload">View sample payload</button>
+                    <button class="settings-action-btn danger" data-setting-act="deleteQueue">Delete queued uploads</button>
+                    <button class="settings-action-btn danger" data-setting-act="deleteLocal">Delete local ZER\xD8 data</button>
+                </div>
+
+                <!-- Pro Features (HIDDEN FOR FREE RELEASE) -->
+                <!-- Elite Features (HIDDEN FOR FREE RELEASE) -->
+
+                <div style="margin-top:20px; text-align:center; font-size:11px; color:#64748b;">
+                    ZER\xD8 v${Store2.state.version || "1.11.6"}
+                </div>
+            </div>
+        `;
+      container.appendChild(overlay);
+      this._bind(overlay);
+    },
+    _bind(overlay) {
+      const close = () => {
+        overlay.remove();
+        if (window.ZeroHUD && window.ZeroHUD.updateAll)
+          window.ZeroHUD.updateAll();
+      };
+      overlay.querySelector(".settings-close").onclick = close;
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay)
+          close();
+      });
+      const shadowToggle = overlay.querySelector('[data-setting="shadow"]');
+      if (shadowToggle) {
+        shadowToggle.onchange = async (e) => {
+          Store2.state.settings.tradingMode = e.target.checked ? "shadow" : "paper";
+          await Store2.save();
+          const c = OverlayManager.getContainer();
+          c.classList.toggle("zero-shadow-mode", e.target.checked);
+        };
+      }
+      const autoSendToggle = overlay.querySelector('[data-setting="autoSend"]');
+      if (autoSendToggle) {
+        autoSendToggle.onchange = (e) => {
+          if (e.target.checked) {
+            this._showConsentModal(overlay, () => {
+              DiagnosticsStore.enableAutoSend();
+              this._refreshDiagStatus(overlay, true);
+            }, () => {
+              e.target.checked = false;
+            });
+          } else {
+            DiagnosticsStore.disableAutoSend();
+            this._refreshDiagStatus(overlay, false);
+          }
+        };
+      }
+      overlay.addEventListener("click", async (e) => {
+        const act = e.target.getAttribute("data-setting-act");
+        if (!act) {
+          const card = e.target.closest(".feature-card.locked");
+          if (card) {
+            const featureId = card.getAttribute("data-feature");
+            this._logFeatureClick(featureId);
+            this._showComingSoonModal(overlay, featureId);
+          }
+          return;
+        }
+        if (act === "viewPayload") {
+          this._showSamplePayload(overlay);
+        }
+        if (act === "replayWalkthrough") {
+          overlay.remove();
+          Professor.startWalkthrough(true);
+        }
+        if (act === "deleteQueue") {
+          await DiagnosticsStore.clearUploadQueue();
+          this._refreshDiagStatus(overlay, DiagnosticsStore.isAutoSendEnabled());
+        }
+        if (act === "deleteLocal") {
+          this._showDeleteConfirm(overlay);
+        }
+      });
+    },
+    _refreshDiagStatus(overlay, isEnabled) {
+      const statusEl = overlay.querySelector(".diag-status");
+      if (!statusEl)
+        return;
+      const diagState = DiagnosticsStore.state || {};
+      const lastUpload = diagState.settings?.diagnostics?.lastUploadedEventTs || 0;
+      const lastError = diagState.upload?.lastError || null;
+      const queueLen = (diagState.upload?.queue || []).length;
+      statusEl.innerHTML = `
+            <div class="diag-status-row">
+                <span class="diag-label">Uploads</span>
+                <span class="diag-value ${isEnabled ? "enabled" : "disabled"}">${isEnabled ? "Enabled" : "Disabled"}</span>
+            </div>
+            ${lastUpload > 0 ? `<div class="diag-status-row"><span class="diag-label">Last upload</span><span class="diag-value">${new Date(lastUpload).toLocaleString()}</span></div>` : ""}
+            ${lastError ? `<div class="diag-status-row"><span class="diag-label">Last error</span><span class="diag-value error">${lastError}</span></div>` : ""}
+            ${queueLen > 0 ? `<div class="diag-status-row"><span class="diag-label">Queued packets</span><span class="diag-value">${queueLen}</span></div>` : ""}
+        `;
+    },
+    _showConsentModal(parent, onAccept, onDecline) {
+      const modal = document.createElement("div");
+      modal.className = "confirm-modal-overlay";
+      modal.style.zIndex = "2147483648";
+      modal.innerHTML = `
+            <div class="confirm-modal" style="max-width:420px;">
+                <h3>Help improve ZER\xD8 (optional)</h3>
+                <p style="font-size:13px; line-height:1.6;">
+                    By enabling diagnostics, ZER\xD8 will automatically send anonymized session logs, simulated trades, and feature interaction events to help improve accuracy, performance, and future features.
+                </p>
+                <p style="font-size:13px; line-height:1.6; margin-top:8px;">
+                    This is optional, off by default, and can be disabled at any time.
+                </p>
+                <div class="confirm-modal-buttons">
+                    <button class="confirm-modal-btn cancel">Cancel</button>
+                    <button class="confirm-modal-btn confirm" style="background:rgba(20,184,166,0.8);">Enable diagnostics</button>
+                </div>
+            </div>
+        `;
+      parent.appendChild(modal);
+      modal.querySelector(".cancel").onclick = () => {
+        modal.remove();
+        onDecline();
+      };
+      modal.querySelector(".confirm").onclick = () => {
+        modal.remove();
+        onAccept();
+      };
+      modal.addEventListener("click", (e) => {
+        if (e.target === modal) {
+          modal.remove();
+          onDecline();
+        }
+      });
+    },
+    _showComingSoonModal(parent, featureId) {
+      const allFeatures = [...TEASED_FEATURES.PRO, ...TEASED_FEATURES.ELITE];
+      const feat = allFeatures.find((f) => f.id === featureId);
+      const tier = featureId.startsWith("ELITE") ? "Elite" : "Pro";
+      const modal = document.createElement("div");
+      modal.className = "confirm-modal-overlay";
+      modal.style.zIndex = "2147483648";
+      modal.innerHTML = `
+            <div class="confirm-modal" style="max-width:380px; text-align:center;">
+                <h3 style="color:#14b8a6;">Coming Soon</h3>
+                <p style="font-size:14px; font-weight:600; color:#f8fafc; margin-bottom:6px;">
+                    ${feat ? feat.name : featureId}
+                </p>
+                <p style="font-size:13px; color:#94a3b8; margin-bottom:16px;">
+                    ${feat ? feat.desc : ""} This feature is part of <strong style="color:${tier === "Elite" ? "#f59e0b" : "#6366f1"}">${tier}</strong>.
+                </p>
+                <div class="confirm-modal-buttons" style="justify-content:center;">
+                    <button class="confirm-modal-btn" style="background:rgba(20,184,166,0.2); color:#14b8a6;" data-act="waitlist">Join waitlist</button>
+                    <button class="confirm-modal-btn cancel">Close</button>
+                </div>
+            </div>
+        `;
+      parent.appendChild(modal);
+      modal.querySelector(".cancel").onclick = () => modal.remove();
+      modal.querySelector('[data-act="waitlist"]').onclick = () => {
+        const subject = encodeURIComponent(`ZER\xD8 ${tier} Waitlist - ${feat ? feat.name : featureId}`);
+        const body = encodeURIComponent(`I'm interested in ${feat ? feat.name : featureId} for ZER\xD8 ${tier}.
+
+Please add me to the waitlist.`);
+        const mailTo = `mailto:?subject=${subject}&body=${body}`;
+        try {
+          navigator.clipboard.writeText(`I'm interested in ZER\xD8 ${tier}: ${feat ? feat.name : featureId}. Please add me to the waitlist.`);
+        } catch {
+        }
+        window.open(mailTo);
+        modal.remove();
+      };
+      modal.addEventListener("click", (e) => {
+        if (e.target === modal)
+          modal.remove();
+      });
+    },
+    _showSamplePayload(parent) {
+      const sample = {
+        uploadId: "sample-xxxxx",
+        clientId: "<redacted>",
+        createdAt: Date.now(),
+        schemaVersion: 3,
+        extensionVersion: Store2.state.version || "1.11.6",
+        eventsDelta: [
+          { eventId: "evt_sample1", ts: Date.now() - 6e4, type: "SESSION_STARTED", platform: "AXIOM", payload: {} },
+          { eventId: "evt_sample2", ts: Date.now() - 3e4, type: "TRADE_OPENED", platform: "AXIOM", payload: { side: "BUY", symbol: "TOKEN" } },
+          { eventId: "evt_sample3", ts: Date.now(), type: "TRADE_CLOSED", platform: "AXIOM", payload: { side: "SELL", pnl: 0.05 } }
+        ]
+      };
+      const modal = document.createElement("div");
+      modal.className = "confirm-modal-overlay";
+      modal.style.zIndex = "2147483648";
+      modal.innerHTML = `
+            <div class="confirm-modal" style="max-width:500px;">
+                <h3>Sample upload payload</h3>
+                <pre style="background:#0d1117; border:1px solid rgba(20,184,166,0.15); border-radius:8px; padding:12px; font-size:11px; color:#94a3b8; overflow-x:auto; max-height:300px; white-space:pre-wrap; word-break:break-all;">${JSON.stringify(sample, null, 2)}</pre>
+                <p style="font-size:11px; color:#64748b; margin-top:8px;">
+                    This is a sample of what would be sent. Real payloads contain only event IDs, timestamps, types, and small scalar values. No DOM content, keystrokes, wallet data, or personal information.
+                </p>
+                <div class="confirm-modal-buttons">
+                    <button class="confirm-modal-btn cancel">Close</button>
+                </div>
+            </div>
+        `;
+      parent.appendChild(modal);
+      modal.querySelector(".cancel").onclick = () => modal.remove();
+      modal.addEventListener("click", (e) => {
+        if (e.target === modal)
+          modal.remove();
+      });
+    },
+    _showDeleteConfirm(parent) {
+      const modal = document.createElement("div");
+      modal.className = "confirm-modal-overlay";
+      modal.style.zIndex = "2147483648";
+      modal.innerHTML = `
+            <div class="confirm-modal">
+                <h3>Delete all local data?</h3>
+                <p>This will permanently delete all ZER\xD8 diagnostics data, event logs, and upload queue from your browser. Your trading session data (stored under a separate key) is unaffected.</p>
+                <div class="confirm-modal-buttons">
+                    <button class="confirm-modal-btn cancel">Cancel</button>
+                    <button class="confirm-modal-btn confirm">Delete</button>
+                </div>
+            </div>
+        `;
+      parent.appendChild(modal);
+      modal.querySelector(".cancel").onclick = () => modal.remove();
+      modal.querySelector(".confirm").onclick = async () => {
+        await DiagnosticsStore.clearAllData();
+        modal.remove();
+      };
+      modal.addEventListener("click", (e) => {
+        if (e.target === modal)
+          modal.remove();
+      });
+    },
+    _logFeatureClick(featureId) {
+      DiagnosticsStore.logEvent("UI_LOCKED_FEATURE_CLICKED", { featureId });
+    }
+  };
+
   // src/modules/ui/pnl-hud.js
   function px(n) {
     return n + "px";
@@ -5262,6 +5385,7 @@ canvas#equity-canvas {
   function clamp(v, min, max) {
     return Math.max(min, Math.min(max, v));
   }
+  var positionsExpanded = false;
   var PnlHud = {
     mountPnlHud(makeDraggable) {
       const container = OverlayManager.getContainer();
@@ -5287,7 +5411,7 @@ canvas#equity-canvas {
         container.appendChild(root);
         this.bindPnlEvents(root);
       }
-      const CURRENT_UI_VERSION = "1.10.3";
+      const CURRENT_UI_VERSION = "1.12.0";
       const renderedVersion = root.dataset.uiVersion;
       if (isNew || renderedVersion !== CURRENT_UI_VERSION) {
         this.renderPnlHudContent(root, makeDraggable);
@@ -5305,7 +5429,7 @@ canvas#equity-canvas {
                     <input class="startSolInput" type="text" inputmode="decimal" />
                   </div>
                   <button class="pillBtn" data-act="shareX" style="background:rgba(29,155,240,0.15);color:#1d9bf0;border:1px solid rgba(29,155,240,0.3);font-family:'Arial',sans-serif;font-weight:600;display:none;" id="pnl-share-btn">Share \u{1D54F}</button>
-                  <button class="pillBtn" data-act="getPro" style="background:rgba(99,102,241,0.15);color:#6366f1;border:1px solid rgba(99,102,241,0.3);font-weight:700;display:none;align-items:center;gap:4px;" id="pnl-pro-btn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>PRO</button>
+                  <button class="pillBtn" data-act="shareX" style="background:rgba(29,155,240,0.15);color:#1d9bf0;border:1px solid rgba(29,155,240,0.3);font-family:'Arial',sans-serif;font-weight:600;display:none;" id="pnl-share-btn">Share \u{1D54F}</button>
                   <button class="pillBtn" data-act="trades">Trades</button>
                   <button class="pillBtn" data-act="dashboard" style="background:rgba(20,184,166,0.15);color:#14b8a6;border:1px solid rgba(20,184,166,0.3);font-weight:700;">Stats</button>
                   <button class="pillBtn" data-act="reset" style="color:#ef4444;">Reset</button>
@@ -5334,6 +5458,16 @@ canvas#equity-canvas {
                     <div class="k">DISCIPLINE <span class="pro-tag" style="display:none;" id="discipline-pro-tag">PRO</span></div>
                     <div class="v" data-k="discipline">100</div>
                 </div>
+              </div>
+              <div class="positionsPanel">
+                <div class="positionsHeader" data-act="togglePositions">
+                  <div class="positionsTitle">
+                    <span>POSITIONS</span>
+                    <span class="positionCount" data-k="positionCount">(0)</span>
+                  </div>
+                  <span class="positionsToggle">\u25BC</span>
+                </div>
+                <div class="positionsList" style="display:none;" data-k="positionsList"></div>
               </div>
               <div class="tradeList" style="display:none;"></div>
             </div>
@@ -5417,6 +5551,18 @@ canvas#equity-canvas {
         if (act === "shareX") {
           this.shareToX();
         }
+        if (act === "getPro") {
+          Paywall.showUpgradeModal();
+        }
+        if (act === "togglePositions") {
+          positionsExpanded = !positionsExpanded;
+          this.updatePositionsPanel(root);
+        }
+        if (act === "quickSell") {
+          const mint = actEl.getAttribute("data-mint");
+          const pct = parseFloat(actEl.getAttribute("data-pct"));
+          await this.executeQuickSell(mint, pct);
+        }
       });
     },
     shareToX() {
@@ -5433,11 +5579,10 @@ canvas#equity-canvas {
       const shareFlags = FeatureManager.resolveFlags(s, "SHARE_TO_X");
       const proFlags = FeatureManager.resolveFlags(s, "SHARE_TO_X");
       const shareBtn = root.querySelector("#pnl-share-btn");
-      const proBtn = root.querySelector("#pnl-pro-btn");
       if (shareBtn)
         shareBtn.style.display = shareFlags.visible && !shareFlags.gated ? "" : "none";
-      if (proBtn)
-        proBtn.style.display = s.settings.tier === "free" ? "flex" : "none";
+      if (shareBtn)
+        shareBtn.style.display = shareFlags.visible && !shareFlags.gated ? "" : "none";
       if (!Store2.state.settings.enabled) {
         root.style.display = "none";
         return;
@@ -5506,125 +5651,90 @@ canvas#equity-canvas {
       }
       const discFlags = FeatureManager.resolveFlags(s, "DISCIPLINE_SCORING");
       const discStatEl = root.querySelector(".stat.discipline");
+      const discValueEl = root.querySelector('[data-k="discipline"]');
       if (discStatEl) {
         discStatEl.style.display = discFlags.visible ? "" : "none";
-        discStatEl.style.opacity = "1";
-        discStatEl.style.cursor = "default";
-        discStatEl.onclick = null;
-      }
-      const discEl = root.querySelector('[data-k="discipline"]');
-      if (discEl) {
-        const score = s.session.disciplineScore !== void 0 ? s.session.disciplineScore : 100;
-        discEl.textContent = score;
-        let color = "#94a3b8";
-        if (score >= 90)
-          color = "#10b981";
-        else if (score < 70)
-          color = "#ef4444";
-        else if (score < 90)
-          color = "#f59e0b";
-        discEl.style.color = color;
       }
       const tokenSymbolEl = root.querySelector('[data-k="tokenSymbol"]');
       if (tokenSymbolEl) {
         const symbol = currentToken?.symbol || "TOKEN";
         tokenSymbolEl.textContent = symbol;
       }
+      this.updatePositionsPanel(root);
     },
     showResetModal() {
       const overlay = document.createElement("div");
       overlay.className = "confirm-modal-overlay";
+      const duration = Store2.getSessionDuration();
+      const summary = Store2.getSessionSummary();
       overlay.innerHTML = `
             <div class="confirm-modal">
-                <h3>Reset Session?</h3>
-                <p>Clear all history and restore balance?</p>
+                <h3>Reset current session?</h3>
+                <p>This will clear current session stats and start a fresh run.<br>Your trade history and past sessions will not be deleted.</p>
+                ${summary && summary.tradeCount > 0 ? `
+                    <div style="background:rgba(20,184,166,0.1); border:1px solid rgba(20,184,166,0.2); border-radius:8px; padding:10px; margin:12px 0; font-size:11px;">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                            <span style="color:#64748b;">Duration</span>
+                            <span style="color:#f8fafc; font-weight:600;">${duration} min</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                            <span style="color:#64748b;">Trades</span>
+                            <span style="color:#f8fafc; font-weight:600;">${summary.tradeCount}</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                            <span style="color:#64748b;">Win Rate</span>
+                            <span style="color:#10b981; font-weight:600;">${summary.winRate}%</span>
+                        </div>
+                        <div style="display:flex; justify-content:space-between;">
+                            <span style="color:#64748b;">P&L</span>
+                            <span style="color:${summary.realized >= 0 ? "#10b981" : "#ef4444"}; font-weight:600;">${summary.realized >= 0 ? "+" : ""}${summary.realized.toFixed(4)} SOL</span>
+                        </div>
+                    </div>
+                ` : ""}
                 <div class="confirm-modal-buttons">
                     <button class="confirm-modal-btn cancel">Cancel</button>
-                    <button class="confirm-modal-btn confirm">Reset</button>
+                    <button class="confirm-modal-btn confirm">Reset session</button>
                 </div>
             </div>
         `;
       OverlayManager.getContainer().appendChild(overlay);
       overlay.querySelector(".cancel").onclick = () => overlay.remove();
       overlay.querySelector(".confirm").onclick = async () => {
-        Store2.state.session.balance = Store2.state.settings.startSol;
-        Store2.state.session.realized = 0;
-        Store2.state.session.winStreak = 0;
-        Store2.state.session.lossStreak = 0;
-        Store2.state.session.trades = [];
-        Store2.state.trades = {};
+        await Store2.startNewSession();
         Store2.state.positions = {};
         await Store2.save();
+        window.postMessage({ __paper: true, type: "PAPER_CLEAR_MARKERS" }, "*");
         if (window.ZeroHUD && window.ZeroHUD.updateAll) {
           window.ZeroHUD.updateAll();
         }
+        overlay.remove();
         overlay.remove();
       };
     },
-    showSettingsModal() {
+    showDisciplineInfoModal() {
       const overlay = document.createElement("div");
       overlay.className = "confirm-modal-overlay";
-      const isShadow = Store2.state.settings.tradingMode === "shadow";
+      overlay.style.zIndex = "2147483648";
       overlay.innerHTML = `
-            <div class="settings-modal">
-                <div class="settings-header">
-                    <div class="settings-title">
-                        <span>\u2699\uFE0F</span> Settings
+                <div class="confirm-modal" style="max-width:380px; text-align:center;">
+                    <h3>Discipline scoring</h3>
+                    <p style="font-size:13px; line-height:1.6; color:#94a3b8; margin-bottom:16px;">
+                        Discipline scoring analyzes how consistently you follow your plan and manage risk. Available in Pro.
+                    </p>
+                    <div class="confirm-modal-buttons" style="justify-content:center;">
+                        <button class="confirm-modal-btn cancel">Close</button>
                     </div>
-                    <button class="settings-close">\xD7</button>
                 </div>
-
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <div class="setting-name">Shadow Real Mode</div>
-                        <div class="setting-desc">Tag trades as "Real" for journaling. Changes UI theme.</div>
-                    </div>
-                    <label class="toggle-switch">
-                        <input type="checkbox" id="toggle-shadow" ${isShadow ? "checked" : ""}>
-                        <span class="slider"></span>
-                    </label>
-                </div>
-
-                <div class="setting-row" style="opacity:0.5; pointer-events:none;">
-                    <div class="setting-info">
-                        <div class="setting-name">Discipline Score</div>
-                        <div class="setting-desc">Track rule adherence (Coming Soon).</div>
-                    </div>
-                    <label class="toggle-switch">
-                        <input type="checkbox">
-                        <span class="slider"></span>
-                    </label>
-                </div>
-
-                <div style="margin-top:20px; text-align:center; font-size:11px; color:#64748b;">
-                    ZER\xD8 v${Store2.state.version || "0.9.9"}
-                </div>
-            </div>
-        `;
+            `;
       OverlayManager.getContainer().appendChild(overlay);
-      const close = () => {
-        overlay.remove();
-        if (window.ZeroHUD && window.ZeroHUD.updateAll) {
-          window.ZeroHUD.updateAll();
-        }
-      };
-      overlay.querySelector(".settings-close").onclick = close;
-      const bg = overlay;
-      bg.addEventListener("click", (e) => {
-        if (e.target === bg)
-          close();
+      overlay.querySelector(".cancel").onclick = () => overlay.remove();
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay)
+          overlay.remove();
       });
-      const shadowToggle = overlay.querySelector("#toggle-shadow");
-      shadowToggle.onchange = async (e) => {
-        const val = e.target.checked;
-        Store2.state.settings.tradingMode = val ? "shadow" : "paper";
-        await Store2.save();
-        const container = OverlayManager.getContainer();
-        if (val)
-          container.classList.add("zero-shadow-mode");
-        else
-          container.classList.remove("zero-shadow-mode");
-      };
+    },
+    showSettingsModal() {
+      SettingsPanel.show();
     },
     updateTradeList(container) {
       const trades = Store2.state.session.trades || [];
@@ -5641,7 +5751,7 @@ canvas#equity-canvas {
           pnlClass = isWin ? "buy" : t.realizedPnlSol < 0 ? "sell" : "muted";
           valStr = (t.realizedPnlSol ? (t.realizedPnlSol > 0 ? "+" : "") + t.realizedPnlSol.toFixed(4) : "0.00") + " SOL";
         }
-        let mcStr = "\u2014";
+        let mcStr = "";
         if (t.marketCap && t.marketCap > 0) {
           if (t.marketCap >= 1e9) {
             mcStr = `$${(t.marketCap / 1e9).toFixed(2)}B`;
@@ -5657,20 +5767,117 @@ canvas#equity-canvas {
                 <div class="tradeRow">
                     <div class="muted" style="font-size:9px;">${new Date(t.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
                     <div class="tag ${t.side.toLowerCase()}">${t.side}</div>
-                    <div style="flex:1;">${t.symbol}</div>
-                    <div class="muted" style="font-size:9px;text-align:right;min-width:50px;">${mcStr}</div>
-                    <div class="${pnlClass}" style="text-align:right;min-width:70px;">${valStr}</div>
+                    <div style="flex:1;">
+                        <div>${t.symbol}</div>
+                    </div>
+                    <div class="${pnlClass}" style="text-align:right;">
+                        ${valStr}${mcStr ? ` <span class="muted" style="font-size:9px;opacity:0.8;">@ ${mcStr}</span>` : ""}
+                    </div>
                 </div>
             `;
       });
       container.innerHTML = html || '<div style="padding:10px;color:#64748b;text-align:center;">No trades yet</div>';
+    },
+    updatePositionsPanel(root) {
+      const s = Store2.state;
+      const positions = Object.values(s.positions || {});
+      const listEl = root.querySelector('[data-k="positionsList"]');
+      const toggleIcon = root.querySelector(".positionsToggle");
+      const countEl = root.querySelector('[data-k="positionCount"]');
+      if (countEl) {
+        countEl.textContent = `(${positions.length})`;
+      }
+      if (toggleIcon) {
+        toggleIcon.textContent = positionsExpanded ? "\u25B2" : "\u25BC";
+        toggleIcon.classList.toggle("expanded", positionsExpanded);
+      }
+      if (listEl) {
+        listEl.style.display = positionsExpanded ? "block" : "none";
+        if (positionsExpanded) {
+          listEl.innerHTML = this.renderPositionRows(positions);
+        }
+      }
+    },
+    renderPositionRows(positions) {
+      if (positions.length === 0) {
+        return '<div class="noPositions">No open positions</div>';
+      }
+      const solUsd = Trading.getSolPrice();
+      const currentToken = TokenDetector.getCurrentToken();
+      return positions.map((pos) => {
+        let currentPrice = pos.lastPriceUsd || pos.entryPriceUsd;
+        if (pos.mint === currentToken?.mint && currentPrice > 0) {
+        }
+        const valueUsd = pos.qtyTokens * currentPrice;
+        const valueSol = valueUsd / solUsd;
+        const pnl = valueSol - pos.totalSolSpent;
+        const pnlPct = pos.totalSolSpent > 0 ? pnl / pos.totalSolSpent * 100 : 0;
+        const isPositive = pnl >= 0;
+        return `
+                <div class="positionRow">
+                    <div class="positionInfo">
+                        <div class="positionSymbol">${pos.symbol || "UNKNOWN"}</div>
+                        <div class="positionDetails">
+                            <span class="positionQty">${this.formatQty(pos.qtyTokens)}</span>
+                            <span class="positionPrices">Entry: $${this.formatPrice(pos.entryPriceUsd)} \u2192 $${this.formatPrice(currentPrice)}</span>
+                        </div>
+                    </div>
+                    <div class="positionPnl ${isPositive ? "positive" : "negative"}">
+                        <div class="pnlValue">${isPositive ? "+" : ""}${Trading.fmtSol(pnl)} SOL</div>
+                        <div class="pnlPct">${isPositive ? "+" : ""}${pnlPct.toFixed(1)}%</div>
+                    </div>
+                    <div class="quickSellBtns">
+                        <button class="qSellBtn" data-act="quickSell" data-mint="${pos.mint}" data-pct="25">25%</button>
+                        <button class="qSellBtn" data-act="quickSell" data-mint="${pos.mint}" data-pct="50">50%</button>
+                        <button class="qSellBtn" data-act="quickSell" data-mint="${pos.mint}" data-pct="100">100%</button>
+                    </div>
+                </div>
+            `;
+      }).join("");
+    },
+    formatQty(n) {
+      if (!n || n <= 0)
+        return "0";
+      if (n >= 1e9)
+        return (n / 1e9).toFixed(2) + "B";
+      if (n >= 1e6)
+        return (n / 1e6).toFixed(2) + "M";
+      if (n >= 1e3)
+        return (n / 1e3).toFixed(2) + "K";
+      if (n >= 1)
+        return n.toFixed(2);
+      return n.toFixed(6);
+    },
+    formatPrice(p) {
+      if (!p || p <= 0)
+        return "0.00";
+      if (p >= 1)
+        return p.toFixed(4);
+      if (p >= 1e-4)
+        return p.toFixed(6);
+      return p.toExponential(2);
+    },
+    async executeQuickSell(mint, pct) {
+      const pos = Store2.state.positions[mint];
+      if (!pos) {
+        console.error("[PnlHud] Position not found for mint:", mint);
+        return;
+      }
+      const tokenInfo = { symbol: pos.symbol, mint: pos.mint };
+      const result = await Trading.sell(pct, "Quick Sell", tokenInfo);
+      if (result.success) {
+        console.log(`[PnlHud] Quick sell ${pct}% of ${pos.symbol} successful`);
+        if (window.ZeroHUD && window.ZeroHUD.updateAll) {
+          window.ZeroHUD.updateAll();
+        }
+      } else {
+        console.error("[PnlHud] Quick sell failed:", result.error);
+      }
     }
   };
 
   // src/modules/ui/buy-hud.js
   init_store();
-  init_featureManager();
-  init_market();
   function px2(n) {
     return n + "px";
   }
@@ -5681,7 +5888,13 @@ canvas#equity-canvas {
     // UI State
     buyHudTab: "buy",
     buyHudEdit: false,
-    mountBuyHud(makeDraggable) {
+    tradePlanExpanded: false,
+    // State for reuse
+    makeDraggableRef: null,
+    mountBuyHud(makeDraggable, force = false) {
+      if (makeDraggable)
+        this.makeDraggableRef = makeDraggable;
+      const dragger = makeDraggable || this.makeDraggableRef;
       const container = OverlayManager.getContainer();
       const rootId = IDS.buyHud;
       let root = container.querySelector("#" + rootId);
@@ -5703,16 +5916,27 @@ canvas#equity-canvas {
           root.style.right = "auto";
         }
         container.appendChild(root);
-        this.renderBuyHudContent(root, makeDraggable);
+        this.renderBuyHudContent(root, dragger);
         this.setupBuyHudInteractions(root);
+      } else if (force) {
+        this.renderBuyHudContent(root, dragger);
+      } else {
+        this.refreshMarketContext(root);
       }
-      this.renderBuyHudContent(root, makeDraggable);
+    },
+    refreshMarketContext(root) {
+      const container = root.querySelector(".market-context-container");
+      if (container) {
+        container.innerHTML = this.renderMarketContext().replace('<div class="market-context-container" style="margin-bottom:12px;">', "").replace(/<\/div>\s*$/, "");
+      }
     },
     renderBuyHudContent(root, makeDraggable) {
       const isBuy = this.buyHudTab === "buy";
       const actionText = isBuy ? "ZER\xD8 BUY" : "ZER\xD8 SELL";
       const actionClass = isBuy ? "action" : "action sell";
       const label = isBuy ? "Amount (SOL)" : "Amount (%)";
+      const oldField = root.querySelector('input[data-k="field"]');
+      const oldVal = oldField ? oldField.value : "";
       root.innerHTML = `
             <div class="panel">
                 <div class="panelHeader">
@@ -5729,7 +5953,7 @@ canvas#equity-canvas {
                 <div class="body">
                     ${this.renderMarketContext()}
                     <div class="fieldLabel">${label}</div>
-                    <input class="field" type="text" inputmode="decimal" data-k="field" placeholder="0.0">
+                    <input class="field" type="text" inputmode="decimal" data-k="field" placeholder="0.0" value="${oldVal}">
 
                     <div class="quickRow">
                         ${this.renderQuickButtons(isBuy)}
@@ -5737,11 +5961,12 @@ canvas#equity-canvas {
 
                     ${isBuy ? `
                     <div class="strategyRow">
-                         <div class="fieldLabel">Strategy Tag</div>
+                         <div class="fieldLabel">Context / Strategy</div>
                          <select class="strategySelect" data-k="strategy">
                             ${(Store2.state.settings.strategies || ["Trend"]).map((s) => `<option value="${s}">${s}</option>`).join("")}
                          </select>
                     </div>
+                    ${this.renderTradePlanFields()}
                     ` : ""}
 
                     <button class="${actionClass}" data-act="action">${actionText}</button>
@@ -5796,60 +6021,32 @@ canvas#equity-canvas {
         }
         if (act === "tab-buy") {
           this.buyHudTab = "buy";
-          this.mountBuyHud();
+          this.mountBuyHud(null, true);
         }
         if (act === "tab-sell") {
           this.buyHudTab = "sell";
-          this.mountBuyHud();
+          this.mountBuyHud(null, true);
         }
         if (act === "quick") {
           const val = actEl.getAttribute("data-val");
           const field = root.querySelector('input[data-k="field"]');
-          if (field)
+          if (field) {
             field.value = val;
+            await this.executeTrade(root);
+          }
         }
         if (act === "action") {
-          const field = root.querySelector('input[data-k="field"]');
-          const val = parseFloat(field?.value || "0");
-          const status = root.querySelector('[data-k="status"]');
-          const strategyEl = root.querySelector('select[data-k="strategy"]');
-          const strategyFlags = FeatureManager.resolveFlags(Store2.state, "STRATEGY_TAGGING");
-          const strategy = strategyEl && strategyFlags.interactive ? strategyEl.value : "Trend";
-          if (val <= 0) {
-            if (status)
-              status.textContent = "Invalid amount";
-            return;
-          }
-          status.textContent = "Executing...";
-          const tokenInfo = TokenDetector.getCurrentToken();
-          let res;
-          try {
-            if (this.buyHudTab === "buy") {
-              res = await Trading.buy(val, strategy, tokenInfo);
-            } else {
-              res = await Trading.sell(val, strategy, tokenInfo);
-            }
-          } catch (err) {
-            status.textContent = "Error: " + err.message;
-            status.style.color = "#ef4444";
-            return;
-          }
-          if (res && res.success) {
-            status.textContent = "Paper trade placed";
-            field.value = "";
-            if (window.ZeroHUD && window.ZeroHUD.updateAll) {
-              window.ZeroHUD.updateAll();
-            }
-            setTimeout(() => {
-              this.showEmotionSelector(res.trade.id);
-            }, 500);
-          } else {
-            status.textContent = res.error || "Error executing trade";
-            status.style.color = "#ef4444";
-          }
+          await this.executeTrade(root);
+        }
+        if (act === "upgrade-plan") {
+          Paywall.showUpgradeModal("TRADE_PLAN");
         }
         if (act === "edit") {
           this.buyHudEdit = !this.buyHudEdit;
+          this.mountBuyHud();
+        }
+        if (act === "toggle-plan") {
+          this.tradePlanExpanded = !this.tradePlanExpanded;
           this.mountBuyHud();
         }
       });
@@ -5883,8 +6080,8 @@ canvas#equity-canvas {
       ];
       overlay.innerHTML = `
             <div class="emotion-modal" style="position:absolute; pointer-events:auto; box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 1px solid rgba(20,184,166,0.2); width:320px;">
-                <div class="emotion-title">PAPER TRADE PLACED</div>
-                <parameter name="emotion-subtitle">How are you feeling right now?</div>
+                <div class="emotion-title">TRADE EXECUTED</div>
+                <div class="emotion-subtitle">How are you feeling right now?</div>
                 <div class="emotion-grid">
                     ${emotions.map((e) => `
                         <button class="emotion-btn" data-emo="${e.id}">
@@ -5927,6 +6124,22 @@ canvas#equity-canvas {
         };
       });
       overlay.querySelector(".emotion-skip").onclick = close;
+      if (emoFlags.gated) {
+        const modalInner = overlay.querySelector(".emotion-modal");
+        modalInner.style.filter = "grayscale(1) opacity(0.8)";
+        const lock = document.createElement("div");
+        lock.innerHTML = '<div style="background:rgba(13,17,23,0.8); color:#14b8a6; padding:10px; border-radius:8px; font-weight:800; cursor:pointer;">PRO FEATURE: EMOTION TRACKING</div>';
+        lock.style.position = "absolute";
+        lock.style.top = "50%";
+        lock.style.left = "50%";
+        lock.style.transform = "translate(-50%, -50%)";
+        lock.style.pointerEvents = "auto";
+        lock.onclick = (e) => {
+          e.stopPropagation();
+          Paywall.showUpgradeModal();
+        };
+        modalInner.appendChild(lock);
+      }
     },
     updateBuyHud() {
       const root = OverlayManager.getContainer().querySelector("#" + IDS.buyHud);
@@ -5959,7 +6172,208 @@ canvas#equity-canvas {
       }
     },
     renderMarketContext() {
-      return "";
+      if (!Store2.state)
+        return "";
+      const flags = FeatureManager.resolveFlags(Store2.state, "MARKET_CONTEXT");
+      if (!flags.visible)
+        return "";
+      const ctx = Market2.context;
+      const isGated = flags.gated;
+      let content = "";
+      if (isGated) {
+        content = `
+                <div class="market-badge gated" style="cursor:pointer;" onclick="this.dispatchEvent(new CustomEvent('zero-upgrade', { bubbles:true, detail:'MARKET_CONTEXT' }))">
+                    ${ICONS.LOCK} MARKET CONTEXT (ELITE)
+                </div>
+            `;
+      } else if (ctx) {
+        const vol = (ctx.vol24h / 1e6).toFixed(1) + "M";
+        const chg = ctx.priceChange24h.toFixed(1) + "%";
+        const chgColor = ctx.priceChange24h >= 0 ? "#10b981" : "#ef4444";
+        content = `
+                <div class="market-badge">
+                    <div class="mitem">VOL <span>$${vol}</span></div>
+                    <div class="mitem">24H <span style="color:${chgColor}">${chg}</span></div>
+                </div>
+            `;
+      } else {
+        content = `
+                <div class="market-badge loading">Fetching market data...</div>
+            `;
+      }
+      return `
+            <div class="market-context-container" style="margin-bottom:12px;">
+                ${content}
+            </div>
+        `;
+    },
+    renderTradePlanFields() {
+      if (!Store2.state)
+        return "";
+      const flags = FeatureManager.resolveFlags(Store2.state, "TRADE_PLAN");
+      if (!flags.visible)
+        return "";
+      const isGated = flags.gated;
+      const isExpanded = this.tradePlanExpanded;
+      const plan = Store2.state.pendingPlan || {};
+      if (!isExpanded) {
+        return `
+                <div class="plan-toggle" data-act="toggle-plan">
+                    <span style="display:flex; align-items:center; gap:6px;">
+                        ${ICONS.TARGET} ${isGated ? "TRADE PLAN (PRO)" : "ADD TRADE PLAN"}
+                    </span>
+                    ${ICONS.CHEVRON_DOWN}
+                </div>
+            `;
+      }
+      if (isGated) {
+        return `
+                <div class="trade-plan-section gated">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <span class="plan-title">${ICONS.TARGET} Trade Plan</span>
+                        <div class="plan-collapse-arrow" data-act="toggle-plan">${ICONS.CHEVRON_UP}</div>
+                    </div>
+                    <div data-act="upgrade-plan">
+                        <div class="plan-gated-badge">
+                            ${ICONS.LOCK}
+                            <span>TRADE PLAN (PRO)</span>
+                        </div>
+                        <div class="plan-gated-hint">Define stop loss, targets & thesis</div>
+                    </div>
+                </div>
+            `;
+      }
+      return `
+            <div class="trade-plan-section">
+                <div class="plan-header">
+                    <span class="plan-title">${ICONS.TARGET} Trade Plan</span>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span class="plan-tag">PRO</span>
+                        <div class="plan-collapse-arrow" data-act="toggle-plan">${ICONS.CHEVRON_UP}</div>
+                    </div>
+                </div>
+                <div class="plan-row">
+                    <div class="plan-field">
+                        <label class="plan-label">Stop Loss</label>
+                        <div class="plan-input-wrap">
+                            <input type="text" class="plan-input" data-k="stopLoss" placeholder="0.00" value="${plan.stopLoss || ""}">
+                            <span class="plan-unit">USD</span>
+                        </div>
+                    </div>
+                    <div class="plan-field">
+                        <label class="plan-label">Target</label>
+                        <div class="plan-input-wrap">
+                            <input type="text" class="plan-input" data-k="target" placeholder="0.00" value="${plan.target || ""}">
+                            <span class="plan-unit">USD</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="plan-field full">
+                    <label class="plan-label">Entry Thesis <span class="optional">(optional)</span></label>
+                    <textarea class="plan-textarea" data-k="thesis" placeholder="Why are you taking this trade?" rows="2">${plan.thesis || ""}</textarea>
+                </div>
+            </div>
+        `;
+    },
+    // Save pending plan values as user types
+    savePendingPlan(root) {
+      if (!Store2.state.pendingPlan) {
+        Store2.state.pendingPlan = { stopLoss: null, target: null, thesis: "", maxRiskPct: null };
+      }
+      const stopEl = root.querySelector('[data-k="stopLoss"]');
+      const targetEl = root.querySelector('[data-k="target"]');
+      const thesisEl = root.querySelector('[data-k="thesis"]');
+      if (stopEl) {
+        const val = parseFloat(stopEl.value);
+        Store2.state.pendingPlan.stopLoss = isNaN(val) ? null : val;
+      }
+      if (targetEl) {
+        const val = parseFloat(targetEl.value);
+        Store2.state.pendingPlan.target = isNaN(val) ? null : val;
+      }
+      if (thesisEl) {
+        Store2.state.pendingPlan.thesis = thesisEl.value.trim();
+      }
+    },
+    // Get and clear pending plan for trade execution
+    consumePendingPlan() {
+      const plan = Store2.state.pendingPlan || {};
+      Store2.state.pendingPlan = { stopLoss: null, target: null, thesis: "", maxRiskPct: null };
+      return {
+        plannedStop: plan.stopLoss || null,
+        plannedTarget: plan.target || null,
+        entryThesis: plan.thesis || "",
+        riskDefined: !!(plan.stopLoss && plan.stopLoss > 0)
+      };
+    },
+    // Clear plan input fields in the UI
+    clearPlanFields(root) {
+      const stopEl = root.querySelector('[data-k="stopLoss"]');
+      const targetEl = root.querySelector('[data-k="target"]');
+      const thesisEl = root.querySelector('[data-k="thesis"]');
+      if (stopEl)
+        stopEl.value = "";
+      if (targetEl)
+        targetEl.value = "";
+      if (thesisEl)
+        thesisEl.value = "";
+    },
+    async executeTrade(root) {
+      const field = root.querySelector('input[data-k="field"]');
+      const val = parseFloat(field?.value || "0");
+      const status = root.querySelector('[data-k="status"]');
+      const strategyEl = root.querySelector('select[data-k="strategy"]');
+      const strategyFlags = FeatureManager.resolveFlags(Store2.state, "STRATEGY_TAGGING");
+      const strategy = strategyEl && strategyFlags.interactive ? strategyEl.value : "Trend";
+      if (val <= 0) {
+        if (status)
+          status.textContent = "Invalid amount";
+        return;
+      }
+      status.textContent = "Executing...";
+      if (this.buyHudTab === "buy") {
+        this.savePendingPlan(root);
+      }
+      const tokenInfo = TokenDetector.getCurrentToken();
+      const tradePlan = this.buyHudTab === "buy" ? this.consumePendingPlan() : null;
+      let res;
+      try {
+        if (this.buyHudTab === "buy") {
+          res = await Trading.buy(val, strategy, tokenInfo, tradePlan);
+        } else {
+          res = await Trading.sell(val, strategy, tokenInfo);
+        }
+      } catch (err) {
+        status.textContent = "Error: " + err.message;
+        status.style.color = "#ef4444";
+        return;
+      }
+      if (res && res.success) {
+        status.textContent = "Trade executed!";
+        field.value = "";
+        if (res.trade && res.trade.id) {
+          const fullTrade = Store2.state.trades && Store2.state.trades[res.trade.id] ? Store2.state.trades[res.trade.id] : Store2.state.fills ? Store2.state.fills.find((f) => f.id === res.trade.id) : null;
+          if (fullTrade) {
+            const bridgeTrade = {
+              ...fullTrade,
+              side: fullTrade.side === "ENTRY" ? "BUY" : fullTrade.side === "EXIT" ? "SELL" : fullTrade.side,
+              priceUsd: fullTrade.fillPriceUsd || fullTrade.priceUsd,
+              marketCap: fullTrade.marketCapUsdAtFill || fullTrade.marketCap
+            };
+            window.postMessage({ __paper: true, type: "PAPER_DRAW_MARKER", trade: bridgeTrade }, "*");
+          }
+        }
+        this.clearPlanFields(root);
+        if (window.ZeroHUD && window.ZeroHUD.updateAll) {
+          window.ZeroHUD.updateAll();
+        }
+        setTimeout(() => {
+          this.showEmotionSelector(res.trade.id);
+        }, 500);
+      } else {
+        status.textContent = res.error || "Error executing trade";
+        status.style.color = "#ef4444";
+      }
     }
   };
 
@@ -6085,7 +6499,7 @@ canvas#equity-canvas {
   // src/content.boot.js
   (async () => {
     "use strict";
-    Logger.info("ZER\xD8 v1.11.9 (Price Detection & Network Interception)");
+    Logger.info("ZER\xD8 v1.11.14 (API-Driven Architecture)");
     const PLATFORM = {
       isAxiom: window.location.hostname.includes("axiom.trade"),
       isPadre: window.location.hostname.includes("padre.gg"),

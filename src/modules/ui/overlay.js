@@ -5,25 +5,17 @@ export const OverlayManager = {
     shadowRoot: null,
 
     init(platformName) {
+        console.log(`[ZERØ] OverlayManager.init() called with platform: "${platformName}"`);
         this.createShadowRoot();
         this.injectStyles();
-        this.injectPageBridge(); // Inject network price interceptor
+
+        // Platform-specific initialization
         if (platformName === 'Padre') {
-            // this.injectPadreOffset(); // DEBUG: Disabled to test if causing blank screen
+            console.log('[ZERØ] Padre detected - using DOM polling only');
         }
     },
 
-    injectPageBridge() {
-        // Inject page-bridge.js for network-level price interception
-        if (document.getElementById('paper-page-bridge')) return;
 
-        const script = document.createElement('script');
-        script.id = 'paper-page-bridge';
-        script.src = chrome.runtime.getURL('src/page-bridge.js');
-        script.onload = () => console.log('[ZERØ] Page bridge injected for network price interception');
-        script.onerror = (e) => console.error('[ZERØ] Failed to inject page bridge:', e);
-        (document.head || document.documentElement).appendChild(script);
-    },
 
     getShadowRoot() {
         if (this.shadowRoot && this.shadowHost && this.shadowHost.isConnected) {

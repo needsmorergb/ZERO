@@ -1,6 +1,6 @@
 {
   "name": "solana-paper-trader-extension",
-  "version": "0.1.0",
+  "version": "1.11.14",
   "description": "Paper trading overlay for Solana spot on Axiom and Terminal (Padre)",
   "private": true,
   "type": "module",

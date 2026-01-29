@@ -15,8 +15,15 @@ export const BuyHud = {
     // UI State
     buyHudTab: 'buy',
     buyHudEdit: false,
+    tradePlanExpanded: false,
 
-    mountBuyHud(makeDraggable) {
+    // State for reuse
+    makeDraggableRef: null,
+
+    mountBuyHud(makeDraggable, force = false) {
+        if (makeDraggable) this.makeDraggableRef = makeDraggable;
+        const dragger = makeDraggable || this.makeDraggableRef;
+
         const container = OverlayManager.getContainer();
         const rootId = IDS.buyHud;
         let root = container.querySelector('#' + rootId);
@@ -32,19 +39,28 @@ export const BuyHud = {
             root.id = rootId;
             root.className = Store.state.settings.buyHudDocked ? 'docked' : 'floating';
             if (!Store.state.settings.buyHudDocked) {
-                // Initial float pos (safe default)
                 const safeX = window.innerWidth - 340;
                 root.style.left = px(safeX > 0 ? safeX : 20);
                 root.style.top = '100px';
-                root.style.right = 'auto'; // Ensure right is cleared
+                root.style.right = 'auto';
             }
             container.appendChild(root);
-            this.renderBuyHudContent(root, makeDraggable);
+            this.renderBuyHudContent(root, dragger);
             this.setupBuyHudInteractions(root);
+        } else if (force) {
+            // Full re-render requested (e.g. tab switch)
+            this.renderBuyHudContent(root, dragger);
+        } else {
+            // Just update dynamic data (price tick)
+            this.refreshMarketContext(root);
         }
+    },
 
-        // Always refresh content on mount to sync tabs
-        this.renderBuyHudContent(root, makeDraggable);
+    refreshMarketContext(root) {
+        const container = root.querySelector('.market-context-container');
+        if (container) {
+            container.innerHTML = this.renderMarketContext().replace('<div class="market-context-container" style="margin-bottom:12px;">', '').replace(/<\/div>\s*$/, '');
+        }
     },
 
     renderBuyHudContent(root, makeDraggable) {
@@ -53,6 +69,10 @@ export const BuyHud = {
         const actionText = isBuy ? "ZERØ BUY" : "ZERØ SELL";
         const actionClass = isBuy ? "action" : "action sell";
         const label = isBuy ? "Amount (SOL)" : "Amount (%)";
+
+        // PRESERVE INPUT VALUES
+        const oldField = root.querySelector('input[data-k="field"]');
+        const oldVal = oldField ? oldField.value : '';
 
         root.innerHTML = `
             <div class="panel">
@@ -70,7 +90,7 @@ export const BuyHud = {
                 <div class="body">
                     ${this.renderMarketContext()}
                     <div class="fieldLabel">${label}</div>
-                    <input class="field" type="text" inputmode="decimal" data-k="field" placeholder="0.0">
+                    <input class="field" type="text" inputmode="decimal" data-k="field" placeholder="0.0" value="${oldVal}">
 
                     <div class="quickRow">
                         ${this.renderQuickButtons(isBuy)}
@@ -78,11 +98,12 @@ export const BuyHud = {
 
                     ${isBuy ? `
                     <div class="strategyRow">
-                         <div class="fieldLabel">Strategy Tag</div>
+                         <div class="fieldLabel">Context / Strategy</div>
                          <select class="strategySelect" data-k="strategy">
                             ${(Store.state.settings.strategies || ["Trend"]).map(s => `<option value="${s}">${s}</option>`).join('')}
                          </select>
                     </div>
+                    ${this.renderTradePlanFields()}
                     ` : ''}
 
                     <button class="${actionClass}" data-act="action">${actionText}</button>
@@ -148,67 +169,34 @@ export const BuyHud = {
             }
             if (act === 'tab-buy') {
                 this.buyHudTab = 'buy';
-                this.mountBuyHud(); // Re-render content
+                this.mountBuyHud(null, true); // Force Re-render
             }
             if (act === 'tab-sell') {
                 this.buyHudTab = 'sell';
-                this.mountBuyHud();
+                this.mountBuyHud(null, true); // Force Re-render
             }
             if (act === 'quick') {
                 const val = actEl.getAttribute('data-val');
                 const field = root.querySelector('input[data-k="field"]');
-                if (field) field.value = val;
+                if (field) {
+                    field.value = val;
+                    // One-click execution
+                    await this.executeTrade(root);
+                }
             }
             if (act === 'action') {
-                const field = root.querySelector('input[data-k="field"]');
-                const val = parseFloat(field?.value || '0');
-                const status = root.querySelector('[data-k="status"]');
-                const strategyEl = root.querySelector('select[data-k="strategy"]');
-                const strategyFlags = FeatureManager.resolveFlags(Store.state, 'STRATEGY_TAGGING');
-                const strategy = strategyEl && strategyFlags.interactive ? strategyEl.value : "Trend";
-
-                if (val <= 0) {
-                    if (status) status.textContent = "Invalid amount";
-                    return;
-                }
-
-                status.textContent = "Executing...";
-
-                // Capture token info
-                const tokenInfo = TokenDetector.getCurrentToken();
-
-                let res;
-                try {
-                    if (this.buyHudTab === 'buy') {
-                        res = await Trading.buy(val, strategy, tokenInfo);
-                    } else {
-                        res = await Trading.sell(val, strategy, tokenInfo);
-                    }
-                } catch (err) {
-                    status.textContent = 'Error: ' + err.message;
-                    status.style.color = "#ef4444";
-                    return;
-                }
-
-                if (res && res.success) {
-                    status.textContent = "Paper trade placed";
-                    field.value = "";
-                    // Trigger update through HUD
-                    if (window.ZeroHUD && window.ZeroHUD.updateAll) {
-                        window.ZeroHUD.updateAll();
-                    }
-                    // Trigger Emotion Selector
-                    setTimeout(() => {
-                        this.showEmotionSelector(res.trade.id);
-                    }, 500);
-                } else {
-                    status.textContent = res.error || "Error executing trade";
-                    status.style.color = "#ef4444";
-                }
+                await this.executeTrade(root);
+            }
+            if (act === 'upgrade-plan') {
+                Paywall.showUpgradeModal('TRADE_PLAN');
             }
             if (act === 'edit') {
                 // Toggle edit mode for quick buttons (Future: implement editing UI)
                 this.buyHudEdit = !this.buyHudEdit;
+                this.mountBuyHud();
+            }
+            if (act === 'toggle-plan') {
+                this.tradePlanExpanded = !this.tradePlanExpanded;
                 this.mountBuyHud();
             }
         });
@@ -247,8 +235,8 @@ export const BuyHud = {
 
         overlay.innerHTML = `
             <div class="emotion-modal" style="position:absolute; pointer-events:auto; box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 1px solid rgba(20,184,166,0.2); width:320px;">
-                <div class="emotion-title">PAPER TRADE PLACED</div>
-                <parameter name="emotion-subtitle">How are you feeling right now?</div>
+                <div class="emotion-title">TRADE EXECUTED</div>
+                <div class="emotion-subtitle">How are you feeling right now?</div>
                 <div class="emotion-grid">
                     ${emotions.map(e => `
                         <button class="emotion-btn" data-emo="${e.id}">
@@ -298,7 +286,20 @@ export const BuyHud = {
         });
 
         overlay.querySelector('.emotion-skip').onclick = close;
-        // Emotion tracking available for all free users
+
+        if (emoFlags.gated) {
+            const modalInner = overlay.querySelector('.emotion-modal');
+            modalInner.style.filter = 'grayscale(1) opacity(0.8)';
+            const lock = document.createElement('div');
+            lock.innerHTML = '<div style="background:rgba(13,17,23,0.8); color:#14b8a6; padding:10px; border-radius:8px; font-weight:800; cursor:pointer;">PRO FEATURE: EMOTION TRACKING</div>';
+            lock.style.position = 'absolute';
+            lock.style.top = '50%';
+            lock.style.left = '50%';
+            lock.style.transform = 'translate(-50%, -50%)';
+            lock.style.pointerEvents = 'auto';
+            lock.onclick = (e) => { e.stopPropagation(); Paywall.showUpgradeModal(); };
+            modalInner.appendChild(lock);
+        }
     },
 
     updateBuyHud() {
@@ -337,7 +338,236 @@ export const BuyHud = {
     },
 
     renderMarketContext() {
-        // Market context removed for Free production release
-        return '';
+        if (!Store.state) return '';
+        const flags = FeatureManager.resolveFlags(Store.state, 'MARKET_CONTEXT');
+        if (!flags.visible) return '';
+
+        const ctx = Market.context;
+        const isGated = flags.gated;
+
+        let content = '';
+        if (isGated) {
+            content = `
+                <div class="market-badge gated" style="cursor:pointer;" onclick="this.dispatchEvent(new CustomEvent('zero-upgrade', { bubbles:true, detail:'MARKET_CONTEXT' }))">
+                    ${ICONS.LOCK} MARKET CONTEXT (ELITE)
+                </div>
+            `;
+        } else if (ctx) {
+            const vol = (ctx.vol24h / 1000000).toFixed(1) + 'M';
+            const chg = ctx.priceChange24h.toFixed(1) + '%';
+            const chgColor = ctx.priceChange24h >= 0 ? '#10b981' : '#ef4444';
+
+            content = `
+                <div class="market-badge">
+                    <div class="mitem">VOL <span>$${vol}</span></div>
+                    <div class="mitem">24H <span style="color:${chgColor}">${chg}</span></div>
+                </div>
+            `;
+        } else {
+            content = `
+                <div class="market-badge loading">Fetching market data...</div>
+            `;
+        }
+
+        return `
+            <div class="market-context-container" style="margin-bottom:12px;">
+                ${content}
+            </div>
+        `;
+    },
+
+    renderTradePlanFields() {
+        if (!Store.state) return '';
+        const flags = FeatureManager.resolveFlags(Store.state, 'TRADE_PLAN');
+        if (!flags.visible) return '';
+
+        const isGated = flags.gated;
+        const isExpanded = this.tradePlanExpanded;
+        const plan = Store.state.pendingPlan || {};
+
+        if (!isExpanded) {
+            return `
+                <div class="plan-toggle" data-act="toggle-plan">
+                    <span style="display:flex; align-items:center; gap:6px;">
+                        ${ICONS.TARGET} ${isGated ? 'TRADE PLAN (PRO)' : 'ADD TRADE PLAN'}
+                    </span>
+                    ${ICONS.CHEVRON_DOWN}
+                </div>
+            `;
+        }
+
+        if (isGated) {
+            return `
+                <div class="trade-plan-section gated">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <span class="plan-title">${ICONS.TARGET} Trade Plan</span>
+                        <div class="plan-collapse-arrow" data-act="toggle-plan">${ICONS.CHEVRON_UP}</div>
+                    </div>
+                    <div data-act="upgrade-plan">
+                        <div class="plan-gated-badge">
+                            ${ICONS.LOCK}
+                            <span>TRADE PLAN (PRO)</span>
+                        </div>
+                        <div class="plan-gated-hint">Define stop loss, targets & thesis</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        return `
+            <div class="trade-plan-section">
+                <div class="plan-header">
+                    <span class="plan-title">${ICONS.TARGET} Trade Plan</span>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span class="plan-tag">PRO</span>
+                        <div class="plan-collapse-arrow" data-act="toggle-plan">${ICONS.CHEVRON_UP}</div>
+                    </div>
+                </div>
+                <div class="plan-row">
+                    <div class="plan-field">
+                        <label class="plan-label">Stop Loss</label>
+                        <div class="plan-input-wrap">
+                            <input type="text" class="plan-input" data-k="stopLoss" placeholder="0.00" value="${plan.stopLoss || ''}">
+                            <span class="plan-unit">USD</span>
+                        </div>
+                    </div>
+                    <div class="plan-field">
+                        <label class="plan-label">Target</label>
+                        <div class="plan-input-wrap">
+                            <input type="text" class="plan-input" data-k="target" placeholder="0.00" value="${plan.target || ''}">
+                            <span class="plan-unit">USD</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="plan-field full">
+                    <label class="plan-label">Entry Thesis <span class="optional">(optional)</span></label>
+                    <textarea class="plan-textarea" data-k="thesis" placeholder="Why are you taking this trade?" rows="2">${plan.thesis || ''}</textarea>
+                </div>
+            </div>
+        `;
+    },
+
+    // Save pending plan values as user types
+    savePendingPlan(root) {
+        if (!Store.state.pendingPlan) {
+            Store.state.pendingPlan = { stopLoss: null, target: null, thesis: '', maxRiskPct: null };
+        }
+
+        const stopEl = root.querySelector('[data-k="stopLoss"]');
+        const targetEl = root.querySelector('[data-k="target"]');
+        const thesisEl = root.querySelector('[data-k="thesis"]');
+
+        if (stopEl) {
+            const val = parseFloat(stopEl.value);
+            Store.state.pendingPlan.stopLoss = isNaN(val) ? null : val;
+        }
+        if (targetEl) {
+            const val = parseFloat(targetEl.value);
+            Store.state.pendingPlan.target = isNaN(val) ? null : val;
+        }
+        if (thesisEl) {
+            Store.state.pendingPlan.thesis = thesisEl.value.trim();
+        }
+    },
+
+    // Get and clear pending plan for trade execution
+    consumePendingPlan() {
+        const plan = Store.state.pendingPlan || {};
+        // Reset after consuming
+        Store.state.pendingPlan = { stopLoss: null, target: null, thesis: '', maxRiskPct: null };
+        return {
+            plannedStop: plan.stopLoss || null,
+            plannedTarget: plan.target || null,
+            entryThesis: plan.thesis || '',
+            riskDefined: !!(plan.stopLoss && plan.stopLoss > 0)
+        };
+    },
+
+    // Clear plan input fields in the UI
+    clearPlanFields(root) {
+        const stopEl = root.querySelector('[data-k="stopLoss"]');
+        const targetEl = root.querySelector('[data-k="target"]');
+        const thesisEl = root.querySelector('[data-k="thesis"]');
+
+        if (stopEl) stopEl.value = '';
+        if (targetEl) targetEl.value = '';
+        if (thesisEl) thesisEl.value = '';
+    },
+
+    async executeTrade(root) {
+        const field = root.querySelector('input[data-k="field"]');
+        const val = parseFloat(field?.value || '0');
+        const status = root.querySelector('[data-k="status"]');
+        const strategyEl = root.querySelector('select[data-k="strategy"]');
+        const strategyFlags = FeatureManager.resolveFlags(Store.state, 'STRATEGY_TAGGING');
+        const strategy = strategyEl && strategyFlags.interactive ? strategyEl.value : "Trend";
+
+        if (val <= 0) {
+            if (status) status.textContent = "Invalid amount";
+            return;
+        }
+
+        status.textContent = "Executing...";
+
+        // Save pending plan before execution (for BUY only)
+        if (this.buyHudTab === 'buy') {
+            this.savePendingPlan(root);
+        }
+
+        // Capture token info
+        const tokenInfo = TokenDetector.getCurrentToken();
+
+        // Get trade plan data (BUY only)
+        const tradePlan = this.buyHudTab === 'buy' ? this.consumePendingPlan() : null;
+
+        let res;
+        try {
+            if (this.buyHudTab === 'buy') {
+                res = await Trading.buy(val, strategy, tokenInfo, tradePlan);
+            } else {
+                res = await Trading.sell(val, strategy, tokenInfo);
+            }
+        } catch (err) {
+            status.textContent = 'Error: ' + err.message;
+            status.style.color = "#ef4444";
+            return;
+        }
+
+        if (res && res.success) {
+            status.textContent = "Trade executed!";
+            field.value = "";
+
+            // Trigger Marker Draw
+            if (res.trade && res.trade.id) {
+                const fullTrade = (Store.state.trades && Store.state.trades[res.trade.id])
+                    ? Store.state.trades[res.trade.id]
+                    : (Store.state.fills ? Store.state.fills.find(f => f.id === res.trade.id) : null);
+
+                if (fullTrade) {
+                    // Normalize for Bridge (ENTRY -> BUY, fillPrice -> priceUsd)
+                    const bridgeTrade = {
+                        ...fullTrade,
+                        side: fullTrade.side === 'ENTRY' ? 'BUY' : (fullTrade.side === 'EXIT' ? 'SELL' : fullTrade.side),
+                        priceUsd: fullTrade.fillPriceUsd || fullTrade.priceUsd,
+                        marketCap: fullTrade.marketCapUsdAtFill || fullTrade.marketCap
+                    };
+                    window.postMessage({ __paper: true, type: "PAPER_DRAW_MARKER", trade: bridgeTrade }, "*");
+                }
+            }
+
+            // Clear plan fields after successful trade
+            this.clearPlanFields(root);
+            // Trigger update through HUD
+            if (window.ZeroHUD && window.ZeroHUD.updateAll) {
+                window.ZeroHUD.updateAll();
+            }
+            // Trigger Emotion Selector
+            setTimeout(() => {
+                this.showEmotionSelector(res.trade.id);
+            }, 500);
+        } else {
+            status.textContent = res.error || "Error executing trade";
+            status.style.color = "#ef4444";
+        }
     }
 };
