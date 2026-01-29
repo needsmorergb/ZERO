@@ -1082,7 +1082,7 @@
       if (PLATFORM.isPadre) {
         // 1. Try Document Title (MOST RELIABLE: "Symbol $123.45K | Terminal")
         const title = document.title || "";
-        const titleMatch = title.match(/\$([[\d,.]+)\s*([KMB])/i);
+        const titleMatch = title.match(/\$([\d,.]+)\s*([KMB])/i);
         if (titleMatch) {
           mc = parseMcString(titleMatch[1], titleMatch[2]);
           log('[getMarketCap] From title:', mc, `(${title})`);
@@ -1471,22 +1471,41 @@
     let totalUnrealizedSol = 0;
     const posMap = STATE.positions || {};
     const currentMC = getMarketCap();
+    const now = Date.now();
+
+    const getLiveMarketCap = (pos) => {
+      if (!pos) return 0;
+      const impliedSupply = Number(pos.impliedSupply || 0);
+      const lastPriceUsd = Number(pos.lastPriceUsd || 0);
+      const lastPriceTs = Number(pos.lastPriceTs || 0);
+      const derivedMc = (impliedSupply > 0 && lastPriceUsd > 0)
+        ? (impliedSupply * lastPriceUsd)
+        : 0;
+
+      // Prefer derived MC from fresh price ticks for instant P&L updates
+      if (derivedMc > 0 && lastPriceTs > 0 && (now - lastPriceTs) <= 3000) {
+        return derivedMc;
+      }
+
+      return currentMC || 0;
+    };
 
     for (const p of Object.values(posMap)) {
       if (!p || !p.tokenQty || p.tokenQty <= 0) continue;
 
       const totalSolSpent = Number(p.totalSolSpent || 0);
       const entryMC = Number(p.entryMarketCap || 0);
+      const liveMC = getLiveMarketCap(p);
 
       // Method 1: MC Ratio (MOST ACCURATE when both MCs are available)
-      if (currentMC > 0 && entryMC > 0 && totalSolSpent > 0) {
-        const mcRatio = currentMC / entryMC;
+      if (liveMC > 0 && entryMC > 0 && totalSolSpent > 0) {
+        const mcRatio = liveMC / entryMC;
         const currentValueSol = totalSolSpent * mcRatio;
         const unrealizedPnl = currentValueSol - totalSolSpent;
 
         log('[calcUnrealizedSol] MC Ratio method:', {
           entryMC: entryMC.toFixed(0),
-          currentMC: currentMC.toFixed(0),
+          currentMC: liveMC.toFixed(0),
           mcRatio: mcRatio.toFixed(4),
           totalSolSpent: totalSolSpent.toFixed(4),
           currentValueSol: currentValueSol.toFixed(4),
@@ -2220,10 +2239,22 @@
     // percentage = (currentMC / entryMC - 1) * 100
     let unrealizedPct = 0;
     const currentMC = getMarketCap();
+    const now = Date.now();
     for (const p of Object.values(STATE.positions || {})) {
-      if (p && p.tokenQty > 0 && p.entryMarketCap > 0 && currentMC > 0) {
-        unrealizedPct = ((currentMC / p.entryMarketCap) - 1) * 100;
-        break; // Use the first active position's percentage
+      if (p && p.tokenQty > 0 && p.entryMarketCap > 0) {
+        const impliedSupply = Number(p.impliedSupply || 0);
+        const lastPriceUsd = Number(p.lastPriceUsd || 0);
+        const lastPriceTs = Number(p.lastPriceTs || 0);
+        const derivedMc = (impliedSupply > 0 && lastPriceUsd > 0)
+          ? (impliedSupply * lastPriceUsd)
+          : 0;
+        const liveMC = (derivedMc > 0 && lastPriceTs > 0 && (now - lastPriceTs) <= 3000)
+          ? derivedMc
+          : currentMC;
+        if (liveMC > 0) {
+          unrealizedPct = ((liveMC / p.entryMarketCap) - 1) * 100;
+          break; // Use the first active position's percentage
+        }
       }
     }
 
@@ -2346,7 +2377,18 @@
     const price = Number(msg.price);
     if (!Number.isFinite(price) || price <= 0) return;
 
-    // Update ALL positions with the new price
+    const stable = getStableToken();
+    const posKey = stable?.mint || stable?.symbol || null;
+
+    if (posKey && STATE.positions?.[posKey]?.tokenQty > 0) {
+      const pos = STATE.positions[posKey];
+      pos.lastPriceUsd = price;
+      pos.lastPriceTs = Date.now();
+      updatePnlHud();
+      return;
+    }
+
+    // Update ALL positions with the new price (fallback)
     // (In paper trading, we typically trade one token at a time)
     let updated = false;
     for (const key of Object.keys(STATE.positions || {})) {
@@ -3667,4 +3709,3 @@
     boot().catch((e) => console.warn("[paper] boot error", e));
   }
 })();
-
