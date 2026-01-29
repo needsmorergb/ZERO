@@ -3093,6 +3093,28 @@ input:checked + .slider:before {
   // src/modules/ui/banner.js
   init_store();
   var Banner = {
+    ensurePageOffset() {
+      const body = document.body;
+      if (!body)
+        return;
+      const offset = 44;
+      const html = document.documentElement;
+      const bodyStyle = getComputedStyle(body);
+      const htmlStyle = getComputedStyle(html);
+      const isOverflowLocked = ["hidden", "clip"].includes(bodyStyle.overflowY) || ["hidden", "clip"].includes(bodyStyle.overflow) || ["hidden", "clip"].includes(htmlStyle.overflowY) || ["hidden", "clip"].includes(htmlStyle.overflow);
+      const isPadre = window.location.hostname.includes("padre.gg");
+      const shouldOffsetBody = !isPadre || !isOverflowLocked;
+      if (!shouldOffsetBody)
+        return;
+      const prev = body.getAttribute("data-paper-prev-padding-top");
+      if (!prev) {
+        body.setAttribute("data-paper-prev-padding-top", bodyStyle.paddingTop || "0px");
+      }
+      const currentPadding = Number.parseFloat(bodyStyle.paddingTop || "0") || 0;
+      if (currentPadding < offset) {
+        body.style.paddingTop = `${offset}px`;
+      }
+    },
     mountBanner() {
       const root = OverlayManager.getShadowRoot();
       if (!root)
@@ -3121,6 +3143,7 @@ input:checked + .slider:before {
         }
       });
       root.insertBefore(bar, root.firstChild);
+      this.ensurePageOffset();
     },
     updateBanner() {
       const root = OverlayManager.getShadowRoot();
