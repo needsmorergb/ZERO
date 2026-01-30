@@ -102,35 +102,51 @@ export const PnlCalculator = {
         const positions = Object.values(state.positions || {});
         const currentSymbol = (Market.currentSymbol || "").toUpperCase();
 
+        const currentMC = Market.marketCap || 0;
+
         positions.forEach(pos => {
-            // 1. Determine Mark Price
-            // Use Live API Price if this is the active mint
+            // 1. Determine Mark Price — always update from live data
             const mintMatches = currentTokenMint && pos.mint === currentTokenMint;
             const symbolMatches = !currentTokenMint && currentSymbol && pos.symbol && pos.symbol.toUpperCase() === currentSymbol;
 
             if ((mintMatches || symbolMatches) && Market.price > 0) {
-                pos.lastMarkPriceUsd = Market.price; // Update Mark info
+                pos.lastMarkPriceUsd = Market.price;
                 pos.lastMarketCapUsd = Market.marketCap;
                 priceWasUpdated = true;
             }
 
-            const markPriceUsd = pos.lastMarkPriceUsd || 0;
+            if (pos.qtyTokens <= 0) return;
 
-            if (markPriceUsd <= 0 || pos.qtyTokens <= 0) {
-                // No value if no price or no tokens
+            // 2. Method 1: MC Ratio (most accurate when both MCs available)
+            // Formula: currentValue = totalSolSpent × (currentMC / entryMC)
+            const entryMC = pos.entryMarketCapUsdReference || 0;
+            const totalSolSpent = pos.totalSolSpent || 0;
+
+            if (currentMC > 0 && entryMC > 0 && totalSolSpent > 0) {
+                const mcRatio = currentMC / entryMC;
+                const currentValueSol = totalSolSpent * mcRatio;
+                const unrealizedPnlSol = currentValueSol - totalSolSpent;
+                const unrealizedPnlUsd = unrealizedPnlSol * solUsd;
+
+                const pnlPct = (totalSolSpent > 0) ? (unrealizedPnlSol / totalSolSpent) * 100 : 0;
+                pos.pnlPct = pnlPct;
+                if (pos.peakPnlPct === undefined || pnlPct > pos.peakPnlPct) pos.peakPnlPct = pnlPct;
+
+                totalUnrealizedUsd += unrealizedPnlUsd;
+                totalUnrealizedSol += unrealizedPnlSol;
+
+                console.log(`[PNL] ${pos.symbol}: MC Ratio — entryMC=$${entryMC.toFixed(0)}, currentMC=$${currentMC.toFixed(0)}, ratio=${mcRatio.toFixed(4)}, pnl=${unrealizedPnlSol.toFixed(4)} SOL (${pnlPct.toFixed(1)}%)`);
                 return;
             }
 
-            // 2. WAC Math
-            // unrealizedPnlUsd = (qtyTokens * markPriceUsd) - costBasisUsd
+            // 3. Method 2: WAC fallback if MC not available
+            const markPriceUsd = pos.lastMarkPriceUsd || 0;
+            if (markPriceUsd <= 0) return;
+
             const currentValueUsd = pos.qtyTokens * markPriceUsd;
             const unrealizedPnlUsd = currentValueUsd - pos.costBasisUsd;
-
-            // Convert to SOL for display consistency with existing HUD? 
-            // Existing HUD likely sums SOL.
             const unrealizedPnlSol = unrealizedPnlUsd / solUsd;
 
-            // Analytics hooks
             const pnlPct = (pos.costBasisUsd > 0) ? (unrealizedPnlUsd / pos.costBasisUsd) * 100 : 0;
             pos.pnlPct = pnlPct;
             if (pos.peakPnlPct === undefined || pnlPct > pos.peakPnlPct) pos.peakPnlPct = pnlPct;
@@ -138,7 +154,7 @@ export const PnlCalculator = {
             totalUnrealizedUsd += unrealizedPnlUsd;
             totalUnrealizedSol += unrealizedPnlSol;
 
-            // console.log(`[PNL] ${pos.symbol}: Unr $${unrealizedPnlUsd.toFixed(2)} (${pnlPct.toFixed(1)}%)`);
+            console.log(`[PNL] ${pos.symbol}: WAC fallback — qty=${pos.qtyTokens.toFixed(2)}, price=$${markPriceUsd.toFixed(6)}, pnl=${unrealizedPnlSol.toFixed(4)} SOL (${pnlPct.toFixed(1)}%)`);
         });
 
         // Trigger Analytics

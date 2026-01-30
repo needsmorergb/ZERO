@@ -7,6 +7,7 @@ import { IDS } from './ids.js';
 import { Paywall } from './paywall.js';
 import { ICONS } from './icons.js';
 import { FeatureManager } from '../featureManager.js';
+import { Market } from '../core/market.js';
 
 export const Dashboard = {
     isOpen: false,

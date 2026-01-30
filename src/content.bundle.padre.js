@@ -3082,7 +3082,7 @@ input:checked + .slider:before {
   };
 
   // src/modules/core/market.js
-  var Market2 = {
+  var Market = {
     price: 0,
     marketCap: 0,
     liquidity: 0,
@@ -3578,7 +3578,7 @@ input:checked + .slider:before {
       const flags = FeatureManager.resolveFlags(state, "ADVANCED_COACHING");
       if (!flags.enabled)
         return;
-      const ctx = Market2.context;
+      const ctx = Market.context;
       if (!ctx)
         return;
       const vol = ctx.vol24h;
@@ -4431,19 +4431,37 @@ input:checked + .slider:before {
       let priceWasUpdated = false;
       let totalUnrealizedUsd = 0;
       const positions = Object.values(state.positions || {});
-      const currentSymbol = (Market2.currentSymbol || "").toUpperCase();
+      const currentSymbol = (Market.currentSymbol || "").toUpperCase();
+      const currentMC = Market.marketCap || 0;
       positions.forEach((pos) => {
         const mintMatches = currentTokenMint && pos.mint === currentTokenMint;
         const symbolMatches = !currentTokenMint && currentSymbol && pos.symbol && pos.symbol.toUpperCase() === currentSymbol;
-        if ((mintMatches || symbolMatches) && Market2.price > 0) {
-          pos.lastMarkPriceUsd = Market2.price;
-          pos.lastMarketCapUsd = Market2.marketCap;
+        if ((mintMatches || symbolMatches) && Market.price > 0) {
+          pos.lastMarkPriceUsd = Market.price;
+          pos.lastMarketCapUsd = Market.marketCap;
           priceWasUpdated = true;
         }
-        const markPriceUsd = pos.lastMarkPriceUsd || 0;
-        if (markPriceUsd <= 0 || pos.qtyTokens <= 0) {
+        if (pos.qtyTokens <= 0)
+          return;
+        const entryMC = pos.entryMarketCapUsdReference || 0;
+        const totalSolSpent = pos.totalSolSpent || 0;
+        if (currentMC > 0 && entryMC > 0 && totalSolSpent > 0) {
+          const mcRatio = currentMC / entryMC;
+          const currentValueSol = totalSolSpent * mcRatio;
+          const unrealizedPnlSol2 = currentValueSol - totalSolSpent;
+          const unrealizedPnlUsd2 = unrealizedPnlSol2 * solUsd;
+          const pnlPct2 = totalSolSpent > 0 ? unrealizedPnlSol2 / totalSolSpent * 100 : 0;
+          pos.pnlPct = pnlPct2;
+          if (pos.peakPnlPct === void 0 || pnlPct2 > pos.peakPnlPct)
+            pos.peakPnlPct = pnlPct2;
+          totalUnrealizedUsd += unrealizedPnlUsd2;
+          totalUnrealizedSol += unrealizedPnlSol2;
+          console.log(`[PNL] ${pos.symbol}: MC Ratio \u2014 entryMC=$${entryMC.toFixed(0)}, currentMC=$${currentMC.toFixed(0)}, ratio=${mcRatio.toFixed(4)}, pnl=${unrealizedPnlSol2.toFixed(4)} SOL (${pnlPct2.toFixed(1)}%)`);
           return;
         }
+        const markPriceUsd = pos.lastMarkPriceUsd || 0;
+        if (markPriceUsd <= 0)
+          return;
         const currentValueUsd = pos.qtyTokens * markPriceUsd;
         const unrealizedPnlUsd = currentValueUsd - pos.costBasisUsd;
         const unrealizedPnlSol = unrealizedPnlUsd / solUsd;
@@ -4453,6 +4471,7 @@ input:checked + .slider:before {
           pos.peakPnlPct = pnlPct;
         totalUnrealizedUsd += unrealizedPnlUsd;
         totalUnrealizedSol += unrealizedPnlSol;
+        console.log(`[PNL] ${pos.symbol}: WAC fallback \u2014 qty=${pos.qtyTokens.toFixed(2)}, price=$${markPriceUsd.toFixed(6)}, pnl=${unrealizedPnlSol.toFixed(4)} SOL (${pnlPct.toFixed(1)}%)`);
       });
       Analytics.monitorProfitOverstay(state);
       Analytics.detectOvertrading(state);
@@ -4472,17 +4491,17 @@ input:checked + .slider:before {
     // tokenInfo arg matches existing UI signature but we rely on Market.currentMint for truth
     async buy(solAmount, strategy = "MANUAL", tokenInfo = null, tradePlan = null) {
       const state = Store2.state;
-      const mint = Market2.currentMint;
-      const priceUsd = Market2.price;
-      const symbol = Market2.currentSymbol || "UNKNOWN";
+      const mint = Market.currentMint;
+      const priceUsd = Market.price;
+      const symbol = Market.currentSymbol || "UNKNOWN";
       if (!mint)
         return { success: false, error: "No active token context" };
       if (solAmount <= 0)
         return { success: false, error: "Invalid SOL amount" };
       if (priceUsd <= 0)
         return { success: false, error: `Market Data Unavailable (Price: ${priceUsd})` };
-      const tickAge = Date.now() - Market2.lastTickTs;
-      console.log(`[EXEC] BUY DIAG: price=$${priceUsd}, mcap=$${Market2.marketCap}, source=${Market2.lastSource}, tickAge=${tickAge}ms`);
+      const tickAge = Date.now() - Market.lastTickTs;
+      console.log(`[EXEC] BUY DIAG: price=$${priceUsd}, mcap=$${Market.marketCap}, source=${Market.lastSource}, tickAge=${tickAge}ms`);
       const solUsd = PnlCalculator.getSolPrice();
       const buyUsd = solAmount * solUsd;
       const qtyDelta = buyUsd / priceUsd;
@@ -4506,8 +4525,8 @@ input:checked + .slider:before {
       pos.costBasisUsd += buyUsd;
       pos.totalSolSpent += solAmount;
       pos.avgCostUsdPerToken = pos.qtyTokens > 0 ? pos.costBasisUsd / pos.qtyTokens : 0;
-      if (pos.entryMarketCapUsdReference === null && Market2.marketCap > 0) {
-        pos.entryMarketCapUsdReference = Market2.marketCap;
+      if (pos.entryMarketCapUsdReference === null && Market.marketCap > 0) {
+        pos.entryMarketCapUsdReference = Market.marketCap;
       }
       console.log(`[EXEC] BUY ${symbol}: +${qtyDelta.toFixed(2)} ($${buyUsd.toFixed(2)}) @ $${priceUsd}`);
       const fillData = {
@@ -4518,8 +4537,8 @@ input:checked + .slider:before {
         usdNotional: buyUsd,
         qtyTokensDelta: qtyDelta,
         fillPriceUsd: priceUsd,
-        marketCapUsdAtFill: Market2.marketCap,
-        priceSource: Market2.lastSource || "unknown",
+        marketCapUsdAtFill: Market.marketCap,
+        priceSource: Market.lastSource || "unknown",
         strategy,
         tradePlan
         // Store if provided
@@ -4532,16 +4551,16 @@ input:checked + .slider:before {
     // EXIT Action
     async sell(percent, strategy = "MANUAL", tokenInfo = null) {
       const state = Store2.state;
-      const mint = Market2.currentMint;
-      const priceUsd = Market2.price;
-      const symbol = Market2.currentSymbol || "UNKNOWN";
+      const mint = Market.currentMint;
+      const priceUsd = Market.price;
+      const symbol = Market.currentSymbol || "UNKNOWN";
       if (!mint)
         return { success: false, error: "No active token context" };
       if (!state.positions[mint] || state.positions[mint].qtyTokens <= 0)
         return { success: false, error: "No open position" };
       const pos = state.positions[mint];
-      const tickAge = Date.now() - Market2.lastTickTs;
-      console.log(`[EXEC] SELL DIAG: price=$${priceUsd}, mcap=$${Market2.marketCap}, source=${Market2.lastSource}, tickAge=${tickAge}ms`);
+      const tickAge = Date.now() - Market.lastTickTs;
+      console.log(`[EXEC] SELL DIAG: price=$${priceUsd}, mcap=$${Market.marketCap}, source=${Market.lastSource}, tickAge=${tickAge}ms`);
       console.log(`[EXEC] SELL DIAG: avgCost=$${pos.avgCostUsdPerToken}, qty=${pos.qtyTokens}, costBasis=$${pos.costBasisUsd}`);
       const pct = percent === void 0 || percent === null ? 100 : Math.min(Math.max(percent, 0), 100);
       const rawDelta = pos.qtyTokens * (pct / 100);
@@ -4573,8 +4592,8 @@ input:checked + .slider:before {
         qtyTokensDelta: -qtyDelta,
         proceedsUsd,
         fillPriceUsd: priceUsd,
-        marketCapUsdAtFill: Market2.marketCap,
-        priceSource: Market2.lastSource || "unknown",
+        marketCapUsdAtFill: Market.marketCap,
+        priceSource: Market.lastSource || "unknown",
         strategy,
         realizedPnlSol: pnlEventSol
       };
@@ -4644,8 +4663,8 @@ input:checked + .slider:before {
   var TokenDetector = {
     getCurrentToken() {
       return {
-        symbol: Market2.currentSymbol || "SOL",
-        mint: Market2.currentMint || "So11111111111111111111111111111111111111112"
+        symbol: Market.currentSymbol || "SOL",
+        mint: Market.currentMint || "So11111111111111111111111111111111111111112"
       };
     }
   };
@@ -5808,9 +5827,19 @@ Please add me to the waitlist.`);
       if (document.activeElement !== inp)
         inp.value = s.settings.startSol;
       root.querySelector('[data-k="balance"]').textContent = `${Trading.fmtSol(s.session.balance)} SOL`;
-      const positions = Object.values(s.positions || {});
-      const totalInvested = positions.reduce((sum, pos) => sum + (pos.totalSolSpent || 0), 0);
-      const unrealizedPct = totalInvested > 0 ? unrealized / totalInvested * 100 : 0;
+      const currentMC = Market.marketCap || 0;
+      let unrealizedPct = 0;
+      for (const p of Object.values(s.positions || {})) {
+        if (p && p.qtyTokens > 0 && p.entryMarketCapUsdReference > 0 && currentMC > 0) {
+          unrealizedPct = (currentMC / p.entryMarketCapUsdReference - 1) * 100;
+          break;
+        }
+      }
+      if (unrealizedPct === 0 && unrealized !== 0) {
+        const positions = Object.values(s.positions || {});
+        const totalInvested = positions.reduce((sum, pos) => sum + (pos.totalSolSpent || 0), 0);
+        unrealizedPct = totalInvested > 0 ? unrealized / totalInvested * 100 : 0;
+      }
       const tokenValueEl = root.querySelector('[data-k="tokenValue"]');
       const tokenUnitEl = root.querySelector('[data-k="tokenUnit"]');
       if (tokenValueEl && tokenUnitEl) {
@@ -6394,7 +6423,7 @@ Please add me to the waitlist.`);
       const flags = FeatureManager.resolveFlags(Store2.state, "MARKET_CONTEXT");
       if (!flags.visible)
         return "";
-      const ctx = Market2.context;
+      const ctx = Market.context;
       const isGated = flags.gated;
       let content = "";
       if (isGated) {
@@ -6613,7 +6642,7 @@ Please add me to the waitlist.`);
           window.postMessage({ __paper: true, type: "PAPER_DRAW_ALL", trades }, "*");
         }, 2e3);
       }
-      Market2.subscribe(async () => {
+      Market.subscribe(async () => {
         this.scheduleRender();
       });
     },
@@ -6768,7 +6797,7 @@ Please add me to the waitlist.`);
     }
     try {
       Logger.info("Init Market...");
-      Market2.init();
+      Market.init();
     } catch (e) {
       Logger.error("Market Init Failed:", e);
     }

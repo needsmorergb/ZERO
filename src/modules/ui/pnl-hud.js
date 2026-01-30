@@ -9,6 +9,7 @@ import { Paywall } from './paywall.js';
 import { Analytics } from '../core/analytics.js';
 import { Dashboard } from './dashboard.js';
 import { SettingsPanel } from './settings-panel.js';
+import { Market } from '../core/market.js';
 
 function px(n) { return n + 'px'; }
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
@@ -257,10 +258,21 @@ export const PnlHud = {
 
         root.querySelector('[data-k="balance"]').textContent = `${Trading.fmtSol(s.session.balance)} SOL`;
 
-        // Calculate total invested for percentage
-        const positions = Object.values(s.positions || {});
-        const totalInvested = positions.reduce((sum, pos) => sum + (pos.totalSolSpent || 0), 0);
-        const unrealizedPct = totalInvested > 0 ? (unrealized / totalInvested) * 100 : 0;
+        // Calculate unrealized percentage using MC ratio (matches Padre logic)
+        const currentMC = Market.marketCap || 0;
+        let unrealizedPct = 0;
+        for (const p of Object.values(s.positions || {})) {
+            if (p && p.qtyTokens > 0 && p.entryMarketCapUsdReference > 0 && currentMC > 0) {
+                unrealizedPct = ((currentMC / p.entryMarketCapUsdReference) - 1) * 100;
+                break;
+            }
+        }
+        // Fallback to invested-based percentage if MC not available
+        if (unrealizedPct === 0 && unrealized !== 0) {
+            const positions = Object.values(s.positions || {});
+            const totalInvested = positions.reduce((sum, pos) => sum + (pos.totalSolSpent || 0), 0);
+            unrealizedPct = totalInvested > 0 ? (unrealized / totalInvested) * 100 : 0;
+        }
 
         // Update unrealized PNL display with percentage
         const tokenValueEl = root.querySelector('[data-k="tokenValue"]');
