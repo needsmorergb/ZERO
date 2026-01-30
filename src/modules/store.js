@@ -41,13 +41,14 @@ const DEFAULTS = {
         tradeCount: 0,
         disciplineScore: 100,
         activeAlerts: [],      // {type, message, ts}
-        status: 'active'       // 'active' | 'completed' | 'abandoned'
+        status: 'active',      // 'active' | 'completed' | 'abandoned'
+        notes: ''              // Session notes (max 280 chars, stored locally)
     },
     // Session history (archived sessions)
     sessionHistory: [],        // Array of completed session objects
     trades: {}, // Map ID -> Trade Object { id, strategy, emotion, plannedStop, plannedTarget, entryThesis, riskDefined, ... }
     positions: {},
-    // Pending trade plan (cleared after trade execution)
+    // Pending trade plan (cleared after trade is recorded)
     pendingPlan: {
         stopLoss: null,      // Price in USD or % below entry
         target: null,        // Price in USD or % above entry
@@ -236,6 +237,25 @@ export const Store = {
     validateState() {
         if (this.state) {
             this.state.settings.startSol = parseFloat(this.state.settings.startSol) || 10;
+
+            // Migrate Pro tier to Free (Pro tier removed in 2-tier model)
+            if (this.state.settings.tier === 'pro') {
+                this.state.settings.tier = 'free';
+            }
+
+            // Migrate old ENTRY/EXIT side values to BUY/SELL
+            if (this.state.fills) {
+                this.state.fills.forEach(f => {
+                    if (f.side === 'ENTRY') f.side = 'BUY';
+                    if (f.side === 'EXIT') f.side = 'SELL';
+                });
+            }
+            if (this.state.trades) {
+                Object.values(this.state.trades).forEach(t => {
+                    if (t.side === 'ENTRY') t.side = 'BUY';
+                    if (t.side === 'EXIT') t.side = 'SELL';
+                });
+            }
 
             // Ensure session has an ID
             if (!this.state.session.id) {

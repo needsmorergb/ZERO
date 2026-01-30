@@ -98,4 +98,69 @@ export const ELITE_CSS = `
 
 .behavior-stat-item .k { font-size: 9px; color: #64748b; text-transform: uppercase; margin-bottom: 4px; }
 .behavior-stat-item .v { font-size: 16px; font-weight: 800; color: #f8fafc; }
+
+/* Elite Locked Card Design */
+.elite-locked-card {
+    position: relative;
+    background: linear-gradient(145deg, rgba(139, 92, 246, 0.04), rgba(99, 102, 241, 0.02));
+    border: 1px solid rgba(139, 92, 246, 0.15);
+    border-radius: 12px;
+    padding: 16px 18px;
+    cursor: default;
+    overflow: hidden;
+}
+
+.elite-locked-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: repeating-linear-gradient(
+        -45deg,
+        transparent,
+        transparent 8px,
+        rgba(139, 92, 246, 0.015) 8px,
+        rgba(139, 92, 246, 0.015) 16px
+    );
+    pointer-events: none;
+}
+
+.elite-locked-card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 6px;
+    position: relative;
+}
+
+.elite-locked-card-icon {
+    color: #8b5cf6;
+    opacity: 0.7;
+    display: flex;
+    align-items: center;
+}
+
+.elite-locked-card-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #e2e8f0;
+}
+
+.elite-locked-card-badge {
+    font-size: 9px;
+    font-weight: 800;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    margin-left: auto;
+}
+
+.elite-locked-card-desc {
+    font-size: 11px;
+    color: #64748b;
+    line-height: 1.5;
+    position: relative;
+}
 `;

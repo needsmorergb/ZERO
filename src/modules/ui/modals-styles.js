@@ -134,6 +134,12 @@ export const MODALS_CSS = `
   gap: 8px;
 }
 
+.emotion-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
 .emotion-btn:hover {
   background: rgba(20,184,166,0.05);
   border-color: rgba(20,184,166,0.3);
@@ -518,7 +524,7 @@ input:checked + .slider:before {
   }
 }
 
-/* PRO Tag */
+/* Tier Tag */
 .pro-tag {
   display: inline-block;
   background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);

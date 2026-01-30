@@ -8,6 +8,7 @@ import { TokenDetector } from './token-detector.js';
 import { Paywall } from './paywall.js';
 import { Analytics } from '../core/analytics.js';
 import { Dashboard } from './dashboard.js';
+import { Insights } from './insights.js';
 import { SettingsPanel } from './settings-panel.js';
 import { Market } from '../core/market.js';
 
@@ -66,9 +67,9 @@ export const PnlHud = {
                     <input class="startSolInput" type="text" inputmode="decimal" />
                   </div>
                   <button class="pillBtn" data-act="shareX" style="background:rgba(29,155,240,0.15);color:#1d9bf0;border:1px solid rgba(29,155,240,0.3);font-family:'Arial',sans-serif;font-weight:600;display:none;" id="pnl-share-btn">Share 𝕏</button>
-                  <button class="pillBtn" data-act="shareX" style="background:rgba(29,155,240,0.15);color:#1d9bf0;border:1px solid rgba(29,155,240,0.3);font-family:'Arial',sans-serif;font-weight:600;display:none;" id="pnl-share-btn">Share 𝕏</button>
                   <button class="pillBtn" data-act="trades">Trades</button>
                   <button class="pillBtn" data-act="dashboard" style="background:rgba(20,184,166,0.15);color:#14b8a6;border:1px solid rgba(20,184,166,0.3);font-weight:700;">Stats</button>
+                  <button class="pillBtn" data-act="insights" style="background:rgba(139,92,246,0.15);color:#a78bfa;border:1px solid rgba(139,92,246,0.3);font-weight:700;">Insights</button>
                   <button class="pillBtn" data-act="reset" style="color:#ef4444;">Reset</button>
                   <button class="pillBtn" data-act="settings" style="padding:6px 10px;font-size:16px;">⚙</button>
                   <button class="pillBtn" data-act="dock">Dock</button>
@@ -92,7 +93,7 @@ export const PnlHud = {
                     <div class="v" data-k="streak">0</div>
                 </div>
                 <div class="stat discipline">
-                    <div class="k">DISCIPLINE <span class="pro-tag" style="display:none;" id="discipline-pro-tag">PRO</span></div>
+                    <div class="k">DISCIPLINE</div>
                     <div class="v" data-k="discipline">100</div>
                 </div>
               </div>
@@ -171,6 +172,9 @@ export const PnlHud = {
             if (act === 'dashboard') {
                 Dashboard.toggle();
             }
+            if (act === 'insights') {
+                Insights.toggle();
+            }
             if (act === 'trades') {
                 const list = root.querySelector(".tradeList");
                 if (list) {
@@ -193,9 +197,6 @@ export const PnlHud = {
             }
             if (act === 'shareX') {
                 this.shareToX();
-            }
-            if (act === 'getPro') {
-                Paywall.showUpgradeModal();
             }
             if (act === 'togglePositions') {
                 positionsExpanded = !positionsExpanded;
@@ -222,12 +223,8 @@ export const PnlHud = {
 
         const s = Store.state;
         const shareFlags = FeatureManager.resolveFlags(s, 'SHARE_TO_X');
-        const proFlags = FeatureManager.resolveFlags(s, 'SHARE_TO_X'); // Combined check for now
 
         const shareBtn = root.querySelector('#pnl-share-btn');
-
-
-        if (shareBtn) shareBtn.style.display = shareFlags.visible && !shareFlags.gated ? '' : 'none';
         if (shareBtn) shareBtn.style.display = shareFlags.visible && !shareFlags.gated ? '' : 'none';
 
         // Visibility Toggle
@@ -284,7 +281,7 @@ export const PnlHud = {
                 tokenValueEl.textContent = (unrealizedUsd >= 0 ? "+" : "") + "$" + Trading.fmtSol(Math.abs(unrealizedUsd));
                 tokenUnitEl.textContent = "USD";
             } else {
-                tokenValueEl.textContent = (unrealized >= 0 ? "+" : "") + Trading.fmtSol(unrealized) + ` (${unrealizedPct >= 0 ? "+" : ""}${unrealizedPct.toFixed(1)}%)`;
+                tokenValueEl.textContent = (unrealized >= 0 ? "+" : "") + unrealized.toFixed(3) + ` (${unrealizedPct >= 0 ? "+" : ""}${unrealizedPct.toFixed(1)}%)`;
                 tokenUnitEl.textContent = "SOL";
             }
             tokenValueEl.style.color = unrealized >= 0 ? "#10b981" : "#ef4444";
@@ -304,7 +301,7 @@ export const PnlHud = {
                 pnlEl.textContent = (totalPnlUsd >= 0 ? "+" : "") + "$" + Trading.fmtSol(Math.abs(totalPnlUsd));
                 pnlUnitEl.textContent = "USD";
             } else {
-                pnlEl.textContent = (totalPnl >= 0 ? "+" : "") + Trading.fmtSol(totalPnl) + ` (${sessionPct >= 0 ? "+" : ""}${sessionPct.toFixed(1)}%)`;
+                pnlEl.textContent = (totalPnl >= 0 ? "+" : "") + totalPnl.toFixed(3) + ` (${sessionPct >= 0 ? "+" : ""}${sessionPct.toFixed(1)}%)`;
                 pnlUnitEl.textContent = "SOL";
             }
             pnlEl.style.color = totalPnl >= 0 ? "#10b981" : "#ef4444";
@@ -322,15 +319,12 @@ export const PnlHud = {
             streakEl.parentElement.className = winStreak > 0 ? "stat streak win" : "stat streak";
         }
 
-        // Update Discipline visibility and gating
+        // Update Discipline visibility — hide for Free users (gated)
         const discFlags = FeatureManager.resolveFlags(s, 'DISCIPLINE_SCORING');
         const discStatEl = root.querySelector('.stat.discipline');
-        // const discProTag = root.querySelector('#discipline-pro-tag'); // Removed
-        const discValueEl = root.querySelector('[data-k="discipline"]');
 
-        // Strictly hide if not visible (Production Free Release)
         if (discStatEl) {
-            discStatEl.style.display = discFlags.visible ? '' : 'none';
+            discStatEl.style.display = (discFlags.visible && !discFlags.gated) ? '' : 'none';
         }
 
         // Update token symbol in title
@@ -410,7 +404,7 @@ export const PnlHud = {
                 <div class="confirm-modal" style="max-width:380px; text-align:center;">
                     <h3>Discipline scoring</h3>
                     <p style="font-size:13px; line-height:1.6; color:#94a3b8; margin-bottom:16px;">
-                        Discipline scoring analyzes how consistently you follow your plan and manage risk. Available in Pro.
+                        Discipline scoring analyzes how consistently you follow your plan and manage risk. Available in Elite.
                     </p>
                     <div class="confirm-modal-buttons" style="justify-content:center;">
                         <button class="confirm-modal-btn cancel">Close</button>
@@ -479,7 +473,7 @@ export const PnlHud = {
 
     updatePositionsPanel(root) {
         const s = Store.state;
-        const positions = Object.values(s.positions || {});
+        const positions = Object.values(s.positions || {}).filter(p => p.qtyTokens > 0);
         const listEl = root.querySelector('[data-k="positionsList"]');
         const toggleIcon = root.querySelector('.positionsToggle');
         const countEl = root.querySelector('[data-k="positionCount"]');

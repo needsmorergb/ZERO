@@ -1,13 +1,14 @@
 /**
  * ZERØ Settings Panel
- * Extended settings with Pro/Elite teased cards and Privacy & Data panel.
+ * Extended settings with Elite feature cards and Privacy & Data panel.
  */
 
 import { Professor } from './professor.js';
 import { Store } from '../store.js';
 import { DiagnosticsStore } from '../diagnostics-store.js';
 import { OverlayManager } from './overlay.js';
-import { TEASED_FEATURES } from '../featureManager.js';
+import { TEASED_FEATURES, FeatureManager } from '../featureManager.js';
+import { renderEliteLockedCard } from './elite-helpers.js';
 
 export const SettingsPanel = {
     /**
@@ -64,7 +65,7 @@ export const SettingsPanel = {
                     <p>ZERØ stores your paper trading data locally on your device by default.</p>
                     <p>You can optionally enable diagnostics to help improve ZERØ and unlock deeper features over time. Diagnostics help us understand session flow, feature usage, and where tools break down — not your private trading decisions.</p>
                     <ul style="margin:8px 0 8px 16px; padding:0; list-style-type:disc; color:#94a3b8; font-size:11px;">
-                        <li>Improves Pro and Elite features</li>
+                        <li>Improves Elite features</li>
                         <li>Helps analytics become more accurate</li>
                         <li>Helps fix bugs faster</li>
                         <li>Shapes future tools based on real usage</li>
@@ -118,8 +119,27 @@ export const SettingsPanel = {
                     <button class="settings-action-btn danger" data-setting-act="deleteLocal">Delete local ZERØ data</button>
                 </div>
 
-                <!-- Pro Features (HIDDEN FOR FREE RELEASE) -->
-                <!-- Elite Features (HIDDEN FOR FREE RELEASE) -->
+                <!-- Elite -->
+                <div class="settings-section-title" style="display:flex; align-items:center; gap:8px;">
+                    Elite
+                    <span style="font-size:9px; font-weight:800; padding:2px 8px; border-radius:4px; background:${FeatureManager.isElite(Store.state) ? 'rgba(16,185,129,0.15)' : 'rgba(139,92,246,0.15)'}; color:${FeatureManager.isElite(Store.state) ? '#10b981' : '#8b5cf6'}; letter-spacing:0.5px; text-transform:uppercase;">
+                        ${FeatureManager.isElite(Store.state) ? 'Active' : 'Free'}
+                    </span>
+                </div>
+
+                ${FeatureManager.isElite(Store.state) ? `
+                <div style="padding:12px 16px; background:rgba(16,185,129,0.05); border:1px solid rgba(16,185,129,0.15); border-radius:10px; margin-bottom:12px;">
+                    <div style="font-size:12px; font-weight:600; color:#10b981;">Elite Active</div>
+                    <div style="font-size:11px; color:#64748b; margin-top:4px;">All advanced insights and behavioral analytics are unlocked.</div>
+                </div>
+                ` : `
+                <div style="font-size:11px; color:#64748b; margin-bottom:12px; line-height:1.5;">
+                    Unlock cross-session context and behavioral analytics.
+                </div>
+                <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:16px;">
+                    ${TEASED_FEATURES.ELITE.map(f => renderEliteLockedCard(f.name, f.desc)).join('')}
+                </div>
+                `}
 
                 <div style="margin-top:20px; text-align:center; font-size:11px; color:#64748b;">
                     ZERØ v${Store.state.version || '1.11.6'}
@@ -247,25 +267,21 @@ export const SettingsPanel = {
     },
 
     _showComingSoonModal(parent, featureId) {
-        // Find feature info
-        const allFeatures = [...TEASED_FEATURES.PRO, ...TEASED_FEATURES.ELITE];
-        const feat = allFeatures.find(f => f.id === featureId);
-        const tier = featureId.startsWith('ELITE') ? 'Elite' : 'Pro';
+        const feat = TEASED_FEATURES.ELITE.find(f => f.id === featureId);
 
         const modal = document.createElement('div');
         modal.className = 'confirm-modal-overlay';
         modal.style.zIndex = '2147483648';
         modal.innerHTML = `
             <div class="confirm-modal" style="max-width:380px; text-align:center;">
-                <h3 style="color:#14b8a6;">Coming Soon</h3>
+                <h3 style="color:#8b5cf6;">Available in Elite</h3>
                 <p style="font-size:14px; font-weight:600; color:#f8fafc; margin-bottom:6px;">
                     ${feat ? feat.name : featureId}
                 </p>
                 <p style="font-size:13px; color:#94a3b8; margin-bottom:16px;">
-                    ${feat ? feat.desc : ''} This feature is part of <strong style="color:${tier === 'Elite' ? '#f59e0b' : '#6366f1'}">${tier}</strong>.
+                    ${feat ? feat.desc : ''} This feature is part of <strong style="color:#8b5cf6;">Elite</strong>.
                 </p>
                 <div class="confirm-modal-buttons" style="justify-content:center;">
-                    <button class="confirm-modal-btn" style="background:rgba(20,184,166,0.2); color:#14b8a6;" data-act="waitlist">Join waitlist</button>
                     <button class="confirm-modal-btn cancel">Close</button>
                 </div>
             </div>
@@ -273,17 +289,6 @@ export const SettingsPanel = {
         parent.appendChild(modal);
 
         modal.querySelector('.cancel').onclick = () => modal.remove();
-        modal.querySelector('[data-act="waitlist"]').onclick = () => {
-            const subject = encodeURIComponent(`ZERØ ${tier} Waitlist - ${feat ? feat.name : featureId}`);
-            const body = encodeURIComponent(`I'm interested in ${feat ? feat.name : featureId} for ZERØ ${tier}.\n\nPlease add me to the waitlist.`);
-            const mailTo = `mailto:?subject=${subject}&body=${body}`;
-            // Copy to clipboard as fallback
-            try {
-                navigator.clipboard.writeText(`I'm interested in ZERØ ${tier}: ${feat ? feat.name : featureId}. Please add me to the waitlist.`);
-            } catch { /* ignore */ }
-            window.open(mailTo);
-            modal.remove();
-        };
         modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
     },
 

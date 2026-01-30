@@ -1,42 +1,37 @@
 export const TIERS = {
     FREE: 'free',
-    PRO: 'pro',
     ELITE: 'elite'
 };
 
 export const FEATURES = {
-    // Phase 1-2: Core
+    // Free: Core trading + raw stats
     BASIC_TRADING: 'free',
     REAL_TIME_PNL: 'free',
-
-    // Phase 2-4: Pro Foundations
-    STRATEGY_TAGGING: 'pro',
-    EMOTION_TRACKING: 'pro',
-    DISCIPLINE_SCORING: 'pro',
-    AI_DEBRIEF: 'pro',
-    TRADE_PLAN: 'pro',  // Stop loss, targets, thesis capture
-
-    // Phase 5-6: Advanced Pro
-    EQUITY_CHARTS: 'pro',
-    DETAILED_LOGS: 'pro',
-    ADVANCED_ANALYTICS: 'pro',
-    RISK_ADJUSTED_METRICS: 'pro',
+    STRATEGY_TAGGING: 'free',
+    EMOTION_TRACKING: 'free',
+    EQUITY_CHARTS: 'free',
     SHARE_TO_X: 'free',
 
-    // Phase 6+: Elite
+    // Elite: Interpretation, context, behavioral intelligence
+    TRADE_PLAN: 'elite',
+    DISCIPLINE_SCORING: 'elite',
+    AI_DEBRIEF: 'elite',
+    DETAILED_LOGS: 'elite',
+    ADVANCED_ANALYTICS: 'elite',
+    RISK_ADJUSTED_METRICS: 'elite',
     TILT_DETECTION: 'elite',
     SESSION_REPLAY: 'elite',
     ADVANCED_COACHING: 'elite',
     BEHAVIOR_BASELINE: 'elite',
     MARKET_CONTEXT: 'elite',
-    TRADER_PROFILE: 'elite',  // Personal Trader Profile dashboard
+    TRADER_PROFILE: 'elite',
 
-    // Explicit tease-card keys (alias existing features for Settings UI)
-    PRO_TRADE_PLAN: 'pro',
-    PRO_DISCIPLINE: 'pro',
-    PRO_STRATEGY_ANALYTICS: 'pro',
-    PRO_EMOTION_ANALYTICS: 'pro',
-    PRO_AI_DEBRIEF: 'pro',
+    // Tease-card keys (for Settings/Insights UI)
+    ELITE_TRADE_PLAN: 'elite',
+    ELITE_DISCIPLINE: 'elite',
+    ELITE_STRATEGY_ANALYTICS: 'elite',
+    ELITE_EMOTION_ANALYTICS: 'elite',
+    ELITE_AI_DEBRIEF: 'elite',
     ELITE_TILT_DETECTION: 'elite',
     ELITE_RISK_METRICS: 'elite',
     ELITE_SESSION_REPLAY: 'elite',
@@ -45,22 +40,20 @@ export const FEATURES = {
 };
 
 /**
- * Display metadata for teased Pro/Elite feature cards.
- * Used by the Settings UI to render locked cards with descriptions.
+ * Display metadata for Elite feature cards.
+ * Used by Settings, Dashboard, and Insights UI to render locked cards.
  */
 export const TEASED_FEATURES = {
-    PRO: [
-        { id: 'PRO_TRADE_PLAN', name: 'Trade Planning', desc: 'Set stop losses, targets, and capture your thesis before every trade.' },
-        { id: 'PRO_DISCIPLINE', name: 'Discipline Scoring', desc: 'Track how well you stick to your trading rules with an objective score.' },
-        { id: 'PRO_STRATEGY_ANALYTICS', name: 'Strategy Analytics', desc: 'See which strategies perform best and refine your edge.' },
-        { id: 'PRO_EMOTION_ANALYTICS', name: 'Emotion Analytics', desc: 'Understand how your emotional state affects your trading outcomes.' },
-        { id: 'PRO_AI_DEBRIEF', name: 'AI Trade Debrief', desc: 'Get AI-powered post-trade analysis to accelerate your learning.' },
-    ],
     ELITE: [
+        { id: 'ELITE_TRADE_PLAN', name: 'Trade Planning', desc: 'Set stop losses, targets, and capture your thesis before every trade.' },
+        { id: 'ELITE_DISCIPLINE', name: 'Discipline Scoring', desc: 'Track how well you stick to your trading rules with an objective score.' },
+        { id: 'ELITE_STRATEGY_ANALYTICS', name: 'Strategy Insights', desc: 'See which strategies perform best across sessions.' },
+        { id: 'ELITE_EMOTION_ANALYTICS', name: 'Emotion Insights', desc: 'Understand how your emotional state affects your trading outcomes.' },
+        { id: 'ELITE_AI_DEBRIEF', name: 'AI Trade Debrief', desc: 'Post-session behavioral analysis to accelerate your learning.' },
         { id: 'ELITE_TILT_DETECTION', name: 'Tilt Detection', desc: 'Real-time alerts when your behavior signals emotional trading.' },
         { id: 'ELITE_RISK_METRICS', name: 'Risk Metrics', desc: 'Advanced risk-adjusted performance metrics for serious traders.' },
         { id: 'ELITE_SESSION_REPLAY', name: 'Session Replay', desc: 'Replay your sessions to review decisions and improve execution.' },
-        { id: 'ELITE_TRADER_PROFILE', name: 'Trader Profile', desc: 'Your personal trading identity — strengths, weaknesses, and growth.' },
+        { id: 'ELITE_TRADER_PROFILE', name: 'Trader Profile', desc: 'Your personal trading identity \u2014 strengths, weaknesses, and growth.' },
         { id: 'ELITE_MARKET_CONTEXT', name: 'Market Context', desc: 'Overlay market conditions to see how context affected your trades.' },
     ],
 };
@@ -68,9 +61,9 @@ export const TEASED_FEATURES = {
 /**
  * Feature Flag States:
  * - enabled: Background logic/data collection runs
- * - visible: UI elements are rendered in the DOM
+ * - visible: UI elements are rendered in the DOM (may show locked card)
  * - interactive: User can click/input/use the feature
- * - gated: Shows upgrade messaging/locking overlay
+ * - gated: Shows locked card / upgrade messaging
  */
 export const FeatureManager = {
     TIERS,
@@ -80,7 +73,6 @@ export const FeatureManager = {
         const userTier = state.settings?.tier || TIERS.FREE;
         const requiredTier = FEATURES[featureName];
 
-        // Default flags (Kill-switch check first)
         const flags = {
             enabled: false,
             visible: false,
@@ -90,37 +82,31 @@ export const FeatureManager = {
 
         if (!requiredTier) return flags;
 
-        // 1. Tier Entitlement Logic
         const hasEntitlement = this.hasTierAccess(userTier, requiredTier);
 
-        // 2. Rollout Phase Logic (Simulated for Now)
-        // Phases: 'beta', 'preview', 'full'
-        const phase = state.settings?.rolloutPhase || 'full';
-
-        // 3. Flag Resolution based on Entitlement + Phase
+        // Flag Resolution
         if (requiredTier === TIERS.FREE) {
             flags.enabled = true;
             flags.visible = true;
             flags.interactive = true;
             flags.gated = false;
         } else {
-            // Premium Features
-            flags.enabled = true; // Always collect data for analytics if feature exists
+            // Elite Features
+            flags.enabled = true; // Always collect data for analytics
 
             if (hasEntitlement) {
                 flags.visible = true;
                 flags.interactive = true;
                 flags.gated = false;
             } else {
-                // Not entitled
-                // FORCE HIDDEN FOR PRODUCTION FREE RELEASE
-                flags.visible = false;
+                // Not entitled — visible but locked (enables locked card rendering)
+                flags.visible = true;
                 flags.interactive = false;
-                flags.gated = true; // Still marked as gated internally
+                flags.gated = true;
             }
         }
 
-        // 4. Remote Kill-Switch Override (from Store)
+        // Remote Kill-Switch Override
         if (state.settings?.featureOverrides?.[featureName] === false) {
             flags.enabled = false;
             flags.visible = false;
@@ -132,8 +118,11 @@ export const FeatureManager = {
 
     hasTierAccess(userTier, requiredTier) {
         if (requiredTier === TIERS.FREE) return true;
-        if (requiredTier === TIERS.PRO) return [TIERS.PRO, TIERS.ELITE].includes(userTier);
         if (requiredTier === TIERS.ELITE) return userTier === TIERS.ELITE;
         return false;
+    },
+
+    isElite(state) {
+        return (state?.settings?.tier || TIERS.FREE) === TIERS.ELITE;
     }
 };

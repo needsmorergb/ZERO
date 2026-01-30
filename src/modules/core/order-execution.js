@@ -59,7 +59,7 @@ export const OrderExecution = {
         console.log(`[EXEC] BUY ${symbol}: +${qtyDelta.toFixed(2)} ($${buyUsd.toFixed(2)}) @ $${priceUsd}`);
 
         const fillData = {
-            side: 'ENTRY',
+            side: 'BUY',
             mint,
             symbol,
             solAmount,
@@ -139,7 +139,7 @@ export const OrderExecution = {
         const pnlEventSol = pnlEventUsd / solUsd;
 
         const fillData = {
-            side: 'EXIT',
+            side: 'SELL',
             mint,
             symbol,
             percent: pct,
@@ -163,7 +163,7 @@ export const OrderExecution = {
         // Update win/loss streaks via Analytics
         try {
             Analytics.updateStreaks({ side: 'SELL', realizedPnlSol: pnlEventSol }, state);
-        } catch (e) { /* Analytics should not block trade execution */ }
+        } catch (e) { /* Analytics should not block trade recording */ }
 
         await Store.save();
         return { success: true, message: `Sold ${pct}% ${symbol}`, trade: { id: fillId } };

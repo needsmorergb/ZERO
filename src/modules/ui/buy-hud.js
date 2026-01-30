@@ -16,6 +16,7 @@ export const BuyHud = {
     buyHudTab: 'buy',
     buyHudEdit: false,
     tradePlanExpanded: false,
+    lastEmotionTradeId: null, // Debounce: one prompt per trade
 
     // State for reuse
     makeDraggableRef: null,
@@ -180,7 +181,7 @@ export const BuyHud = {
                 const field = root.querySelector('input[data-k="field"]');
                 if (field) {
                     field.value = val;
-                    // One-click execution
+                    // One-click trade
                     await this.executeTrade(root);
                 }
             }
@@ -206,6 +207,10 @@ export const BuyHud = {
         const emoFlags = FeatureManager.resolveFlags(Store.state, 'EMOTION_TRACKING');
         if (!emoFlags.enabled || Store.state.settings.showJournal === false) return;
 
+        // Debounce: one prompt per trade ID
+        if (!tradeId || tradeId === this.lastEmotionTradeId) return;
+        this.lastEmotionTradeId = tradeId;
+
         const container = OverlayManager.getContainer();
         const existing = container.querySelector('.emotion-modal-overlay');
         if (existing) existing.remove();
@@ -225,22 +230,22 @@ export const BuyHud = {
         overlay.style.fontFamily = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
 
         const emotions = [
-            { id: 'calm', label: 'Calm', icon: '😌' },
-            { id: 'anxious', label: 'Anxious', icon: '😨' },
-            { id: 'excited', label: 'Excited', icon: '🤩' },
-            { id: 'angry', label: 'Angry/Rev', icon: '😡' },
-            { id: 'bored', label: 'Bored', icon: '🥱' },
-            { id: 'confident', label: 'Confident', icon: '😎' }
+            { id: 'calm', label: 'Calm', icon: ICONS.EMO_CALM },
+            { id: 'anxious', label: 'Anxious', icon: ICONS.EMO_ANXIOUS },
+            { id: 'excited', label: 'Excited', icon: ICONS.EMO_EXCITED },
+            { id: 'angry', label: 'Angry/Rev', icon: ICONS.EMO_ANGRY },
+            { id: 'bored', label: 'Bored', icon: ICONS.EMO_BORED },
+            { id: 'confident', label: 'Confident', icon: ICONS.EMO_CONFIDENT }
         ];
 
         overlay.innerHTML = `
             <div class="emotion-modal" style="position:absolute; pointer-events:auto; box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 1px solid rgba(20,184,166,0.2); width:320px;">
-                <div class="emotion-title">TRADE EXECUTED</div>
+                <div class="emotion-title">POST-TRADE CHECK</div>
                 <div class="emotion-subtitle">How are you feeling right now?</div>
                 <div class="emotion-grid">
                     ${emotions.map(e => `
                         <button class="emotion-btn" data-emo="${e.id}">
-                            <span>${e.icon}</span> ${e.label}
+                            <span class="emotion-icon">${e.icon}</span> ${e.label}
                         </button>
                     `).join('')}
                 </div>
@@ -286,20 +291,6 @@ export const BuyHud = {
         });
 
         overlay.querySelector('.emotion-skip').onclick = close;
-
-        if (emoFlags.gated) {
-            const modalInner = overlay.querySelector('.emotion-modal');
-            modalInner.style.filter = 'grayscale(1) opacity(0.8)';
-            const lock = document.createElement('div');
-            lock.innerHTML = '<div style="background:rgba(13,17,23,0.8); color:#14b8a6; padding:10px; border-radius:8px; font-weight:800; cursor:pointer;">PRO FEATURE: EMOTION TRACKING</div>';
-            lock.style.position = 'absolute';
-            lock.style.top = '50%';
-            lock.style.left = '50%';
-            lock.style.transform = 'translate(-50%, -50%)';
-            lock.style.pointerEvents = 'auto';
-            lock.onclick = (e) => { e.stopPropagation(); Paywall.showUpgradeModal(); };
-            modalInner.appendChild(lock);
-        }
     },
 
     updateBuyHud() {
@@ -389,7 +380,7 @@ export const BuyHud = {
             return `
                 <div class="plan-toggle" data-act="toggle-plan">
                     <span style="display:flex; align-items:center; gap:6px;">
-                        ${ICONS.TARGET} ${isGated ? 'TRADE PLAN (PRO)' : 'ADD TRADE PLAN'}
+                        ${ICONS.TARGET} ${isGated ? 'TRADE PLAN (ELITE)' : 'ADD TRADE PLAN'}
                     </span>
                     ${ICONS.CHEVRON_DOWN}
                 </div>
@@ -406,7 +397,7 @@ export const BuyHud = {
                     <div data-act="upgrade-plan">
                         <div class="plan-gated-badge">
                             ${ICONS.LOCK}
-                            <span>TRADE PLAN (PRO)</span>
+                            <span>TRADE PLAN (ELITE)</span>
                         </div>
                         <div class="plan-gated-hint">Define stop loss, targets & thesis</div>
                     </div>
@@ -419,7 +410,7 @@ export const BuyHud = {
                 <div class="plan-header">
                     <span class="plan-title">${ICONS.TARGET} Trade Plan</span>
                     <div style="display:flex; align-items:center; gap:8px;">
-                        <span class="plan-tag">PRO</span>
+                        <span class="plan-tag">ELITE</span>
                         <div class="plan-collapse-arrow" data-act="toggle-plan">${ICONS.CHEVRON_UP}</div>
                     </div>
                 </div>
@@ -499,8 +490,7 @@ export const BuyHud = {
         const val = parseFloat(field?.value || '0');
         const status = root.querySelector('[data-k="status"]');
         const strategyEl = root.querySelector('select[data-k="strategy"]');
-        const strategyFlags = FeatureManager.resolveFlags(Store.state, 'STRATEGY_TAGGING');
-        const strategy = strategyEl && strategyFlags.interactive ? strategyEl.value : "Trend";
+        const strategy = strategyEl ? strategyEl.value : "Trend";
 
         if (val <= 0) {
             if (status) status.textContent = "Invalid amount";
@@ -534,7 +524,7 @@ export const BuyHud = {
         }
 
         if (res && res.success) {
-            status.textContent = "Trade executed!";
+            status.textContent = "Trade logged!";
             field.value = "";
 
             // Trigger Marker Draw
@@ -561,7 +551,7 @@ export const BuyHud = {
             if (window.ZeroHUD && window.ZeroHUD.updateAll) {
                 window.ZeroHUD.updateAll();
             }
-            // Trigger Emotion Selector
+            // Trigger post-trade check
             setTimeout(() => {
                 this.showEmotionSelector(res.trade.id);
             }, 500);

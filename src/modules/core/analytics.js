@@ -185,7 +185,7 @@ export const Analytics = {
                 reasons.push("Oversizing (>50%)");
             }
 
-            // 4. No Trade Plan (PRO feature - only penalize if feature is available)
+            // 4. No Trade Plan (Elite feature - only penalize if feature is available)
             const planFlags = FeatureManager.resolveFlags(state, 'TRADE_PLAN');
             if (planFlags.interactive && !trade.riskDefined) {
                 penalty += 5;

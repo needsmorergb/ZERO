@@ -96,8 +96,9 @@ import { Logger } from './modules/logger.js';
         if (type === 'SET_TIER') {
             const state = Store.state;
             if (state && state.settings) {
-                Logger.info(`Admin: Setting tier to ${val}...`);
-                state.settings.tier = val;
+                const validTier = (val === 'elite') ? 'elite' : 'free';
+                Logger.info(`Admin: Setting tier to ${validTier}...`);
+                state.settings.tier = validTier;
                 await Store.save();
                 location.reload();
             }
