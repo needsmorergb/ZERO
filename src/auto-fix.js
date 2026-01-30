@@ -384,10 +384,12 @@
                 document.querySelector('h2.MuiTypography-h2');
         } else {
             // Axiom: Look for chart canvas or trading widget
+            const hasBuyButton = Array.from(document.querySelectorAll('button'))
+                .some(button => (button.textContent || '').trim().toLowerCase().includes('buy'));
             isReady = document.querySelector('canvas') ||
                 document.querySelector('[class*="chart"]') ||
                 document.querySelector('[class*="trading"]') ||
-                document.querySelector('button:has-text("Buy")');
+                hasBuyButton;
         }
 
         if (isReady) {
