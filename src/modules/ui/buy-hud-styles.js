@@ -288,4 +288,189 @@ export const BUY_HUD_CSS = `
     color: #f8fafc;
     margin-left: 4px;
 }
+
+/* Trade Plan Styles */
+#${IDS.buyHud} .plan-toggle {
+    margin-top: 12px;
+    padding: 10px 14px;
+    background: #161b22;
+    border: 1px solid rgba(20,184,166,0.15);
+    border-radius: 8px;
+    color: #94a3b8;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+    transition: all 0.2s;
+}
+
+#${IDS.buyHud} .plan-toggle:hover {
+    border-color: rgba(20,184,166,0.3);
+    background: #1c2128;
+}
+
+#${IDS.buyHud} .plan-toggle svg {
+    flex-shrink: 0;
+}
+
+#${IDS.buyHud} .trade-plan-section {
+    margin-top: 12px;
+    padding: 12px 14px;
+    background: #161b22;
+    border: 1px solid rgba(20,184,166,0.15);
+    border-radius: 8px;
+}
+
+#${IDS.buyHud} .trade-plan-section.gated {
+    background: linear-gradient(135deg, rgba(168,85,247,0.05), rgba(139,92,246,0.05));
+    border: 1px dashed rgba(168,85,247,0.25);
+}
+
+#${IDS.buyHud} .plan-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+#${IDS.buyHud} .plan-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #e2e8f0;
+    font-weight: 700;
+    font-size: 11px;
+}
+
+#${IDS.buyHud} .plan-tag {
+    background: rgba(168,85,247,0.15);
+    color: #a78bfa;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}
+
+#${IDS.buyHud} .plan-collapse-arrow {
+    cursor: pointer;
+    color: #64748b;
+    padding: 4px;
+    transition: color 0.2s;
+}
+
+#${IDS.buyHud} .plan-collapse-arrow:hover {
+    color: #94a3b8;
+}
+
+#${IDS.buyHud} .plan-gated-badge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px;
+    background: rgba(168,85,247,0.1);
+    border: 1px dashed rgba(168,85,247,0.3);
+    border-radius: 6px;
+    color: #a855f7;
+    font-weight: 700;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+#${IDS.buyHud} .plan-gated-badge:hover {
+    background: rgba(168,85,247,0.15);
+    border-color: rgba(168,85,247,0.5);
+}
+
+#${IDS.buyHud} .plan-gated-hint {
+    text-align: center;
+    color: #64748b;
+    font-size: 10px;
+    margin-top: 6px;
+}
+
+#${IDS.buyHud} .plan-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+#${IDS.buyHud} .plan-field {
+    flex: 1;
+}
+
+#${IDS.buyHud} .plan-field.full {
+    flex: unset;
+    width: 100%;
+}
+
+#${IDS.buyHud} .plan-label {
+    display: block;
+    color: #64748b;
+    font-weight: 600;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-bottom: 4px;
+}
+
+#${IDS.buyHud} .plan-label .optional {
+    font-weight: 400;
+    text-transform: none;
+    color: #475569;
+}
+
+#${IDS.buyHud} .plan-input-wrap {
+    display: flex;
+    align-items: center;
+    background: #0d1117;
+    border: 1px solid rgba(20,184,166,0.15);
+    border-radius: 6px;
+    overflow: hidden;
+    transition: border-color 0.2s;
+}
+
+#${IDS.buyHud} .plan-input-wrap:focus-within {
+    border-color: #14b8a6;
+}
+
+#${IDS.buyHud} .plan-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: #f8fafc;
+    padding: 8px 10px;
+    font-size: 12px;
+    font-family: inherit;
+    outline: none;
+    min-width: 0;
+}
+
+#${IDS.buyHud} .plan-unit {
+    color: #475569;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 0 8px;
+    flex-shrink: 0;
+}
+
+#${IDS.buyHud} .plan-textarea {
+    width: 100%;
+    background: #0d1117;
+    border: 1px solid rgba(20,184,166,0.15);
+    border-radius: 6px;
+    color: #f8fafc;
+    padding: 8px 10px;
+    font-size: 11px;
+    font-family: inherit;
+    outline: none;
+    resize: vertical;
+    min-height: 36px;
+    transition: border-color 0.2s;
+}
+
+#${IDS.buyHud} .plan-textarea:focus {
+    border-color: #14b8a6;
+}
 `;

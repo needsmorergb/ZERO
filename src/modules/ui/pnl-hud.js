@@ -60,10 +60,10 @@ export const PnlHud = {
         root.innerHTML = `
             <div class="card">
               <div class="header">
-                <div class="title" style="display:flex;align-items:center;justify-content:space-between;flex:1;"><div><span class="dot"></span> ZERØ PNL</div><span class="muted" data-k="tokenSymbol" style="font-weight:700;color:rgba(148,163,184,0.85);">TOKEN</span></div>
+                <div class="title"><div><span class="dot"></span> ZERØ PNL</div><span class="muted" data-k="tokenSymbol" style="font-weight:700;color:rgba(148,163,184,0.85);margin-left:10px;">TOKEN</span></div>
                 <div class="controls">
                   <div class="startSol">
-                    <span style="font-weight:700;color:rgba(203,213,225,0.92);">Start SOL</span>
+                    <span style="font-weight:700;color:rgba(203,213,225,0.92);font-size:10px;">Start</span>
                     <input class="startSolInput" type="text" inputmode="decimal" />
                   </div>
                   <button class="pillBtn" data-act="shareX" style="background:rgba(29,155,240,0.15);color:#1d9bf0;border:1px solid rgba(29,155,240,0.3);font-family:'Arial',sans-serif;font-weight:600;display:none;" id="pnl-share-btn">Share 𝕏</button>

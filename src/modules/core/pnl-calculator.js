@@ -124,19 +124,26 @@ export const PnlCalculator = {
 
             if (currentMC > 0 && entryMC > 0 && totalSolSpent > 0) {
                 const mcRatio = currentMC / entryMC;
-                const currentValueSol = totalSolSpent * mcRatio;
-                const unrealizedPnlSol = currentValueSol - totalSolSpent;
-                const unrealizedPnlUsd = unrealizedPnlSol * solUsd;
 
-                const pnlPct = (totalSolSpent > 0) ? (unrealizedPnlSol / totalSolSpent) * 100 : 0;
-                pos.pnlPct = pnlPct;
-                if (pos.peakPnlPct === undefined || pnlPct > pos.peakPnlPct) pos.peakPnlPct = pnlPct;
+                // SANITY CHECK: MC ratio > 100,000x likely indicates corrupted entry/current MC data
+                if (mcRatio > 100000 || mcRatio < 0.00001) {
+                    console.warn(`[PNL] ${pos.symbol}: SUSPICIOUS MC RATIO ${mcRatio.toFixed(2)}x (entry=$${entryMC.toFixed(0)}, current=$${currentMC.toFixed(0)}) — falling back to WAC method`);
+                    // Fall through to Method 2 (WAC fallback)
+                } else {
+                    const currentValueSol = totalSolSpent * mcRatio;
+                    const unrealizedPnlSol = currentValueSol - totalSolSpent;
+                    const unrealizedPnlUsd = unrealizedPnlSol * solUsd;
 
-                totalUnrealizedUsd += unrealizedPnlUsd;
-                totalUnrealizedSol += unrealizedPnlSol;
+                    const pnlPct = (totalSolSpent > 0) ? (unrealizedPnlSol / totalSolSpent) * 100 : 0;
+                    pos.pnlPct = pnlPct;
+                    if (pos.peakPnlPct === undefined || pnlPct > pos.peakPnlPct) pos.peakPnlPct = pnlPct;
 
-                console.log(`[PNL] ${pos.symbol}: MC Ratio — entryMC=$${entryMC.toFixed(0)}, currentMC=$${currentMC.toFixed(0)}, ratio=${mcRatio.toFixed(4)}, pnl=${unrealizedPnlSol.toFixed(4)} SOL (${pnlPct.toFixed(1)}%)`);
-                return;
+                    totalUnrealizedUsd += unrealizedPnlUsd;
+                    totalUnrealizedSol += unrealizedPnlSol;
+
+                    console.log(`[PNL] ${pos.symbol}: MC Ratio — entryMC=$${entryMC.toFixed(0)}, currentMC=$${currentMC.toFixed(0)}, ratio=${mcRatio.toFixed(4)}, pnl=${unrealizedPnlSol.toFixed(4)} SOL (${pnlPct.toFixed(1)}%)`);
+                    return;
+                }
             }
 
             // 3. Method 2: WAC fallback if MC not available

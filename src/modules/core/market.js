@@ -13,26 +13,33 @@ export const Market = {
     // Legacy support flags if needed
     lastTickTs: 0,
     lastSource: null, // 'site', 'dom', 'api'
+    lastChartMCapTs: 0, // Dedicated tracker for chart MCap activity
 
     init() {
         console.log('[Market] Initializing API-Driven Market Service');
 
-        // 1. Subscribe to Data Service (API Polling - Fallback)
+        // 1. Subscribe to Data Service (API Polling)
         TokenMarketDataService.subscribe((data) => {
-            // Only use API data if we haven't had a real-time tick in the last 2 seconds
             const now = Date.now();
-            if (this.lastSource && this.lastSource !== 'api' && (now - this.lastTickTs < 2000)) {
-                // Chart-based pricing is active — don't overwrite marketCap from API
-                // The chart PRICE_TICK provides chartMCap which matches the chart display
-                this.liquidity = data.liquidityUsd;
-                return;
+            // Use dedicated chart MCap timestamp — immune to lastSource race condition
+            // when multiple API responses arrive between chart ticks
+            const chartMCapActive = (now - this.lastChartMCapTs) < 3000;
+
+            // ALWAYS accept API price — it's the authoritative source from DexScreener/Jupiter.
+            // This prevents the DOM price corruption problem on initial load.
+            if (data.priceUsd > 0) {
+                this.price = data.priceUsd;
+                this.priceIsFresh = !data.isStale;
             }
 
-            this.price = data.priceUsd;
-            this.marketCap = data.marketCapUsd;
+            // Only protect marketCap from API overwrite when chart is actively providing MCap.
+            // Chart MCap matches the Y-axis display; API FDV may differ.
+            if (!chartMCapActive && data.marketCapUsd > 0) {
+                this.marketCap = data.marketCapUsd;
+            }
+
             this.liquidity = data.liquidityUsd;
-            this.currentSymbol = data.symbol;
-            this.priceIsFresh = !data.isStale;
+            if (data.symbol) this.currentSymbol = data.symbol;
             this.lastSource = 'api';
 
             // Send price/MCap reference to bridge for chart-based price inference
@@ -77,6 +84,7 @@ export const Market = {
                     // Use chart MCap when provided (matches chart display, not API FDV)
                     if (d.chartMCap > 0) {
                         this.marketCap = d.chartMCap;
+                        this.lastChartMCapTs = now;
                     }
 
                     this.notify();

@@ -378,7 +378,7 @@ export const BuyHud = {
 
         if (!isExpanded) {
             return `
-                <div class="plan-toggle" data-act="toggle-plan">
+                <div class="plan-toggle" data-act="toggle-plan" style="display:flex; justify-content:space-between; align-items:center;">
                     <span style="display:flex; align-items:center; gap:6px;">
                         ${ICONS.TARGET} ${isGated ? 'TRADE PLAN (ELITE)' : 'ADD TRADE PLAN'}
                     </span>

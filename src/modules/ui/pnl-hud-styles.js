@@ -33,7 +33,7 @@ export const PNL_HUD_CSS = `
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 20px;
+  padding: 10px 14px;
   background: #0d1117;
   border-bottom: 1px solid rgba(20,184,166,0.1);
   cursor: grab;
@@ -66,23 +66,26 @@ export const PNL_HUD_CSS = `
 #${IDS.pnlHud} .controls {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 5px;
   font-size: 11px;
   color: #64748b;
+  flex-shrink: 0;
 }
 
 #${IDS.pnlHud} .pillBtn {
   border: 1px solid rgba(20,184,166,0.2);
   background: transparent;
   color: #94a3b8;
-  padding: 6px 12px;
-  border-radius: 6px;
+  padding: 4px 7px;
+  border-radius: 5px;
   cursor: pointer;
   font-weight: 600;
-  font-size: 11px;
+  font-size: 10px;
   transition: all 0.2s;
   text-transform: uppercase;
-  letter-spacing: 0.3px;
+  letter-spacing: 0;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 #${IDS.pnlHud} .pillBtn:hover {
@@ -94,18 +97,19 @@ export const PNL_HUD_CSS = `
 #${IDS.pnlHud} .startSol {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 5px;
 }
 
 #${IDS.pnlHud} input.startSolInput {
-  width: 70px;
+  width: 52px;
   border: 1px solid rgba(20,184,166,0.2);
   background: #161b22;
   color: #f8fafc;
-  padding: 6px 10px;
-  border-radius: 6px;
+  padding: 4px 7px;
+  border-radius: 5px;
   outline: none;
   font-weight: 600;
+  font-size: 11px;
   pointer-events: auto;
   cursor: text;
   transition: all 0.2s;

@@ -47,9 +47,10 @@ export const TokenContextResolver = {
             }
         }
 
-        // On Padre, URL contains pool/pair address, not token mint — skip URL extraction
-        // and rely on DOM/link scanning (pump.fun links, data attributes, CA: text)
-        if (sourceSite !== 'padre') {
+        // On Padre AND Axiom, the URL contains a pool/pair address, not the token mint.
+        // We rely on DOM/link scanning (solscan links, pump.fun links, CA: text) to find the real CA.
+        // Only use URL extraction on platforms where the URL reliably contains the token mint.
+        if (sourceSite !== 'padre' && sourceSite !== 'axiom') {
             const mintMatch = url.match(/\/trade\/(?:solana\/)?([a-zA-Z0-9]{32,44})/) ||
                 url.match(/\/token\/(?:solana\/)?([a-zA-Z0-9]{32,44})/) ||
                 url.match(/\/terminal\/(?:solana\/)?([a-zA-Z0-9]{32,44})/) ||
@@ -70,9 +71,9 @@ export const TokenContextResolver = {
             }
         }
 
-        // Padre needs DOM scanning for mint (URL has pool address, not token mint)
-        // Use shorter throttle (500ms) on Padre vs 1500ms on other platforms
-        const domScanThrottle = sourceSite === 'padre' ? 500 : 1500;
+        // Padre + Axiom need DOM scanning for mint (URL has pool address, not token mint)
+        // Use shorter throttle (500ms) for responsive CA detection
+        const domScanThrottle = (sourceSite === 'padre' || sourceSite === 'axiom') ? 500 : 1500;
         const shouldScanDom = urlChanged || (!activeMint && now - this._cache.lastDomScanAt > domScanThrottle);
         if (!activeMint && shouldScanDom) {
             this._cache.lastDomScanAt = now;
@@ -125,11 +126,29 @@ export const TokenContextResolver = {
                             seen += 1;
                             continue;
                         }
+                        // Try full mint in text first
                         const mm = text.match(/(?:CA|DA):\s*([1-9A-HJ-NP-Za-km-z]{32,44})/);
                         if (mm) {
                             activeMint = mm[1];
                             break;
                         }
+                        // Axiom: CA text is truncated (e.g. "CA: DNnz...pump") but the
+                        // adjacent <a> element's href contains the full address.
+                        // Walk up the DOM tree to find a nearby link with the full mint.
+                        let container = walker.currentNode?.parentElement;
+                        for (let depth = 0; depth < 5 && container && !activeMint; depth++) {
+                            const nearbyLinks = container.querySelectorAll('a[href]');
+                            for (const link of nearbyLinks) {
+                                const href = link.href || '';
+                                const hm = href.match(/([1-9A-HJ-NP-Za-km-z]{32,44})/);
+                                if (hm && hm[1].length >= 32) {
+                                    activeMint = hm[1];
+                                    break;
+                                }
+                            }
+                            container = container.parentElement;
+                        }
+                        if (activeMint) break;
                         seen += 1;
                     }
                 } catch (e) { }
