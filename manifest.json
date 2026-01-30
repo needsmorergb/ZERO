@@ -38,37 +38,36 @@
   },
   "content_scripts": [
     {
-      "matches": [
-        "https://axiom.trade/*",
-        "https://trade.padre.gg/*"
-      ],
-      "js": [
-        "src/content.bundle.js"
-      ],
+      "matches": ["https://axiom.trade/*"],
+      "js": ["src/content.bundle.axiom.js"],
       "run_at": "document_idle"
     },
     {
-      "matches": [
-        "https://axiom.trade/*",
-        "https://trade.padre.gg/*"
-      ],
-      "js": [
-        "src/bridge.main.js"
-      ],
+      "matches": ["https://axiom.trade/*"],
+      "js": ["src/bridge.bundle.axiom.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://trade.padre.gg/*"],
+      "js": ["src/content.bundle.padre.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://trade.padre.gg/*"],
+      "js": ["src/bridge.bundle.padre.js"],
       "run_at": "document_start",
       "world": "MAIN"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": [
-        "src/page-bridge.js",
-        "src/professor.png"
-      ],
-      "matches": [
-        "https://axiom.trade/*",
-        "https://trade.padre.gg/*"
-      ]
+      "resources": ["src/page-bridge.js", "src/professor.png"],
+      "matches": ["https://axiom.trade/*"]
+    },
+    {
+      "resources": ["src/professor.png"],
+      "matches": ["https://trade.padre.gg/*"]
     }
   ]
 }

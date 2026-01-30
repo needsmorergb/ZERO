@@ -5,8 +5,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "esbuild src/content.boot.js --bundle --outfile=src/content.bundle.js --format=iife",
-    "watch": "esbuild src/content.boot.js --bundle --outfile=src/content.bundle.js --format=iife --watch",
+    "build": "npm run build:axiom && npm run build:padre",
+    "build:axiom": "esbuild src/platforms/axiom/boot.axiom.js --bundle --outfile=src/content.bundle.axiom.js --format=iife && esbuild src/platforms/axiom/bridge.axiom.js --bundle --outfile=src/bridge.bundle.axiom.js --format=iife",
+    "build:padre": "esbuild src/platforms/padre/boot.padre.js --bundle --outfile=src/content.bundle.padre.js --format=iife && esbuild src/platforms/padre/bridge.padre.js --bundle --outfile=src/bridge.bundle.padre.js --format=iife",
     "lint": "eslint src/**/*.js",
     "format": "prettier --write \"src/**/*.{js,css,html}\""
   },

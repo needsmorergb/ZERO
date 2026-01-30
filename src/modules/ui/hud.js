@@ -16,9 +16,14 @@ export const HUD = {
         this.renderAll();
         window.addEventListener('resize', () => this.scheduleRender());
 
-        // Draw historical markers
+        // Draw historical markers (normalize side names for bridge)
         if (Store.state.trades) {
-            const trades = Object.values(Store.state.trades);
+            const trades = Object.values(Store.state.trades).map(t => ({
+                ...t,
+                side: t.side === 'ENTRY' ? 'BUY' : (t.side === 'EXIT' ? 'SELL' : t.side),
+                priceUsd: t.fillPriceUsd || t.priceUsd,
+                marketCap: t.marketCapUsdAtFill || t.marketCap
+            }));
             setTimeout(() => {
                 window.postMessage({ __paper: true, type: "PAPER_DRAW_ALL", trades }, "*");
             }, 2000); // Wait for TV to load

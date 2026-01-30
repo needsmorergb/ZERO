@@ -9,6 +9,11 @@ export const Banner = {
         const body = document.body;
         if (!body) return;
 
+        // Padre uses a full-height app layout — never add body padding there
+        // The ZERØ banner is position:fixed and floats without displacing content
+        const isPadre = window.location.hostname.includes('padre.gg');
+        if (isPadre) return;
+
         const offset = 44;
         const html = document.documentElement;
         const bodyStyle = getComputedStyle(body);
@@ -17,10 +22,8 @@ export const Banner = {
             ["hidden", "clip"].includes(bodyStyle.overflow) ||
             ["hidden", "clip"].includes(htmlStyle.overflowY) ||
             ["hidden", "clip"].includes(htmlStyle.overflow);
-        const isPadre = window.location.hostname.includes('padre.gg');
-        const shouldOffsetBody = !isPadre || !isOverflowLocked;
 
-        if (!shouldOffsetBody) return;
+        if (isOverflowLocked) return;
 
         const prev = body.getAttribute("data-paper-prev-padding-top");
         if (!prev) {

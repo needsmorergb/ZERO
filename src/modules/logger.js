@@ -20,6 +20,12 @@ export const Logger = {
 
     cleanArgs(args) {
         return args.map(arg => {
+            if (arg instanceof Error) {
+                return { name: arg.name, message: arg.message, stack: arg.stack };
+            }
+            if (typeof DOMException !== 'undefined' && arg instanceof DOMException) {
+                return { name: arg.name, message: arg.message, code: arg.code };
+            }
             if (typeof arg === 'object' && arg !== null) {
                 // Shallow clone to avoid mutation
                 const clean = { ...arg };

@@ -2432,6 +2432,7 @@ input:checked + .slider:before {
     shadowHost: null,
     shadowRoot: null,
     initialized: false,
+    platformName: null,
     init(platformName) {
       if (this.initialized)
         return;
@@ -2440,6 +2441,7 @@ input:checked + .slider:before {
         return;
       }
       this.initialized = true;
+      this.platformName = platformName;
       console.log(`[ZER\xD8] OverlayManager.init() called with platform: "${platformName}"`);
       try {
         this.createShadowRoot();
@@ -2450,14 +2452,6 @@ input:checked + .slider:before {
         this.injectStyles();
       } catch (e) {
         console.warn("[ZER\xD8] Style injection failed:", e);
-      }
-      if (platformName === "Padre") {
-        console.log("[ZER\xD8] Padre detected - using DOM polling only");
-        try {
-          this.injectPadreOffset();
-        } catch (e) {
-          console.warn("[ZER\xD8] Padre offset injection failed:", e);
-        }
       }
     },
     getShadowRoot() {
@@ -2685,7 +2679,7 @@ input:checked + .slider:before {
     }
   };
 
-  // src/content.boot.js
+  // src/platforms/padre/boot.padre.js
   init_store();
 
   // src/modules/featureManager.js
@@ -2800,22 +2794,29 @@ input:checked + .slider:before {
 
   // src/modules/core/token-context.js
   var TokenContextResolver = {
+    _platform: null,
+    // 'axiom' | 'padre'
     _cache: {
       lastUrl: null,
       lastResult: { activeMint: null, activeSymbol: null, sourceSite: "unknown" },
       lastDomScanAt: 0
     },
-    // Resolve the current context
+    init(platformName) {
+      if (platformName === "Axiom")
+        this._platform = "axiom";
+      else if (platformName === "Padre")
+        this._platform = "padre";
+      else
+        this._platform = "unknown";
+    },
     resolve() {
       const url = window.location.href;
-      const hostname = window.location.hostname;
       const now = Date.now();
       const urlChanged = url !== this._cache.lastUrl;
-      let sourceSite = "unknown";
+      const sourceSite = this._platform || "unknown";
       let activeMint = null;
       let activeSymbol = null;
-      if (hostname.includes("axiom.trade")) {
-        sourceSite = "axiom";
+      if (sourceSite === "axiom") {
         const title = document.title || "";
         const words = title.replace(/[|$-]/g, " ").trim().split(/\s+/);
         for (const w of words) {
@@ -2824,8 +2825,7 @@ input:checked + .slider:before {
             break;
           }
         }
-      } else if (hostname.includes("padre.gg")) {
-        sourceSite = "padre";
+      } else if (sourceSite === "padre") {
         const title = document.title || "";
         const cleaned = title.replace(/\s*[↓↑]\s*\$[\d,.]+[KMB]?\s*$/i, "").trim();
         const m = cleaned.match(/([A-Z0-9]+)\s*\//i);
@@ -6685,7 +6685,7 @@ Please add me to the waitlist.`);
     }
   };
 
-  // src/content.boot.js
+  // src/platforms/padre/boot.padre.js
   init_diagnostics_store();
 
   // src/modules/logger.js
@@ -6724,15 +6724,12 @@ Please add me to the waitlist.`);
     }
   };
 
-  // src/content.boot.js
+  // src/platforms/padre/boot.padre.js
   (async () => {
     "use strict";
-    Logger.info("ZER\xD8 v1.11.14 (API-Driven Architecture)");
-    const PLATFORM = {
-      isAxiom: window.location.hostname.includes("axiom.trade"),
-      isPadre: window.location.hostname.includes("padre.gg"),
-      name: window.location.hostname.includes("axiom.trade") ? "Axiom" : "Padre"
-    };
+    const PLATFORM = "Padre";
+    Logger.info(`ZER\xD8 v1.11.14 (${PLATFORM} Platform)`);
+    TokenContextResolver.init(PLATFORM);
     try {
       Logger.info("Loading Store...");
       const state = await Store2.load();
@@ -6751,8 +6748,8 @@ Please add me to the waitlist.`);
       Logger.info("Loading DiagnosticsStore...");
       await DiagnosticsStore.load();
       DiagnosticsStore.logEvent("SESSION_STARTED", {
-        platform: PLATFORM.isAxiom ? "AXIOM" : PLATFORM.isPadre ? "PADRE" : "UNKNOWN"
-      }, { platform: PLATFORM.isAxiom ? "AXIOM" : PLATFORM.isPadre ? "PADRE" : "UNKNOWN" });
+        platform: "PADRE"
+      }, { platform: "PADRE" });
     } catch (e) {
       Logger.error("DiagnosticsStore Init Failed:", e);
     }
@@ -6764,7 +6761,7 @@ Please add me to the waitlist.`);
     }
     try {
       Logger.info("Init Overlay...");
-      OverlayManager.init(PLATFORM.name);
+      OverlayManager.init(PLATFORM);
       Professor.init();
     } catch (e) {
       Logger.error("Overlay Init Failed:", e);

@@ -1,0 +1,262 @@
+/**
+ * Shared Bridge Utilities
+ * Platform-independent helpers used by both Axiom and Padre bridges.
+ * Runs in MAIN world (page context).
+ */
+
+export const CHANNEL = "__paper";
+
+export const MAX_SCAN_CHARS = 200_000;
+
+export const safe = (fn) => { try { return fn(); } catch { return undefined; } };
+
+export const send = (payload) => {
+    window.postMessage({ [CHANNEL]: true, ...payload }, "*");
+};
+
+export const isLikelySolanaMint = (s) => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(String(s || ""));
+
+export const normalizeSymbol = (s) => String(s || "").trim().toUpperCase();
+
+export function createContext() {
+    return {
+        mint: null,
+        symbol: null,
+        lastEmitAt: 0,
+        minEmitGapMs: 150,
+        refPrice: 0,
+        refMCap: 0,
+    };
+}
+
+export function throttleEmit(ctx) {
+    const t = Date.now();
+    if (t - ctx.lastEmitAt < ctx.minEmitGapMs) return false;
+    ctx.lastEmitAt = t;
+    return true;
+}
+
+export function looksRelatedByString(rawStr, ctx) {
+    if (!rawStr) return false;
+    const s = rawStr.slice(0, MAX_SCAN_CHARS);
+    const mint = ctx.mint;
+    const sym = ctx.symbol;
+
+    if (mint && s.includes(mint)) return true;
+    if (sym && s.toUpperCase().includes(sym.toUpperCase())) return true;
+
+    if (s.length < 500 && s.match(/"p":\s*0\.0/)) return true;
+    if (s.length < 500 && s.match(/"price":\s*0\.0/)) return true;
+
+    return false;
+}
+
+export function extractPriceUsd(obj) {
+    if (!obj || typeof obj !== "object") return null;
+
+    const preferred = ["priceUsd", "usdPrice", "price_usd", "markPriceUsd", "lastPriceUsd", "closeUsd"];
+    const common = ["price", "last", "lastPrice", "markPrice", "close", "c", "p"];
+
+    let found = null;
+    let steps = 0;
+    const MAX_STEPS = 500;
+
+    const walk = (x) => {
+        if (!x || found || steps > MAX_STEPS || typeof x !== 'object') return;
+        steps++;
+
+        if (Array.isArray(x)) {
+            for (const it of x) walk(it);
+            return;
+        }
+
+        for (const k of preferred) {
+            const v = x[k];
+            const n = typeof v === "string" ? Number(v) : v;
+            if (Number.isFinite(n) && n > 0) {
+                found = { price: n, confidence: 3, key: k };
+                return;
+            }
+        }
+
+        for (const k of common) {
+            const v = x[k];
+            const n = typeof v === "string" ? Number(v) : v;
+            if (Number.isFinite(n) && n > 0) {
+                found = { price: n, confidence: 1, key: k };
+                return;
+            }
+        }
+
+        for (const v of Object.values(x)) {
+            if (found) return;
+            walk(v);
+        }
+    };
+
+    walk(obj);
+    return found;
+}
+
+export function tryHandleJson(url, json, ctx) {
+    const isRelated = looksRelatedByString(JSON.stringify(json), ctx);
+    const r = extractPriceUsd(json);
+
+    if (r && isRelated) {
+        if (!throttleEmit(ctx)) return;
+
+        console.log(`[ZERØ] Price Intercepted (Network): $${r.price} (from ${url})`);
+        send({
+            type: "PRICE_TICK",
+            source: "site",
+            url,
+            price: r.price,
+            confidence: r.confidence,
+            key: r.key || null,
+            ts: Date.now()
+        });
+    }
+}
+
+export const findTV = () => {
+    // 1. Check main window (Standard & Padre)
+    if (window.tvWidget && typeof window.tvWidget.activeChart === 'function') return window.tvWidget;
+    if (window.tradingViewApi && typeof window.tradingViewApi.activeChart === 'function') return window.tradingViewApi;
+    if (window.TradingView && window.TradingView.widget && typeof window.TradingView.widget.activeChart === 'function') return window.TradingView.widget;
+    if (window.widget && typeof window.widget.activeChart === 'function') return window.widget;
+
+    // 2. Check iframes (Axiom specific — harmless no-op on Padre)
+    try {
+        for (let i = 0; i < window.frames.length; i++) {
+            try {
+                const frame = window.frames[i];
+                if (frame.tradingViewApi && typeof frame.tradingViewApi.activeChart === 'function') {
+                    console.log('[ZERØ] Found tradingViewApi in iframe[' + i + ']');
+                    return frame.tradingViewApi;
+                }
+                if (frame.tvWidget && typeof frame.tvWidget.activeChart === 'function') {
+                    console.log('[ZERØ] Found tvWidget in iframe[' + i + ']');
+                    return frame.tvWidget;
+                }
+            } catch (e) { /* Cross-origin iframe, skip */ }
+        }
+    } catch (e) { console.log('[ZERØ] Error searching iframes:', e); }
+
+    return null;
+};
+
+export const activeMarkers = [];
+
+export const drawMarker = (trade) => {
+    console.log("[ZERØ] drawMarker() called for", trade.side, trade.symbol);
+
+    let attempts = 0;
+    const maxAttempts = 20;
+
+    const tryDraw = () => {
+        attempts++;
+        const tv = findTV();
+        if (tv && tv.activeChart) {
+            console.log("[ZERØ] TradingView widget found, drawing marker...");
+            clearInterval(pollInterval);
+            try {
+                const chart = tv.activeChart();
+                const side = (trade.side || "").toUpperCase();
+                const isBuy = side === "BUY";
+
+                const ts = Math.floor(trade.ts / 1000);
+                const chartPrice = trade.marketCap || trade.priceUsd;
+                const color = isBuy ? "#10b981" : "#ef4444";
+
+                if (typeof chart.createExecutionShape === 'function') {
+                    const shape = chart.createExecutionShape()
+                        .setTime(ts)
+                        .setPrice(chartPrice)
+                        .setDirection(isBuy ? 'buy' : 'sell')
+                        .setText(isBuy ? 'BUY' : 'SELL')
+                        .setTextColor('#ffffff')
+                        .setArrowColor(color)
+                        .setArrowSpacing(8)
+                        .setArrowHeight(22);
+
+                    try { shape.setFont('bold 12px Inter'); } catch (e) { }
+                    activeMarkers.push({ fmt: 'exec', ref: shape });
+                } else {
+                    const id = chart.createShape({ time: ts, location: isBuy ? "belowbar" : "abovebar" }, {
+                        shape: "text",
+                        lock: true,
+                        text: isBuy ? "\n\n\n\n↑\nB" : "S\n↓\n\n\n\n",
+                        overrides: { color, fontsize: 16, bold: true }
+                    });
+                    if (id) activeMarkers.push({ fmt: 'std', id: id });
+                }
+            } catch (e) {
+                console.warn("[ZERØ] Marker failed:", e);
+            }
+        } else if (attempts >= maxAttempts) {
+            console.warn(`[ZERØ] TradingView widget not found after ${maxAttempts} attempts`);
+            clearInterval(pollInterval);
+        } else {
+            console.log(`[ZERØ] TradingView widget not found yet, attempt ${attempts}/${maxAttempts}`);
+        }
+    };
+
+    const pollInterval = setInterval(tryDraw, 100);
+    tryDraw();
+};
+
+export function setupMessageListener(ctx, opts = {}) {
+    const { onPriceReference } = opts;
+
+    window.addEventListener("message", (e) => {
+        if (e.source !== window || !e.data?.[CHANNEL]) return;
+        const d = e.data;
+
+        if (d.type === "PAPER_SET_CONTEXT") {
+            const mint = isLikelySolanaMint(d.mint) ? d.mint : null;
+            const sym = normalizeSymbol(d.symbol);
+            ctx.mint = mint;
+            ctx.symbol = sym || null;
+            ctx.refPrice = 0;
+            ctx.refMCap = 0;
+            console.log("[ZERØ] Bridge Context Updated:", ctx.mint, ctx.symbol);
+        }
+
+        if (d.type === "PAPER_PRICE_REFERENCE") {
+            ctx.refPrice = d.priceUsd || 0;
+            ctx.refMCap = d.marketCapUsd || 0;
+            console.log(`[ZERØ] Price Reference: $${ctx.refPrice}, MCap: $${ctx.refMCap}`);
+            if (onPriceReference) onPriceReference(ctx);
+        }
+
+        if (d.type === "PAPER_DRAW_MARKER") {
+            drawMarker(d.trade);
+        }
+        if (d.type === "PAPER_DRAW_ALL") {
+            console.log("[ZERØ] Drawing", (d.trades || []).length, "markers");
+            (d.trades || []).forEach(drawMarker);
+        }
+        if (d.type === "PAPER_CLEAR_MARKERS") {
+            const tv = findTV();
+            if (tv && tv.activeChart) {
+                try {
+                    const chart = tv.activeChart();
+                    activeMarkers.forEach(m => {
+                        try {
+                            if (m.fmt === 'exec' && m.ref && m.ref.remove) {
+                                m.ref.remove();
+                            } else if (m.fmt === 'std' && m.id) {
+                                chart.removeEntity(m.id);
+                            }
+                        } catch (err) { }
+                    });
+                    activeMarkers.length = 0;
+                    if (chart.removeAllShapes) chart.removeAllShapes();
+                    console.log("[ZERØ] Markers cleared.");
+                } catch (err) {
+                    console.warn("[ZERØ] Failed to clear markers:", err);
+                }
+            }
+        }
+    });
+}

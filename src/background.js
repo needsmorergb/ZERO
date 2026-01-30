@@ -112,7 +112,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         'api.coingecko.com',
         'api.dexscreener.com',
         'api.coinbase.com',
-        'api.kraken.com'
+        'api.kraken.com',
+        'api.jup.ag',
+        'lite-api.jup.ag'
       ];
 
       try {

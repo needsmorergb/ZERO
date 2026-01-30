@@ -1,26 +1,33 @@
 /**
  * Token Context Resolver
  * Determines the active token mint and source site.
+ * Platform is set once via init() — no hostname checks at resolve time.
  */
 
 export const TokenContextResolver = {
+    _platform: null, // 'axiom' | 'padre'
     _cache: {
         lastUrl: null,
         lastResult: { activeMint: null, activeSymbol: null, sourceSite: 'unknown' },
         lastDomScanAt: 0
     },
-    // Resolve the current context
+
+    init(platformName) {
+        if (platformName === 'Axiom') this._platform = 'axiom';
+        else if (platformName === 'Padre') this._platform = 'padre';
+        else this._platform = 'unknown';
+    },
+
     resolve() {
         const url = window.location.href;
-        const hostname = window.location.hostname;
         const now = Date.now();
         const urlChanged = url !== this._cache.lastUrl;
-        let sourceSite = 'unknown';
+        const sourceSite = this._platform || 'unknown';
         let activeMint = null;
         let activeSymbol = null;
 
-        if (hostname.includes('axiom.trade')) {
-            sourceSite = 'axiom';
+        // --- Platform-specific title parsing ---
+        if (sourceSite === 'axiom') {
             const title = document.title || "";
             const words = title.replace(/[|$-]/g, ' ').trim().split(/\s+/);
             for (const w of words) {
@@ -29,8 +36,7 @@ export const TokenContextResolver = {
                     break;
                 }
             }
-        } else if (hostname.includes('padre.gg')) {
-            sourceSite = 'padre';
+        } else if (sourceSite === 'padre') {
             const title = document.title || "";
             const cleaned = title.replace(/\s*[↓↑]\s*\$[\d,.]+[KMB]?\s*$/i, '').trim();
             const m = cleaned.match(/([A-Z0-9]+)\s*\//i);
@@ -41,26 +47,33 @@ export const TokenContextResolver = {
             }
         }
 
-        const mintMatch = url.match(/\/trade\/(?:solana\/)?([a-zA-Z0-9]{32,44})/) ||
-            url.match(/\/token\/(?:solana\/)?([a-zA-Z0-9]{32,44})/) ||
-            url.match(/\/terminal\/(?:solana\/)?([a-zA-Z0-9]{32,44})/) ||
-            url.match(/\/meme\/([a-zA-Z0-9]{32,44})/);
+        // On Padre, URL contains pool/pair address, not token mint — skip URL extraction
+        // and rely on DOM/link scanning (pump.fun links, data attributes, CA: text)
+        if (sourceSite !== 'padre') {
+            const mintMatch = url.match(/\/trade\/(?:solana\/)?([a-zA-Z0-9]{32,44})/) ||
+                url.match(/\/token\/(?:solana\/)?([a-zA-Z0-9]{32,44})/) ||
+                url.match(/\/terminal\/(?:solana\/)?([a-zA-Z0-9]{32,44})/) ||
+                url.match(/\/meme\/([a-zA-Z0-9]{32,44})/);
 
-        if (mintMatch && mintMatch[1]) {
-            activeMint = mintMatch[1];
+            if (mintMatch && mintMatch[1]) {
+                activeMint = mintMatch[1];
+            }
+
+            if (!activeMint) {
+                const urlParamMatch = url.match(/[?&](?:mint|token|address)=([1-9A-HJ-NP-Za-km-z]{32,44})/i);
+                if (urlParamMatch) activeMint = urlParamMatch[1];
+            }
+
+            if (!activeMint) {
+                const allMints = url.match(/[1-9A-HJ-NP-Za-km-z]{32,44}/g);
+                if (allMints) activeMint = allMints.find(m => m.length >= 32 && m.length <= 44);
+            }
         }
 
-        if (!activeMint) {
-            const urlParamMatch = url.match(/[?&](?:mint|token|address)=([1-9A-HJ-NP-Za-km-z]{32,44})/i);
-            if (urlParamMatch) activeMint = urlParamMatch[1];
-        }
-
-        if (!activeMint) {
-            const allMints = url.match(/[1-9A-HJ-NP-Za-km-z]{32,44}/g);
-            if (allMints) activeMint = allMints.find(m => m.length >= 32 && m.length <= 44);
-        }
-
-        const shouldScanDom = urlChanged || (!activeMint && now - this._cache.lastDomScanAt > 1500);
+        // Padre needs DOM scanning for mint (URL has pool address, not token mint)
+        // Use shorter throttle (500ms) on Padre vs 1500ms on other platforms
+        const domScanThrottle = sourceSite === 'padre' ? 500 : 1500;
+        const shouldScanDom = urlChanged || (!activeMint && now - this._cache.lastDomScanAt > domScanThrottle);
         if (!activeMint && shouldScanDom) {
             this._cache.lastDomScanAt = now;
 
@@ -91,7 +104,7 @@ export const TokenContextResolver = {
 
             if (!activeMint) {
                 try {
-                    const links = document.querySelectorAll('a[href*="solscan"], a[href*="solana.fm"], a[href*="birdeye"], a[href*="bullx"]');
+                    const links = document.querySelectorAll('a[href*="solscan"], a[href*="solana.fm"], a[href*="birdeye"], a[href*="bullx"], a[href*="pump.fun"]');
                     for (const link of links) {
                         const match = link.href.match(/([a-zA-Z0-9]{32,44})/);
                         if (match && match[1] && !link.href.includes('/account/')) {

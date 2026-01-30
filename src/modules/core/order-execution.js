@@ -1,6 +1,7 @@
 import { Market } from './market.js';
 import { PnlCalculator } from './pnl-calculator.js';
 import { Store } from '../store.js';
+import { Analytics } from './analytics.js';
 
 export const OrderExecution = {
 
@@ -17,12 +18,14 @@ export const OrderExecution = {
         if (solAmount <= 0) return { success: false, error: "Invalid SOL amount" };
         if (priceUsd <= 0) return { success: false, error: `Market Data Unavailable (Price: ${priceUsd})` };
 
+        // Diagnostic: log price source at trade time
+        const tickAge = Date.now() - Market.lastTickTs;
+        console.log(`[EXEC] BUY DIAG: price=$${priceUsd}, mcap=$${Market.marketCap}, source=${Market.lastSource}, tickAge=${tickAge}ms`);
+
         // PnL Logic
         const solUsd = PnlCalculator.getSolPrice();
         const buyUsd = solAmount * solUsd;
         const qtyDelta = buyUsd / priceUsd;
-
-
 
         // Init position if new
         if (!state.positions[mint]) {
@@ -64,11 +67,15 @@ export const OrderExecution = {
             qtyTokensDelta: qtyDelta,
             fillPriceUsd: priceUsd,
             marketCapUsdAtFill: Market.marketCap,
+            priceSource: Market.lastSource || 'unknown',
             strategy,
             tradePlan // Store if provided
         };
 
         const fillId = this.recordFill(state, fillData);
+
+        // Deduct SOL from session balance
+        state.session.balance -= solAmount;
 
         await Store.save();
         return { success: true, message: `Bought ${symbol}`, trade: { id: fillId } };
@@ -85,6 +92,11 @@ export const OrderExecution = {
         if (!state.positions[mint] || state.positions[mint].qtyTokens <= 0) return { success: false, error: "No open position" };
 
         const pos = state.positions[mint];
+
+        // Diagnostic: log price source and position state at sell time
+        const tickAge = Date.now() - Market.lastTickTs;
+        console.log(`[EXEC] SELL DIAG: price=$${priceUsd}, mcap=$${Market.marketCap}, source=${Market.lastSource}, tickAge=${tickAge}ms`);
+        console.log(`[EXEC] SELL DIAG: avgCost=$${pos.avgCostUsdPerToken}, qty=${pos.qtyTokens}, costBasis=$${pos.costBasisUsd}`);
 
         // Percent defaults to 100
         const pct = (percent === undefined || percent === null) ? 100 : Math.min(Math.max(percent, 0), 100);
@@ -122,6 +134,10 @@ export const OrderExecution = {
 
         console.log(`[EXEC] SELL ${symbol}: -${qtyDelta.toFixed(2)} ($${proceedsUsd.toFixed(2)}) PnL: $${pnlEventUsd.toFixed(2)}`);
 
+        // Convert to SOL for session tracking
+        const proceedsSol = proceedsUsd / solUsd;
+        const pnlEventSol = pnlEventUsd / solUsd;
+
         const fillData = {
             side: 'EXIT',
             mint,
@@ -131,10 +147,23 @@ export const OrderExecution = {
             proceedsUsd,
             fillPriceUsd: priceUsd,
             marketCapUsdAtFill: Market.marketCap,
-            strategy
+            priceSource: Market.lastSource || 'unknown',
+            strategy,
+            realizedPnlSol: pnlEventSol
         };
 
         const fillId = this.recordFill(state, fillData);
+
+        // Update session balance (add back SOL proceeds from sale)
+        state.session.balance += proceedsSol;
+
+        // Track realized PnL in session
+        state.session.realized = (state.session.realized || 0) + pnlEventSol;
+
+        // Update win/loss streaks via Analytics
+        try {
+            Analytics.updateStreaks({ side: 'SELL', realizedPnlSol: pnlEventSol }, state);
+        } catch (e) { /* Analytics should not block trade execution */ }
 
         await Store.save();
         return { success: true, message: `Sold ${pct}% ${symbol}`, trade: { id: fillId } };
@@ -163,6 +192,14 @@ export const OrderExecution = {
         };
         state.fills.unshift(fill);
         state.trades[id] = fill;
+
+        // Track in session
+        if (state.session) {
+            if (!state.session.trades) state.session.trades = [];
+            state.session.trades.push(id);
+            state.session.tradeCount = (state.session.tradeCount || 0) + 1;
+        }
+
         // Cap history (e.g. 500)
         if (state.fills.length > 500) state.fills.pop();
         return id;

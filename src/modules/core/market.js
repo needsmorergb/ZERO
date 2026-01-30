@@ -22,8 +22,8 @@ export const Market = {
             // Only use API data if we haven't had a real-time tick in the last 2 seconds
             const now = Date.now();
             if (this.lastSource && this.lastSource !== 'api' && (now - this.lastTickTs < 2000)) {
-                // Keep MC and Liquidity even if price is ignored
-                this.marketCap = data.marketCapUsd;
+                // Chart-based pricing is active — don't overwrite marketCap from API
+                // The chart PRICE_TICK provides chartMCap which matches the chart display
                 this.liquidity = data.liquidityUsd;
                 return;
             }
@@ -34,6 +34,21 @@ export const Market = {
             this.currentSymbol = data.symbol;
             this.priceIsFresh = !data.isStale;
             this.lastSource = 'api';
+
+            // Send price/MCap reference to bridge for chart-based price inference
+            // Only send when values change meaningfully (>0.5%) to reduce noise
+            if (data.priceUsd > 0 && data.marketCapUsd > 0) {
+                const priceDelta = this._lastRefPrice ? Math.abs(data.priceUsd - this._lastRefPrice) / this._lastRefPrice : 1;
+                if (priceDelta > 0.005 || !this._lastRefPrice) {
+                    this._lastRefPrice = data.priceUsd;
+                    window.postMessage({
+                        __paper: true,
+                        type: 'PAPER_PRICE_REFERENCE',
+                        priceUsd: data.priceUsd,
+                        marketCapUsd: data.marketCapUsd
+                    }, '*');
+                }
+            }
 
             // Notify UI
             this.notify();
@@ -58,6 +73,12 @@ export const Market = {
                     this.priceIsFresh = true;
                     this.lastTickTs = now;
                     this.lastSource = d.source || 'site';
+
+                    // Use chart MCap when provided (matches chart display, not API FDV)
+                    if (d.chartMCap > 0) {
+                        this.marketCap = d.chartMCap;
+                    }
+
                     this.notify();
                 }
             }

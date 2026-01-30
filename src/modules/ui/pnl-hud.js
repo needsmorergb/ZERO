@@ -420,7 +420,9 @@ export const PnlHud = {
 
         let html = '';
         tradeObjs.forEach(t => {
-            const isBuy = t.side === 'BUY';
+            // Normalize side: ENTRY->BUY, EXIT->SELL
+            const side = t.side === 'ENTRY' ? 'BUY' : (t.side === 'EXIT' ? 'SELL' : t.side);
+            const isBuy = side === 'BUY';
             let valStr = '';
             let pnlClass = 'muted';
 
@@ -433,23 +435,24 @@ export const PnlHud = {
             }
 
             // Format market cap
+            const mc = t.marketCapUsdAtFill || t.marketCap || 0;
             let mcStr = '';
-            if (t.marketCap && t.marketCap > 0) {
-                if (t.marketCap >= 1000000000) {
-                    mcStr = `$${(t.marketCap / 1000000000).toFixed(2)}B`;
-                } else if (t.marketCap >= 1000000) {
-                    mcStr = `$${(t.marketCap / 1000000).toFixed(2)}M`;
-                } else if (t.marketCap >= 1000) {
-                    mcStr = `$${(t.marketCap / 1000).toFixed(1)}K`;
+            if (mc > 0) {
+                if (mc >= 1000000000) {
+                    mcStr = `$${(mc / 1000000000).toFixed(2)}B`;
+                } else if (mc >= 1000000) {
+                    mcStr = `$${(mc / 1000000).toFixed(2)}M`;
+                } else if (mc >= 1000) {
+                    mcStr = `$${(mc / 1000).toFixed(1)}K`;
                 } else {
-                    mcStr = `$${t.marketCap.toFixed(0)}`;
+                    mcStr = `$${mc.toFixed(0)}`;
                 }
             }
 
             html += `
                 <div class="tradeRow">
                     <div class="muted" style="font-size:9px;">${new Date(t.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
-                    <div class="tag ${t.side.toLowerCase()}">${t.side}</div>
+                    <div class="tag ${side.toLowerCase()}">${side}</div>
                     <div style="flex:1;">
                         <div>${t.symbol}</div>
                     </div>
@@ -499,16 +502,13 @@ export const PnlHud = {
 
         return positions.map(pos => {
             // Calculate current price (use live if viewing this token)
-            let currentPrice = pos.lastPriceUsd || pos.entryPriceUsd;
-            if (pos.mint === currentToken?.mint && currentPrice > 0) {
-                // Use last known price, it gets updated when viewing the token
-            }
+            let currentPrice = pos.lastMarkPriceUsd || pos.avgCostUsdPerToken || 0;
 
-            // Calculate PnL
-            const valueUsd = pos.qtyTokens * currentPrice;
-            const valueSol = valueUsd / solUsd;
-            const pnl = valueSol - pos.totalSolSpent;
-            const pnlPct = pos.totalSolSpent > 0 ? (pnl / pos.totalSolSpent) * 100 : 0;
+            // Calculate PnL using WAC method (consistent with header PNL)
+            const currentValueUsd = pos.qtyTokens * currentPrice;
+            const unrealizedPnlUsd = currentValueUsd - (pos.costBasisUsd || 0);
+            const pnl = unrealizedPnlUsd / solUsd;
+            const pnlPct = pos.costBasisUsd > 0 ? (unrealizedPnlUsd / pos.costBasisUsd) * 100 : 0;
             const isPositive = pnl >= 0;
 
             return `
@@ -516,8 +516,8 @@ export const PnlHud = {
                     <div class="positionInfo">
                         <div class="positionSymbol">${pos.symbol || 'UNKNOWN'}</div>
                         <div class="positionDetails">
-                            <span class="positionQty">${this.formatQty(pos.qtyTokens)}</span>
-                            <span class="positionPrices">Entry: $${this.formatPrice(pos.entryPriceUsd)} → $${this.formatPrice(currentPrice)}</span>
+                            <span class="positionQty">${this.formatQty(pos.qtyTokens)} tokens</span>
+                            <span class="positionPrices">Avg: $${this.formatPrice(pos.avgCostUsdPerToken)} → $${this.formatPrice(currentPrice)}</span>
                         </div>
                     </div>
                     <div class="positionPnl ${isPositive ? 'positive' : 'negative'}">
@@ -547,7 +547,9 @@ export const PnlHud = {
         if (!p || p <= 0) return '0.00';
         if (p >= 1) return p.toFixed(4);
         if (p >= 0.0001) return p.toFixed(6);
-        return p.toExponential(2);
+        // For micro-cap tokens (e.g. $0.0000418), show full decimal instead of scientific notation
+        const leadingZeros = Math.floor(-Math.log10(p));
+        return p.toFixed(leadingZeros + 3);
     },
 
     async executeQuickSell(mint, pct) {
@@ -565,6 +567,23 @@ export const PnlHud = {
 
         if (result.success) {
             console.log(`[PnlHud] Quick sell ${pct}% of ${pos.symbol} successful`);
+
+            // Draw SELL marker on chart
+            if (result.trade && result.trade.id) {
+                const fullTrade = (Store.state.trades && Store.state.trades[result.trade.id])
+                    ? Store.state.trades[result.trade.id]
+                    : (Store.state.fills ? Store.state.fills.find(f => f.id === result.trade.id) : null);
+                if (fullTrade) {
+                    const bridgeTrade = {
+                        ...fullTrade,
+                        side: fullTrade.side === 'ENTRY' ? 'BUY' : (fullTrade.side === 'EXIT' ? 'SELL' : fullTrade.side),
+                        priceUsd: fullTrade.fillPriceUsd || fullTrade.priceUsd,
+                        marketCap: fullTrade.marketCapUsdAtFill || fullTrade.marketCap
+                    };
+                    window.postMessage({ __paper: true, type: "PAPER_DRAW_MARKER", trade: bridgeTrade }, "*");
+                }
+            }
+
             // Update UI
             if (window.ZeroHUD && window.ZeroHUD.updateAll) {
                 window.ZeroHUD.updateAll();

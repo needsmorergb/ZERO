@@ -3,6 +3,10 @@ import { ICONS } from './icons.js';
 
 export const Professor = {
 
+    init() {
+        // Professor onboarding disabled for this release
+    },
+
     showCritique(trigger, value, analysisState) {
         // Professor module disabled for Free production release
         return;
