@@ -3,15 +3,14 @@
   const CONFIG = {
     AXIOM_URL: "https://axiom.trade/@takep",
     TERMINAL_URL: "https://trade.padre.gg/rk/take",
-    DISCORD_URL: "https://discord.gg/", // TODO: Add your Discord invite link
+    TELEGRAM_URL: "https://t.me/ZERO_SupportBot",
+    WEBSITE_URL: "https://get-zero.xyz",
   };
 
   const $ = (id) => document.getElementById(id);
 
   // Set asset URLs
   $("zeroIcon").src = chrome.runtime.getURL("assets/zero-48.png");
-  $("axiomLogo").src = chrome.runtime.getURL("assets/axiom.png");
-  $("terminalLogo").src = chrome.runtime.getURL("assets/terminal.png");
 
   // Get version from manifest
   const manifest = chrome.runtime.getManifest();
@@ -28,8 +27,13 @@
     if (tab?.id) chrome.tabs.update(tab.id, { url: CONFIG.TERMINAL_URL });
   });
 
-  $("discordLink").addEventListener("click", (e) => {
+  $("telegramLink").addEventListener("click", (e) => {
     e.preventDefault();
-    chrome.tabs.create({ url: CONFIG.DISCORD_URL });
+    chrome.tabs.create({ url: CONFIG.TELEGRAM_URL });
+  });
+
+  $("websiteLink").addEventListener("click", (e) => {
+    e.preventDefault();
+    chrome.tabs.create({ url: CONFIG.WEBSITE_URL });
   });
 })();

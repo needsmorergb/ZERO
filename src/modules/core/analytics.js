@@ -566,6 +566,7 @@ export const Analytics = {
         }
 
         text += `Paper trading with ZERØ on Solana\n`;
+        text += `https://get-zero.xyz\n\n`;
         text += `#Solana #PaperTrading #Crypto`;
 
         return text;
