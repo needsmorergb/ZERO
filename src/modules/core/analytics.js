@@ -352,13 +352,13 @@ export const Analytics = {
 
         // 1. Choppy / Low Vol Warning
         if (vol < 500000 && Date.now() - (state.lastRegimeAlert || 0) > 3600000) {
-            this.addAlert(state, 'MARKET_REGIME', "📉 LOW VOLUME: Liquidity is thin ($<500k). Slippage may be high.");
+            this.addAlert(state, 'MARKET_REGIME', "LOW VOLUME: Liquidity is thin ($<500k). Slippage may be high.");
             state.lastRegimeAlert = Date.now();
         }
 
         // 2. High Volatility Warning
         if (chg > 50 && Date.now() - (state.lastRegimeAlert || 0) > 3600000) {
-            this.addAlert(state, 'MARKET_REGIME', "⚠️ HIGH VOLATILITY: 24h change is >50%. Expect rapid swings.");
+            this.addAlert(state, 'MARKET_REGIME', "HIGH VOLATILITY: 24h change is >50%. Expect rapid swings.");
             state.lastRegimeAlert = Date.now();
         }
     },
@@ -369,7 +369,7 @@ export const Analytics = {
 
         const lossStreak = state.session.lossStreak || 0;
         if (lossStreak >= 3) {
-            this.addAlert(state, 'TILT', `⚠️ TILT DETECTED: ${lossStreak} Losses in a row. Take a break.`);
+            this.addAlert(state, 'TILT', `TILT DETECTED: ${lossStreak} Losses in a row. Take a break.`);
             state.behavior.tiltFrequency = (state.behavior.tiltFrequency || 0) + 1;
         }
     },
@@ -381,7 +381,7 @@ export const Analytics = {
 
         const pos = state.positions[trade.mint];
         if (pos && (pos.pnlSol || 0) < 0) {
-            this.addAlert(state, 'SUNK_COST', "📉 SUNK COST: Averaging down into a losing position increases risk.");
+            this.addAlert(state, 'SUNK_COST', "SUNK COST: Averaging down into a losing position increases risk.");
             state.behavior.sunkCostFrequency = (state.behavior.sunkCostFrequency || 0) + 1;
         }
     },
@@ -413,7 +413,7 @@ export const Analytics = {
         // AND the last trade must be recent (within last 5 minutes)
         if (timeSpan < 300000 && timeSinceLast < 300000) {
             console.log(`[ZERØ ALERT] Overtrading Detected: 5 trades in ${(timeSpan / 1000).toFixed(1)}s`, last5.map(t => t.id));
-            this.addAlert(state, 'VELOCITY', "⚠️ OVERTRADING: You're trading too fast. Stop and evaluate setups.");
+            this.addAlert(state, 'VELOCITY', "OVERTRADING: You're trading too fast. Stop and evaluate setups.");
             state.behavior.overtradingFrequency = (state.behavior.overtradingFrequency || 0) + 1;
             state.lastOvertradingAlert = Date.now();
         }
@@ -430,7 +430,7 @@ export const Analytics = {
             // If it was up > 10% and now it's < 0%
             if (peakPct > 10 && pnlPct < 0) {
                 if (!pos.alertedGreenToRed) {
-                    this.addAlert(state, 'PROFIT_NEGLECT', `🍏 GREEN-TO-RED: ${pos.symbol} was up 10%+. Don't let winners die.`);
+                    this.addAlert(state, 'PROFIT_NEGLECT', `GREEN-TO-RED: ${pos.symbol} was up 10%+. Don't let winners die.`);
                     pos.alertedGreenToRed = true;
                     state.behavior.profitNeglectFrequency = (state.behavior.profitNeglectFrequency || 0) + 1;
                 }
@@ -450,7 +450,7 @@ export const Analytics = {
                 .map(t => t.strategy);
 
             if (profitableStrategies.length >= 3) {
-                this.addAlert(state, 'DRIFT', "🕵️ STRATEGY DRIFT: Playing 'Unknown' instead of your winning setups.");
+                this.addAlert(state, 'DRIFT', "STRATEGY DRIFT: Playing 'Unknown' instead of your winning setups.");
                 state.behavior.strategyDriftFrequency = (state.behavior.strategyDriftFrequency || 0) + 1;
             }
         }
@@ -466,7 +466,7 @@ export const Analytics = {
 
         // FOMO: Rapid buy after a loss or without strategy at potentially high MC
         if (prevTrade && (trade.ts - prevTrade.ts < 30000) && prevTrade.side === 'SELL' && (prevTrade.realizedPnlSol || 0) < 0) {
-            this.addAlert(state, 'FOMO', "🚨 FOMO ALERT: Revenge trading detected.");
+            this.addAlert(state, 'FOMO', "FOMO ALERT: Revenge trading detected.");
             state.behavior.fomoTrades = (state.behavior.fomoTrades || 0) + 1;
         }
     },
@@ -479,7 +479,7 @@ export const Analytics = {
         // Panic Sell: Sell shortly after a price dip if not at target
         // For now, simple time-based check after entry
         if (trade.entryTs && (trade.ts - trade.entryTs < 45000) && (trade.realizedPnlSol || 0) < 0) {
-            this.addAlert(state, 'PANIC', "😱 PANIC SELL: You're cutting too early. Trust your stops.");
+            this.addAlert(state, 'PANIC', "PANIC SELL: You're cutting too early. Trust your stops.");
             state.behavior.panicSells = (state.behavior.panicSells || 0) + 1;
         }
     },
@@ -529,6 +529,7 @@ export const Analytics = {
     },
 
     generateXShareText(state) {
+        const mode = state.settings?.tradingMode || 'paper';
         const trades = Object.values(state.trades || {});
         const sellTrades = trades.filter(t => t.side === 'SELL');
 
@@ -548,28 +549,80 @@ export const Analytics = {
         const pnlFormatted = totalPnl >= 0 ? `+${totalPnl.toFixed(3)}` : totalPnl.toFixed(3);
         const pnlTag = totalPnl >= 0 ? '[PROFIT]' : '[DRAWDOWN]';
 
-        // Generate viral-style post
-        let text = `ZERØ Trading Session Complete\n\n`;
+        // Generate post
+        let text = `ZERO Trading Session Complete\n\n`;
         text += `${pnlTag} P&L: ${pnlFormatted} SOL\n`;
         text += `WIN RATE: ${winRate}%\n`;
         text += `HISTORY: ${wins}W / ${losses}L\n`;
         text += `STREAK: ${currentStreak}\n`;
         text += `DISCIPLINE: ${disciplineScore}/100\n\n`;
 
-        // Add context based on performance
-        if (winRate >= 70) {
-            text += `Systematic Excellence. 💪\n\n`;
-        } else if (winRate >= 50) {
-            text += `Disciplined Execution. 📊\n\n`;
-        } else if (sellTrades.length >= 3) {
-            text += `Baseline Established. 📚\n\n`;
+        // Mode-aware share copy (no emoji)
+        if (mode === 'shadow') {
+            text += `Real trades analyzed using ZERO's advanced behavioral analysis.\n`;
+        } else if (mode === 'analysis') {
+            text += `Real trades observed and reviewed with ZERO.\n`;
+        } else {
+            text += `Paper trading session tracked with ZERO.\n`;
         }
 
-        text += `Paper trading with ZERØ on Solana\n`;
         text += `https://get-zero.xyz\n\n`;
         text += `#Solana #PaperTrading #Crypto`;
 
         return text;
+    },
+
+    /**
+     * Analyze trades filtered by source category.
+     * source: 'paper' | 'real' | 'all'
+     */
+    analyzeTradesBySource(state, source) {
+        const allTrades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+        let trades;
+        if (source === 'paper') {
+            trades = allTrades.filter(t => t.mode === 'paper' || !t.mode);
+        } else if (source === 'real') {
+            trades = allTrades.filter(t => t.mode === 'analysis' || t.mode === 'shadow');
+        } else {
+            trades = allTrades;
+        }
+
+        if (trades.length === 0) return null;
+        const recentTrades = trades.slice(-10);
+
+        let wins = 0, losses = 0;
+        let totalPnlSol = 0;
+
+        for (const trade of recentTrades) {
+            const pnl = trade.realizedPnlSol || 0;
+            if (pnl > 0) wins++;
+            else if (pnl < 0) losses++;
+            totalPnlSol += pnl;
+        }
+
+        const winRate = recentTrades.length > 0 ? (wins / recentTrades.length) * 100 : 0;
+        const grossProfits = recentTrades.reduce((sum, t) => sum + Math.max(0, t.realizedPnlSol || 0), 0);
+        const grossLosses = Math.abs(recentTrades.reduce((sum, t) => sum + Math.min(0, t.realizedPnlSol || 0), 0));
+        const profitFactor = grossLosses > 0 ? (grossProfits / grossLosses).toFixed(2) : grossProfits > 0 ? "MAX" : "0.00";
+
+        let peak = 0, maxDd = 0, currentBal = 0;
+        recentTrades.forEach(t => {
+            currentBal += (t.realizedPnlSol || 0);
+            if (currentBal > peak) peak = currentBal;
+            const dd = peak - currentBal;
+            if (dd > maxDd) maxDd = dd;
+        });
+
+        return {
+            totalTrades: recentTrades.length,
+            wins,
+            losses,
+            winRate: winRate.toFixed(1),
+            profitFactor,
+            maxDrawdown: maxDd.toFixed(4),
+            totalPnlSol,
+            source
+        };
     },
 
     // ==========================================

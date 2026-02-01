@@ -51,8 +51,8 @@ export const DiagnosticsManager = {
                 console.log(`[DiagnosticsManager] Enqueued ${enqueuedCount} packets.`);
             }
 
-            // 4. Process Queue (send pending packets)
-            await this._processQueue();
+            // 4. Notify background worker to process queue
+            chrome.runtime.sendMessage({ type: "ZERO_TRIGGER_UPLOAD" });
 
         } catch (e) {
             console.error('[DiagnosticsManager] Loop error:', e);
@@ -63,44 +63,8 @@ export const DiagnosticsManager = {
     },
 
     async _processQueue() {
-        const endpoint = DiagnosticsStore.getEndpointUrl();
-        if (!endpoint) return;
-
-        // Process one at a time
-        let packet = DiagnosticsStore.peekPacket();
-        while (packet) {
-            if (!DiagnosticsStore.isAutoSendEnabled()) return; // Stop if disabled mid-loop
-
-            try {
-                console.log(`[DiagnosticsManager] Uploading packet ${packet.uploadId}...`);
-
-                const response = await fetch(endpoint, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(packet.payload)
-                });
-
-                if (response.ok) {
-                    // Success!
-                    DiagnosticsStore.dequeuePacket();
-                    DiagnosticsStore.setLastUploadedEventTs(Date.now()); // Rough approximation, ideally use max ts in packet
-                    DiagnosticsStore.clearBackoff();
-                    console.log(`[DiagnosticsManager] Upload success.`);
-                } else {
-                    // Fail (Server Error)
-                    const txt = await response.text();
-                    throw new Error(`Server ${response.status}: ${txt.slice(0, 100)}`);
-                }
-            } catch (err) {
-                // Network/Other Fail
-                console.warn(`[DiagnosticsManager] Upload failed:`, err);
-                DiagnosticsStore.setLastError(String(err));
-                DiagnosticsStore.setBackoff(RETRY_DELAY_MS);
-                return; // Stop processing queue
-            }
-
-            // Peek next
-            packet = DiagnosticsStore.peekPacket();
-        }
+        // Legacy: processing moved to background.js to prevent cross-tab collisions.
+        // Content script now just triggers the background process.
+        chrome.runtime.sendMessage({ type: "ZERO_TRIGGER_UPLOAD" });
     }
 };

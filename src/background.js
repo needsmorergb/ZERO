@@ -114,7 +114,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         'api.coinbase.com',
         'api.kraken.com',
         'api.jup.ag',
-        'lite-api.jup.ag'
+        'lite-api.jup.ag',
+        'mainnet.helius-rpc.com',
+        'api.helius.xyz',
+        'api.get-zero.xyz'
       ];
 
       try {
@@ -201,142 +204,153 @@ function genUUID() {
  * Main upload handler — called on alarm and on-demand.
  */
 async function handleUploadAlarm() {
-  const state = await readZeroState();
-  if (!state) return 'no_state';
-
-  // Check opt-in
-  if (!state.settings?.privacy?.autoSendDiagnostics) return 'disabled';
-
-  // Check backoff
-  if (Date.now() < (state.upload?.backoffUntilTs || 0)) return 'backoff';
-
-  const endpointUrl = state.settings?.diagnostics?.endpointUrl;
-  if (!endpointUrl) return 'no_endpoint';
-
-  // Check queue — if empty, build a packet from delta events
-  if (!state.upload) state.upload = { queue: [], backoffUntilTs: 0, lastError: null };
-
-  if (state.upload.queue.length === 0) {
-    const lastTs = state.settings?.diagnostics?.lastUploadedEventTs || 0;
-    const events = (state.events || []).filter((e) => e.ts > lastTs);
-    if (events.length === 0) return 'no_data';
-
-    // Build packet
-    const packet = {
-      uploadId: genUUID(),
-      clientId: state.clientId || 'unknown',
-      createdAt: Date.now(),
-      schemaVersion: state.schemaVersion || 3,
-      extensionVersion: chrome.runtime.getManifest?.()?.version || '0.0.0',
-      eventsDelta: events.slice(-2000), // cap at 2000 events per packet
-    };
-
-    state.upload.queue.push({
-      uploadId: packet.uploadId,
-      createdAt: packet.createdAt,
-      eventCount: packet.eventsDelta.length,
-      payload: packet,
-    });
-
-    // Log enqueue event
-    state.events.push({
-      eventId: genUUID(),
-      ts: Date.now(),
-      type: 'UPLOAD_PACKET_ENQUEUED',
-      platform: 'UNKNOWN',
-      payload: { uploadId: packet.uploadId },
-    });
-
-    // Trim events ring buffer
-    if (state.events.length > 20000) {
-      state.events = state.events.slice(-20000);
-    }
-
-    await writeZeroState(state);
-  }
-
-  // Attempt to send first packet
-  const item = state.upload.queue[0];
-  if (!item || !item.payload) return 'empty_queue';
+  // Exclusive lock check (Internal session flag)
+  if (self._isUploading) return 'locked';
+  self._isUploading = true;
 
   try {
-    const headers = {
-      'Content-Type': 'application/json',
-      'X-Zero-Client-Id': state.clientId || '',
-      'X-Zero-Version': chrome.runtime.getManifest?.()?.version || '',
-    };
+    const state = await readZeroState();
+    if (!state) return 'no_state';
 
-    // Add API key if configured (stored in payload or state)
-    // For beta, no key is needed unless explicitly set
-    // The endpoint URL is the full ingest URL
+    // Check opt-in
+    if (!state.settings?.privacy?.autoSendDiagnostics) return 'disabled';
 
-    const ctrl = new AbortController();
-    const timeout = setTimeout(() => ctrl.abort(), 15000);
+    // Check backoff
+    if (Date.now() < (state.upload?.backoffUntilTs || 0)) return 'backoff';
 
-    const response = await fetch(endpointUrl, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(item.payload),
-      signal: ctrl.signal,
-    });
+    const endpointUrl = state.settings?.diagnostics?.endpointUrl;
+    if (!endpointUrl) return 'no_endpoint';
 
-    clearTimeout(timeout);
+    // Check queue — if empty, build a packet from delta events
+    if (!state.upload) state.upload = { queue: [], backoffUntilTs: 0, lastError: null };
 
-    if (response.ok) {
-      // Success — dequeue
-      state.upload.queue.shift();
+    if (state.upload.queue.length === 0) {
+      const lastTs = state.settings?.diagnostics?.lastUploadedEventTs || 0;
+      const events = (state.events || []).filter((e) => e.ts > lastTs);
+      if (events.length === 0) return 'no_data';
 
-      // Update last uploaded event timestamp
-      const maxTs = Math.max(...(item.payload.eventsDelta || []).map((e) => e.ts || 0));
-      if (maxTs > 0) {
-        if (!state.settings.diagnostics) state.settings.diagnostics = {};
-        state.settings.diagnostics.lastUploadedEventTs = maxTs;
-      }
+      // Build packet
+      const packet = {
+        uploadId: genUUID(),
+        clientId: state.clientId || 'unknown',
+        createdAt: Date.now(),
+        schemaVersion: state.schemaVersion || 3,
+        extensionVersion: chrome.runtime.getManifest?.()?.version || '0.0.0',
+        eventsDelta: events.slice(-2000), // cap at 2000 events per packet
+      };
 
-      // Clear backoff
-      state.upload.backoffUntilTs = 0;
-      state.upload.lastError = null;
+      state.upload.queue.push({
+        uploadId: packet.uploadId,
+        createdAt: packet.createdAt,
+        eventCount: packet.eventsDelta.length,
+        payload: packet,
+      });
 
-      // Log success
+      // Log enqueue event
       state.events.push({
         eventId: genUUID(),
         ts: Date.now(),
-        type: 'UPLOAD_SENT',
+        type: 'UPLOAD_PACKET_ENQUEUED',
         platform: 'UNKNOWN',
-        payload: { uploadId: item.uploadId },
+        payload: { uploadId: packet.uploadId },
       });
 
+      // Trim events ring buffer
+      if (state.events.length > 20000) {
+        state.events = state.events.slice(-20000);
+      }
+
       await writeZeroState(state);
-      return 'sent';
-    } else {
-      throw new Error(`HTTP ${response.status}`);
+    }
+
+    // Attempt to send first packet
+    const item = state.upload.queue[0];
+    if (!item || !item.payload) return 'empty_queue';
+
+    try {
+      const headers = {
+        'Content-Type': 'application/json',
+        'X-Zero-Client-Id': state.clientId || '',
+        'X-Zero-Version': chrome.runtime.getManifest?.()?.version || '',
+      };
+
+      // Add API key if configured (stored in payload or state)
+      // For beta, no key is needed unless explicitly set
+      // The endpoint URL is the full ingest URL
+
+      const ctrl = new AbortController();
+      const timeout = setTimeout(() => ctrl.abort(), 15000);
+
+      const response = await fetch(endpointUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(item.payload),
+        signal: ctrl.signal,
+      });
+
+      clearTimeout(timeout);
+
+      if (response.ok) {
+        // Success — dequeue
+        state.upload.queue.shift();
+
+        // Update last uploaded event timestamp
+        const maxTs = Math.max(...(item.payload.eventsDelta || []).map((e) => e.ts || 0));
+        if (maxTs > 0) {
+          if (!state.settings.diagnostics) state.settings.diagnostics = {};
+          state.settings.diagnostics.lastUploadedEventTs = maxTs;
+        }
+
+        // Clear backoff
+        state.upload.backoffUntilTs = 0;
+        state.upload.lastError = null;
+
+        // Log success
+        state.events.push({
+          eventId: genUUID(),
+          ts: Date.now(),
+          type: 'UPLOAD_SENT',
+          platform: 'UNKNOWN',
+          payload: { uploadId: item.uploadId },
+        });
+
+        await writeZeroState(state);
+        return 'sent';
+      } else {
+        throw new Error(`HTTP ${response.status}`);
+      }
+    } catch (err) {
+      const errMsg = err?.message || 'Unknown error';
+
+      // Calculate backoff step
+      const failCount = (state.upload._failCount || 0) + 1;
+      state.upload._failCount = failCount;
+      const stepIdx = Math.min(failCount - 1, BACKOFF_STEPS.length - 1);
+      const backoffMs = BACKOFF_STEPS[stepIdx];
+      state.upload.backoffUntilTs = Date.now() + backoffMs;
+      state.upload.lastError = errMsg;
+
+      // Log failure
+      state.events.push({
+        eventId: genUUID(),
+        ts: Date.now(),
+        type: 'UPLOAD_FAILED',
+        platform: 'UNKNOWN',
+        payload: { uploadId: item.uploadId, error: errMsg },
+      });
+
+      // Trim events ring buffer
+      if (state.events.length > 20000) {
+        state.events = state.events.slice(-20000);
+      }
+
+      await writeZeroState(state);
+      return 'failed';
     }
   } catch (err) {
-    const errMsg = err?.message || 'Unknown error';
-
-    // Calculate backoff step
-    const failCount = (state.upload._failCount || 0) + 1;
-    state.upload._failCount = failCount;
-    const stepIdx = Math.min(failCount - 1, BACKOFF_STEPS.length - 1);
-    const backoffMs = BACKOFF_STEPS[stepIdx];
-    state.upload.backoffUntilTs = Date.now() + backoffMs;
-    state.upload.lastError = errMsg;
-
-    // Log failure
-    state.events.push({
-      eventId: genUUID(),
-      ts: Date.now(),
-      type: 'UPLOAD_FAILED',
-      platform: 'UNKNOWN',
-      payload: { uploadId: item.uploadId, error: errMsg },
-    });
-
-    // Trim events ring buffer
-    if (state.events.length > 20000) {
-      state.events = state.events.slice(-20000);
-    }
-
-    await writeZeroState(state);
-    return 'failed';
+    console.error('[Background] handleUploadAlarm outer error:', err);
+    return 'error';
+  } finally {
+    self._isUploading = false;
   }
 }

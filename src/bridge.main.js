@@ -351,15 +351,16 @@
         // Fetch
         const origFetch = window.fetch;
         window.fetch = async (...args) => {
-            const res = await origFetch(...args);
             try {
                 const url = String(args?.[0]?.url || args?.[0] || "");
                 if (/quote|price|ticker|market|candles|kline|chart|pair|swap|route/i.test(url)) {
+                    const res = await origFetch(...args);
                     const clone = res.clone();
                     clone.json().then(json => tryHandleJson(url, json)).catch(() => { });
+                    return res;
                 }
             } catch { }
-            return res;
+            return origFetch(...args);
         };
 
         // XHR

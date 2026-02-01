@@ -24,6 +24,8 @@ export const FEATURES = {
     ADVANCED_COACHING: 'elite',
     BEHAVIOR_BASELINE: 'elite',
     MARKET_CONTEXT: 'elite',
+    NARRATIVE_TRUST: 'elite',
+    SHADOW_HUD: 'elite',
     TRADER_PROFILE: 'elite',
 
     // Tease-card keys (for Settings/Insights UI)
@@ -55,6 +57,7 @@ export const TEASED_FEATURES = {
         { id: 'ELITE_SESSION_REPLAY', name: 'Session Replay', desc: 'Replay your sessions to review decisions and improve execution.' },
         { id: 'ELITE_TRADER_PROFILE', name: 'Trader Profile', desc: 'Your personal trading identity \u2014 strengths, weaknesses, and growth.' },
         { id: 'ELITE_MARKET_CONTEXT', name: 'Market Context', desc: 'Overlay market conditions to see how context affected your trades.' },
+        { id: 'ELITE_NARRATIVE_TRUST', name: 'Narrative Trust', desc: 'Observe social signals, community presence, and developer history for any token.' },
     ],
 };
 

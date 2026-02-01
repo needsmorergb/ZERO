@@ -3,6 +3,8 @@ import { OverlayManager } from './overlay.js';
 import { IDS } from './ids.js';
 import { FeatureManager } from '../featureManager.js';
 import { ICONS } from './icons.js';
+import { ModeManager, MODES } from '../mode-manager.js';
+import { ModesUI } from './modes-ui.js';
 
 export const Banner = {
     ensurePageOffset() {
@@ -44,12 +46,13 @@ export const Banner = {
 
         bar = document.createElement('div');
         bar.id = IDS.banner;
+        const modeHint = ModesUI.getBannerHint();
         bar.innerHTML = `
             <div class="inner" style="cursor:pointer;" title="Click to toggle ZERØ Mode">
                 <div class="dot"></div>
                 <div class="label">ZERØ MODE</div>
                 <div class="state">ENABLED</div>
-                <div class="hint" style="margin-left:8px; opacity:0.5; font-size:11px;">(Paper Trading Overlay)</div>
+                <div class="hint" style="margin-left:8px; opacity:0.5; font-size:11px;">${modeHint}</div>
             </div>
             <div style="position:absolute; right:20px; font-size:10px; color:#334155; pointer-events:none;">v${Store.state?.version || '0.9.1'}</div>
         `;
@@ -77,6 +80,10 @@ export const Banner = {
         const stateEl = bar.querySelector(".state");
         if (stateEl) stateEl.textContent = enabled ? "ENABLED" : "DISABLED";
         bar.classList.toggle("disabled", !enabled);
+
+        // Update mode hint dynamically
+        const hintEl = bar.querySelector(".hint");
+        if (hintEl) hintEl.textContent = ModesUI.getBannerHint();
 
         this.updateAlerts();
     },

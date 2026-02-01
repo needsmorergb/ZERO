@@ -10,6 +10,10 @@ import { MODALS_CSS } from './modals-styles.js';
 import { PROFESSOR_CSS } from './professor-styles.js';
 import { THEME_OVERRIDES_CSS } from './theme-overrides.js';
 import { ELITE_CSS } from './elite-styles.js';
+import { SETTINGS_PANEL_CSS } from './settings-panel-styles.js';
+import { MODES_CSS } from './modes-styles.js';
+import { SHADOW_INSIGHTS_CSS } from './shadow-insights-styles.js';
+import { SHADOW_HUD_CSS } from './shadow-hud-styles.js';
 
 // Concatenate all CSS modules
 export const CSS =
@@ -20,4 +24,8 @@ export const CSS =
   MODALS_CSS +
   PROFESSOR_CSS +
   THEME_OVERRIDES_CSS +
-  ELITE_CSS;
+  ELITE_CSS +
+  SETTINGS_PANEL_CSS +
+  MODES_CSS +
+  SHADOW_INSIGHTS_CSS +
+  SHADOW_HUD_CSS;

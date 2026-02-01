@@ -16,7 +16,8 @@ export const TokenMarketDataService = {
         marketCapUsd: 0,
         liquidityUsd: 0,
         symbol: null,
-        name: null
+        name: null,
+        info: null
     },
 
     listeners: [],
@@ -45,7 +46,7 @@ export const TokenMarketDataService = {
         this.stopPolling();
 
         // Reset Data
-        this.data = { priceUsd: 0, marketCapUsd: 0, liquidityUsd: 0, symbol: null, name: null };
+        this.data = { priceUsd: 0, marketCapUsd: 0, liquidityUsd: 0, symbol: null, name: null, info: null };
         this.isStale = false;
         this.dexHasData = true; // Reset on mint change
 
@@ -116,7 +117,8 @@ export const TokenMarketDataService = {
                             marketCapUsd: mc,
                             liquidityUsd: bestPair.liquidity?.usd || 0,
                             symbol: bestPair.baseToken?.symbol,
-                            name: bestPair.baseToken?.name
+                            name: bestPair.baseToken?.name,
+                            info: bestPair.info || null
                         };
 
                         this.lastUpdateTs = Date.now();
@@ -162,7 +164,8 @@ export const TokenMarketDataService = {
                         marketCapUsd: this.data.marketCapUsd || 0,
                         liquidityUsd: this.data.liquidityUsd || 0,
                         symbol: this.data.symbol,
-                        name: this.data.name
+                        name: this.data.name,
+                        info: this.data.info || null
                     };
 
                     this.lastUpdateTs = Date.now();

@@ -9,6 +9,8 @@ import { DiagnosticsStore } from '../diagnostics-store.js';
 import { OverlayManager } from './overlay.js';
 import { TEASED_FEATURES, FeatureManager } from '../featureManager.js';
 import { renderEliteLockedCard } from './elite-helpers.js';
+import { ModeManager, MODES } from '../mode-manager.js';
+import { ICONS } from './icons.js';
 
 export const SettingsPanel = {
     /**
@@ -22,7 +24,8 @@ export const SettingsPanel = {
         const overlay = document.createElement('div');
         overlay.className = 'confirm-modal-overlay zero-settings-overlay';
 
-        const isShadow = Store.state.settings.tradingMode === 'shadow';
+        const currentMode = Store.state.settings.tradingMode || 'paper';
+        const isElite = FeatureManager.isElite(Store.state);
         const diagState = DiagnosticsStore.state || {};
         const isAutoSend = diagState.settings?.privacy?.autoSendDiagnostics || false;
         const lastUpload = diagState.settings?.diagnostics?.lastUploadedEventTs || 0;
@@ -32,21 +35,45 @@ export const SettingsPanel = {
         overlay.innerHTML = `
             <div class="settings-modal" style="width:440px; max-height:85vh; overflow-y:auto;">
                 <div class="settings-header">
-                    <div class="settings-title"><span>⚙️</span> Settings</div>
-                    <button class="settings-close">×</button>
+                    <div class="settings-title">${ICONS.MODE_PAPER} Settings</div>
+                    <button class="settings-close">\u00D7</button>
                 </div>
 
-                <!-- General -->
-                <div class="settings-section-title">General</div>
+                <!-- Mode Selection -->
+                <div class="settings-section-title">Trading Mode</div>
 
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <div class="setting-name">Shadow Real Mode</div>
-                        <div class="setting-desc">Tag trades as "Real" for journaling.</div>
-                    </div>
-                    <label class="toggle-switch">
-                        <input type="checkbox" data-setting="shadow" ${isShadow ? 'checked' : ''}>
-                        <span class="slider"></span>
+                <div class="setting-row" style="flex-direction:column; align-items:stretch; gap:8px;">
+                    <label class="mode-option ${currentMode === 'paper' ? 'active' : ''}" data-mode="paper" style="display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; cursor:pointer; border:1px solid ${currentMode === 'paper' ? 'rgba(20,184,166,0.3)' : 'rgba(255,255,255,0.06)'}; background:${currentMode === 'paper' ? 'rgba(20,184,166,0.06)' : 'transparent'};">
+                        <input type="radio" name="tradingMode" value="paper" ${currentMode === 'paper' ? 'checked' : ''} style="accent-color:#14b8a6;">
+                        <div style="flex:1;">
+                            <div style="font-size:12px; font-weight:600; color:#f8fafc; display:flex; align-items:center; gap:6px;">
+                                ${ICONS.MODE_PAPER} Paper Mode
+                                <span style="font-size:9px; padding:1px 6px; border-radius:3px; background:rgba(20,184,166,0.12); color:#14b8a6; font-weight:700;">FREE</span>
+                            </div>
+                            <div style="font-size:11px; color:#64748b; margin-top:3px;">Simulated trades. BUY / SELL HUD visible.</div>
+                        </div>
+                    </label>
+
+                    <label class="mode-option ${currentMode === 'analysis' ? 'active' : ''}" data-mode="analysis" style="display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; cursor:pointer; border:1px solid ${currentMode === 'analysis' ? 'rgba(96,165,250,0.3)' : 'rgba(255,255,255,0.06)'}; background:${currentMode === 'analysis' ? 'rgba(96,165,250,0.06)' : 'transparent'};">
+                        <input type="radio" name="tradingMode" value="analysis" ${currentMode === 'analysis' ? 'checked' : ''} style="accent-color:#60a5fa;">
+                        <div style="flex:1;">
+                            <div style="font-size:12px; font-weight:600; color:#f8fafc; display:flex; align-items:center; gap:6px;">
+                                ${ICONS.MODE_ANALYSIS} Analysis Mode
+                                <span style="font-size:9px; padding:1px 6px; border-radius:3px; background:rgba(96,165,250,0.12); color:#60a5fa; font-weight:700;">FREE</span>
+                            </div>
+                            <div style="font-size:11px; color:#64748b; margin-top:3px;">Observes real trades only. No BUY / SELL HUD.</div>
+                        </div>
+                    </label>
+
+                    <label class="mode-option ${currentMode === 'shadow' ? 'active' : ''}" data-mode="shadow" style="display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; cursor:pointer; border:1px solid ${currentMode === 'shadow' ? 'rgba(139,92,246,0.3)' : 'rgba(255,255,255,0.06)'}; background:${currentMode === 'shadow' ? 'rgba(139,92,246,0.06)' : 'transparent'}; ${!isElite ? 'opacity:0.6;' : ''}">
+                        <input type="radio" name="tradingMode" value="shadow" ${currentMode === 'shadow' ? 'checked' : ''} ${!isElite ? 'disabled' : ''} style="accent-color:#a78bfa;">
+                        <div style="flex:1;">
+                            <div style="font-size:12px; font-weight:600; color:#f8fafc; display:flex; align-items:center; gap:6px;">
+                                ${ICONS.MODE_SHADOW} Shadow Mode
+                                <span style="font-size:9px; padding:1px 6px; border-radius:3px; background:rgba(139,92,246,0.12); color:#a78bfa; font-weight:700;">ELITE</span>
+                            </div>
+                            <div style="font-size:11px; color:#64748b; margin-top:3px;">Observes real trades with elite behavioral analysis.${!isElite ? ' Requires Elite.' : ''}</div>
+                        </div>
                     </label>
                 </div>
 
@@ -161,16 +188,31 @@ export const SettingsPanel = {
         overlay.querySelector('.settings-close').onclick = close;
         overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
 
-        // Shadow toggle
-        const shadowToggle = overlay.querySelector('[data-setting="shadow"]');
-        if (shadowToggle) {
-            shadowToggle.onchange = async (e) => {
-                Store.state.settings.tradingMode = e.target.checked ? 'shadow' : 'paper';
-                await Store.save();
-                const c = OverlayManager.getContainer();
-                c.classList.toggle('zero-shadow-mode', e.target.checked);
+        // Mode radio buttons
+        const modeRadios = overlay.querySelectorAll('input[name="tradingMode"]');
+        modeRadios.forEach(radio => {
+            radio.onchange = async (e) => {
+                const newMode = e.target.value;
+                const success = await ModeManager.setMode(newMode);
+                if (!success) {
+                    // Revert radio to current mode if gated
+                    const currentRadio = overlay.querySelector(`input[name="tradingMode"][value="${ModeManager.getMode()}"]`);
+                    if (currentRadio) currentRadio.checked = true;
+                    return;
+                }
+                // Update visual state of mode options
+                overlay.querySelectorAll('.mode-option').forEach(opt => {
+                    const mode = opt.getAttribute('data-mode');
+                    const isActive = mode === newMode;
+                    const colors = { paper: '20,184,166', analysis: '96,165,250', shadow: '139,92,246' };
+                    const c = colors[mode] || colors.paper;
+                    opt.style.borderColor = isActive ? `rgba(${c},0.3)` : 'rgba(255,255,255,0.06)';
+                    opt.style.background = isActive ? `rgba(${c},0.06)` : 'transparent';
+                });
+                // Trigger HUD update
+                if (window.ZeroHUD && window.ZeroHUD.renderAll) window.ZeroHUD.renderAll();
             };
-        }
+        });
 
         // Auto-send diagnostics toggle
         const autoSendToggle = overlay.querySelector('[data-setting="autoSend"]');

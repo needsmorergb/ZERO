@@ -38,12 +38,24 @@ export const THEME_OVERRIDES_CSS = `
   background: #fbbf24;
 }
 
-.zero-shadow-mode #${IDS.banner} .label {
+:host(.zero-shadow-mode) #${IDS.banner} .label {
   color: #f59e0b;
 }
 
-.zero-shadow-mode #${IDS.banner} .dot {
+:host(.zero-shadow-mode) #${IDS.banner} .dot {
   background: #f59e0b;
   box-shadow: 0 0 8px rgba(245,158,11,0.5);
+}
+
+:host(.zero-shadow-mode) #${IDS.banner} {
+  border-color: rgba(245,158,11,0.3);
+}
+
+.zero-shadow-mode #${IDS.shadowHud} .sh-header-title {
+  color: #f59e0b;
+}
+
+.zero-shadow-mode #${IDS.shadowHud} .sh-header-icon {
+  color: #f59e0b;
 }
 `;

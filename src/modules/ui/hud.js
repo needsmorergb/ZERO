@@ -4,6 +4,11 @@ import { Market } from '../core/market.js';
 import { Banner } from './banner.js';
 import { PnlHud } from './pnl-hud.js';
 import { BuyHud } from './buy-hud.js';
+import { ModeManager, MODES } from '../mode-manager.js';
+import { ModesUI } from './modes-ui.js';
+import { IDS } from './ids.js';
+import { ShadowHud } from './shadow-hud.js';
+import { NarrativeTrust } from '../core/narrative-trust.js';
 
 export const HUD = {
     renderScheduled: false,
@@ -33,6 +38,14 @@ export const HUD = {
         Market.subscribe(async () => {
             this.scheduleRender();
         });
+
+        // Initialize Narrative Trust service for Shadow Mode
+        if (ModeManager.getMode() === MODES.SHADOW) {
+            NarrativeTrust.init();
+        }
+
+        // Show mode session banner (once per session for Analysis/Shadow)
+        ModesUI.showSessionBanner();
     },
 
     scheduleRender() {
@@ -49,22 +62,42 @@ export const HUD = {
         if (!Store.state) return; // Wait for state load
         Banner.mountBanner();
         PnlHud.mountPnlHud(this.makeDraggable.bind(this));
-        BuyHud.mountBuyHud(this.makeDraggable.bind(this));
+
+        // BUY/SELL HUD: only mount in Paper Mode; remove from DOM in Analysis/Shadow
+        if (ModeManager.shouldShowBuyHud()) {
+            BuyHud.mountBuyHud(this.makeDraggable.bind(this));
+        } else {
+            const container = OverlayManager.getContainer();
+            const buyRoot = container.querySelector('#' + IDS.buyHud);
+            if (buyRoot) buyRoot.remove();
+        }
+
+        // SHADOW HUD: only mount in Shadow Mode; remove from DOM otherwise
+        if (ModeManager.shouldShowShadowHud()) {
+            ShadowHud.mountShadowHud(this.makeDraggable.bind(this));
+        } else {
+            ShadowHud.removeShadowHud();
+        }
+
         this.updateAll();
     },
 
     async updateAll() {
-        if (Store.state && Store.state.settings) {
-            const container = OverlayManager.getContainer();
-            if (Store.state.settings.tradingMode === 'shadow') {
-                container.classList.add('zero-shadow-mode');
-            } else {
-                container.classList.remove('zero-shadow-mode');
-            }
-        }
+        // Apply correct mode class to container
+        ModesUI.applyContainerClass();
+
         Banner.updateBanner();
         await PnlHud.updatePnlHud();
-        BuyHud.updateBuyHud();
+
+        // Only update BuyHud if it should be visible
+        if (ModeManager.shouldShowBuyHud()) {
+            BuyHud.updateBuyHud();
+        }
+
+        // Only update ShadowHud if it should be visible
+        if (ModeManager.shouldShowShadowHud()) {
+            ShadowHud.updateShadowHud();
+        }
     },
 
     // Shared utility for making elements draggable

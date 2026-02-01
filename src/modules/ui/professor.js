@@ -1,10 +1,120 @@
 import { OverlayManager } from './overlay.js';
+import { IDS } from './ids.js';
 import { ICONS } from './icons.js';
+import { Store } from '../store.js';
+
+const TUTORIAL_STEPS = [
+    {
+        title: "👋 Welcome to ZERØ!",
+        message: "I'm Professor Zero, and I'm here to help you master Solana trading without risking a single penny!<br><br>This is a <b>Paper Trading Simulation</b>. Everything looks real, but your wallet is completely safe.",
+        highlightId: null
+    },
+    {
+        title: "🛡️ Zero Risk, Real Data",
+        message: "See that overlay? That's your command center.<br><br>We use <b>real-time market data</b> to simulate exactly what would happen if you traded for real. Same prices, same thrills, zero risk.",
+        highlightId: IDS.banner
+    },
+    {
+        title: "📊 Your P&L Tracker",
+        message: "Keep an eye on the <b>P&L (Profit & Loss)</b> bar.<br><br>It tracks your wins and losses in real-time. I'll pop in occasionally to give you tips!<br><br>⚠️ The <b>RESET</b> button clears your entire session — balance, trades, and P&L.",
+        highlightId: IDS.pnlHud
+    },
+    {
+        title: "💸 Buying & Selling",
+        message: "Use the <b>HUD Panel</b> to place trades.<br><br>Enter an amount and click <b>BUY</b>. When you're ready to exit, switch to the <b>SELL</b> tab.<br><br>Try to build your 10 SOL starting balance into a fortune!",
+        highlightId: IDS.buyHud
+    },
+    {
+        title: "🚀 Ready to Trade?",
+        message: "That's it! You're ready to hit the markets.<br><br>Remember: The goal is to learn. Don't be afraid to make mistakes here—that's how you get better.<br><br><b>Good luck, trader!</b>",
+        highlightId: null
+    }
+];
 
 export const Professor = {
 
     init() {
         // Professor onboarding disabled for this release
+    },
+
+    /**
+     * Start the walkthrough tutorial.
+     * @param {boolean} [isReplay=false] - If true, replays even if already completed.
+     */
+    startWalkthrough(isReplay = false) {
+        this._showStep(0);
+    },
+
+    /** @private */
+    _showStep(stepIndex) {
+        const container = OverlayManager.getContainer();
+        const shadowRoot = OverlayManager.getShadowRoot();
+        if (!container || !shadowRoot) return;
+
+        const step = TUTORIAL_STEPS[stepIndex];
+        if (!step) return;
+
+        // Clear previous highlights
+        const highlighted = container.querySelectorAll('.highlight-active');
+        highlighted.forEach(el => el.classList.remove('highlight-active'));
+
+        // Apply new highlight
+        if (step.highlightId) {
+            const target = shadowRoot.getElementById(step.highlightId);
+            if (target) {
+                target.classList.add('highlight-active');
+            }
+        }
+
+        // Remove existing overlay
+        const existing = container.querySelector('.professor-overlay');
+        if (existing) existing.remove();
+
+        // Get professor image
+        const professorImgUrl = typeof chrome !== 'undefined' && chrome.runtime?.getURL
+            ? chrome.runtime.getURL('src/professor.png')
+            : '';
+
+        const overlay = document.createElement('div');
+        overlay.className = 'professor-overlay tutorial-mode';
+
+        const isLastStep = stepIndex === TUTORIAL_STEPS.length - 1;
+        const btnText = isLastStep ? "Let's Go! 🚀" : "Next ➡️";
+
+        overlay.innerHTML = `
+            <div class="professor-container">
+                ${professorImgUrl ? `<img class="professor-image" src="${professorImgUrl}" alt="Professor">` : ''}
+                <div class="professor-bubble">
+                    <div class="professor-title">${step.title}</div>
+                    <div class="professor-message">${step.message}</div>
+                    <div class="professor-stats" style="margin-top:10px;text-align:right;color:#64748b;font-size:12px;">
+                        Step ${stepIndex + 1} of ${TUTORIAL_STEPS.length}
+                    </div>
+                    <button class="professor-dismiss">${btnText}</button>
+                </div>
+            </div>
+        `;
+
+        container.appendChild(overlay);
+
+        overlay.querySelector('.professor-dismiss').addEventListener('click', async () => {
+            if (isLastStep) {
+                overlay.style.animation = 'professorFadeIn 0.2s ease-out reverse';
+                setTimeout(() => overlay.remove(), 200);
+
+                // Remove highlights
+                const hl = container.querySelectorAll('.highlight-active');
+                hl.forEach(el => el.classList.remove('highlight-active'));
+
+                // Save completion
+                if (Store.state?.settings) {
+                    Store.state.settings.tutorialCompleted = true;
+                    await Store.save();
+                }
+            } else {
+                this._showStep(stepIndex + 1);
+            }
+        });
     },
 
     showCritique(trigger, value, analysisState) {

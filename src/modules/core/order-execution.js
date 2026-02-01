@@ -16,7 +16,7 @@ export const OrderExecution = {
 
         if (!mint) return { success: false, error: "No active token context" };
         if (solAmount <= 0) return { success: false, error: "Invalid SOL amount" };
-        if (priceUsd <= 0) return { success: false, error: `Market Data Unavailable (Price: ${priceUsd})` };
+        if (priceUsd <= 0) return { success: false, error: `Price not available (${priceUsd})` };
 
         // Diagnostic: log price source at trade time
         const tickAge = Date.now() - Market.lastTickTs;

@@ -113,4 +113,28 @@ export const PROFESSOR_CSS = `
   background: linear-gradient(135deg, #818cf8, #6366f1);
   transform: scale(1.05);
 }
+
+/* Tutorial / Walkthrough Mode */
+.professor-overlay.tutorial-mode {
+  background: transparent !important;
+  pointer-events: none !important;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.professor-overlay.tutorial-mode .professor-container {
+  pointer-events: auto !important;
+}
+.highlight-active {
+  outline: 3px solid #14b8a6 !important;
+  outline-offset: 4px !important;
+  box-shadow: 0 0 30px rgba(20,184,166,0.8) !important;
+  animation: highlightGlow 1.5s ease-in-out infinite !important;
+}
+@keyframes highlightGlow {
+  0%, 100% { outline-color: #14b8a6; box-shadow: 0 0 20px rgba(20,184,166,0.6); }
+  50% { outline-color: #5eead4; box-shadow: 0 0 40px rgba(20,184,166,1); }
+}
 `;

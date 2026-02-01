@@ -85,7 +85,8 @@ Edit `src/popup/popup.js` to change the default platform URLs:
 const CONFIG = {
   AXIOM_URL: "https://axiom.trade/@yourhandle",
   TERMINAL_URL: "https://trade.padre.gg/rk/yourhandle",
-  DISCORD_URL: "https://discord.gg/yourinvite",
+  WEBSITE_URL: "https://get-zero.xyz",
+  X_URL: "https://x.com/get_zero_xyz",
 };
 ```
 
@@ -135,7 +136,7 @@ The extension requires the following permissions:
 
 ## Support
 
-For questions or issues, join our Discord community (link in the extension popup).
+For questions or issues, visit get-zero.xyz or follow @get_zero_xyz on X.
 
 ## License
 

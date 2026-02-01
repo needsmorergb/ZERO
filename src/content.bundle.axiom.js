@@ -30,9 +30,10 @@
       return false;
     }
   }
-  var EXT_KEY, DEFAULTS, Store2;
+  var DEV_FORCE_ELITE, EXT_KEY, DEFAULTS, Store;
   var init_store = __esm({
     "src/modules/store.js"() {
+      DEV_FORCE_ELITE = true;
       EXT_KEY = "sol_paper_trader_v1";
       DEFAULTS = {
         settings: {
@@ -51,7 +52,7 @@
           sessionDisplayUsd: false,
           tutorialCompleted: false,
           tradingMode: "paper",
-          // 'paper' | 'shadow'
+          // 'paper' | 'analysis' | 'shadow'
           showProfessor: true,
           // Show trade analysis popup
           rolloutPhase: "full",
@@ -108,6 +109,13 @@
           maxRiskPct: null
           // Max % of balance to risk
         },
+        shadow: {
+          declaredStrategy: "Trend",
+          notes: [],
+          hudDocked: false,
+          hudPos: { x: 20, y: 400 },
+          narrativeTrustCache: {}
+        },
         behavior: {
           tiltFrequency: 0,
           panicSells: 0,
@@ -125,7 +133,7 @@
         schemaVersion: 2,
         version: "1.11.8"
       };
-      Store2 = {
+      Store = {
         state: null,
         async load() {
           let timeoutId;
@@ -250,6 +258,9 @@
             this.state.settings.startSol = parseFloat(this.state.settings.startSol) || 10;
             if (this.state.settings.tier === "pro") {
               this.state.settings.tier = "free";
+            }
+            if (DEV_FORCE_ELITE) {
+              this.state.settings.tier = "elite";
             }
             if (this.state.fills) {
               this.state.fills.forEach((f) => {
@@ -676,7 +687,7 @@
     if (events.length === 0)
       return { packets: [], totalEvents: 0 };
     const clientId = DiagnosticsStore.getClientId();
-    const version = Store2.state?.version || "0.0.0";
+    const version = Store.state?.version || "0.0.0";
     const chunks = [];
     for (let i = 0; i < events.length; i += MAX_EVENTS_PER_PACKET) {
       chunks.push(events.slice(i, i + MAX_EVENTS_PER_PACKET));
@@ -723,13 +734,12 @@
   __export(diagnostics_manager_exports, {
     DiagnosticsManager: () => DiagnosticsManager
   });
-  var UPLOAD_INTERVAL_MS, RETRY_DELAY_MS, DiagnosticsManager;
+  var UPLOAD_INTERVAL_MS, DiagnosticsManager;
   var init_diagnostics_manager = __esm({
     "src/modules/diagnostics-manager.js"() {
       init_diagnostics_store();
       init_upload_packet();
       UPLOAD_INTERVAL_MS = 6e4;
-      RETRY_DELAY_MS = 3e4;
       DiagnosticsManager = {
         _timer: null,
         init() {
@@ -761,44 +771,14 @@
             if (enqueuedCount > 0) {
               console.log(`[DiagnosticsManager] Enqueued ${enqueuedCount} packets.`);
             }
-            await this._processQueue();
+            chrome.runtime.sendMessage({ type: "ZERO_TRIGGER_UPLOAD" });
           } catch (e) {
             console.error("[DiagnosticsManager] Loop error:", e);
           }
           this._scheduleNextTick();
         },
         async _processQueue() {
-          const endpoint = DiagnosticsStore.getEndpointUrl();
-          if (!endpoint)
-            return;
-          let packet = DiagnosticsStore.peekPacket();
-          while (packet) {
-            if (!DiagnosticsStore.isAutoSendEnabled())
-              return;
-            try {
-              console.log(`[DiagnosticsManager] Uploading packet ${packet.uploadId}...`);
-              const response = await fetch(endpoint, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(packet.payload)
-              });
-              if (response.ok) {
-                DiagnosticsStore.dequeuePacket();
-                DiagnosticsStore.setLastUploadedEventTs(Date.now());
-                DiagnosticsStore.clearBackoff();
-                console.log(`[DiagnosticsManager] Upload success.`);
-              } else {
-                const txt = await response.text();
-                throw new Error(`Server ${response.status}: ${txt.slice(0, 100)}`);
-              }
-            } catch (err) {
-              console.warn(`[DiagnosticsManager] Upload failed:`, err);
-              DiagnosticsStore.setLastError(String(err));
-              DiagnosticsStore.setBackoff(RETRY_DELAY_MS);
-              return;
-            }
-            packet = DiagnosticsStore.peekPacket();
-          }
+          chrome.runtime.sendMessage({ type: "ZERO_TRIGGER_UPLOAD" });
         }
       };
     }
@@ -809,6 +789,7 @@
     banner: "paper-mode-banner",
     pnlHud: "paper-pnl-hud",
     buyHud: "paper-buyhud-root",
+    shadowHud: "paper-shadow-hud",
     style: "paper-overlay-style",
     positionsPanel: "paper-positions-panel"
   };
@@ -2486,6 +2467,30 @@ input:checked + .slider:before {
   background: linear-gradient(135deg, #818cf8, #6366f1);
   transform: scale(1.05);
 }
+
+/* Tutorial / Walkthrough Mode */
+.professor-overlay.tutorial-mode {
+  background: transparent !important;
+  pointer-events: none !important;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.professor-overlay.tutorial-mode .professor-container {
+  pointer-events: auto !important;
+}
+.highlight-active {
+  outline: 3px solid #14b8a6 !important;
+  outline-offset: 4px !important;
+  box-shadow: 0 0 30px rgba(20,184,166,0.8) !important;
+  animation: highlightGlow 1.5s ease-in-out infinite !important;
+}
+@keyframes highlightGlow {
+  0%, 100% { outline-color: #14b8a6; box-shadow: 0 0 20px rgba(20,184,166,0.6); }
+  50% { outline-color: #5eead4; box-shadow: 0 0 40px rgba(20,184,166,1); }
+}
 `;
 
   // src/modules/ui/theme-overrides.js
@@ -2527,13 +2532,25 @@ input:checked + .slider:before {
   background: #fbbf24;
 }
 
-.zero-shadow-mode #${IDS.banner} .label {
+:host(.zero-shadow-mode) #${IDS.banner} .label {
   color: #f59e0b;
 }
 
-.zero-shadow-mode #${IDS.banner} .dot {
+:host(.zero-shadow-mode) #${IDS.banner} .dot {
   background: #f59e0b;
   box-shadow: 0 0 8px rgba(245,158,11,0.5);
+}
+
+:host(.zero-shadow-mode) #${IDS.banner} {
+  border-color: rgba(245,158,11,0.3);
+}
+
+.zero-shadow-mode #${IDS.shadowHud} .sh-header-title {
+  color: #f59e0b;
+}
+
+.zero-shadow-mode #${IDS.shadowHud} .sh-header-icon {
+  color: #f59e0b;
 }
 `;
 
@@ -2705,8 +2722,1169 @@ input:checked + .slider:before {
 }
 `;
 
+  // src/modules/ui/settings-panel-styles.js
+  var SETTINGS_PANEL_CSS = `
+/* Section titles */
+.settings-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 20px 0 12px 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(20,184,166,0.08);
+}
+
+/* Tier badges */
+.tier-badge {
+  font-size: 9px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+}
+
+.tier-badge.pro {
+  background: rgba(99,102,241,0.15);
+  color: #818cf8;
+}
+
+.tier-badge.elite {
+  background: rgba(245,158,11,0.15);
+  color: #f59e0b;
+}
+
+/* Privacy info box */
+.privacy-info-box {
+  background: rgba(20,184,166,0.03);
+  border: 1px solid rgba(20,184,166,0.08);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+}
+
+.privacy-info-box p {
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.5;
+  margin: 0 0 6px 0;
+}
+
+.privacy-info-box p:last-child {
+  margin-bottom: 0;
+}
+
+/* Diagnostics status */
+.diag-status {
+  background: #0d1117;
+  border: 1px solid rgba(20,184,166,0.08);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+}
+
+.diag-status-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+}
+
+.diag-label {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.diag-value {
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+.diag-value.enabled {
+  color: #10b981;
+}
+
+.diag-value.disabled {
+  color: #64748b;
+}
+
+.diag-value.error {
+  color: #ef4444;
+  font-size: 10px;
+  max-width: 200px;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Settings action buttons */
+.settings-btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.settings-action-btn {
+  flex: 1;
+  min-width: 120px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid rgba(20,184,166,0.15);
+  background: rgba(20,184,166,0.05);
+  color: #94a3b8;
+  transition: all 0.2s;
+}
+
+.settings-action-btn:hover {
+  background: rgba(20,184,166,0.1);
+  border-color: rgba(20,184,166,0.3);
+  color: #14b8a6;
+}
+
+.settings-action-btn.danger {
+  border-color: rgba(239,68,68,0.15);
+  background: rgba(239,68,68,0.05);
+}
+
+.settings-action-btn.danger:hover {
+  background: rgba(239,68,68,0.1);
+  border-color: rgba(239,68,68,0.3);
+  color: #ef4444;
+}
+
+/* Feature cards */
+.feature-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.feature-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: #0d1117;
+  border: 1px solid rgba(100,116,139,0.12);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.feature-card:hover {
+  background: rgba(20,184,166,0.03);
+  border-color: rgba(20,184,166,0.15);
+  transform: translateX(2px);
+}
+
+.feature-card-lock {
+  font-size: 16px;
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+.feature-card-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.feature-card-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #e2e8f0;
+  margin-bottom: 2px;
+}
+
+.feature-card-desc {
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+.feature-card-badge {
+  font-size: 9px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: rgba(100,116,139,0.1);
+}
+`;
+
+  // src/modules/ui/modes-styles.js
+  var MODES_CSS = `
+/* ==========================================
+   MODE BADGE (Global indicator)
+   ========================================== */
+
+.zero-mode-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    line-height: 1;
+    white-space: nowrap;
+    user-select: none;
+}
+
+.zero-mode-badge svg {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+}
+
+.zero-mode-badge.paper {
+    background: rgba(20, 184, 166, 0.1);
+    color: #14b8a6;
+    border: 1px solid rgba(20, 184, 166, 0.2);
+}
+
+.zero-mode-badge.analysis {
+    background: rgba(96, 165, 250, 0.1);
+    color: #60a5fa;
+    border: 1px solid rgba(96, 165, 250, 0.2);
+}
+
+.zero-mode-badge.shadow {
+    background: rgba(139, 92, 246, 0.1);
+    color: #a78bfa;
+    border: 1px solid rgba(139, 92, 246, 0.2);
+}
+
+.zero-mode-badge .mode-subtext {
+    font-size: 9px;
+    font-weight: 400;
+    letter-spacing: 0.3px;
+    opacity: 0.75;
+    margin-left: 4px;
+}
+
+/* ==========================================
+   MODE SESSION BANNER (once per session)
+   ========================================== */
+
+.zero-session-banner-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483647;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.6);
+    pointer-events: auto;
+    animation: modeFadeIn 0.25s ease-out;
+}
+
+.zero-session-banner {
+    width: 380px;
+    background: #0f172a;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    padding: 28px 24px 20px;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    animation: modeSlideIn 0.3s ease-out;
+}
+
+.zero-session-banner .banner-icon {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.zero-session-banner .banner-icon svg {
+    width: 20px;
+    height: 20px;
+}
+
+.zero-session-banner .banner-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #f8fafc;
+    letter-spacing: 0.3px;
+}
+
+.zero-session-banner .banner-body {
+    font-size: 13px;
+    color: #94a3b8;
+    line-height: 1.65;
+    margin-bottom: 16px;
+    white-space: pre-line;
+}
+
+.zero-session-banner .banner-footer {
+    font-size: 11px;
+    color: #64748b;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    letter-spacing: 0.2px;
+}
+
+.zero-session-banner .banner-dismiss {
+    display: block;
+    width: 100%;
+    margin-top: 16px;
+    padding: 10px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    color: #cbd5e1;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: center;
+    transition: background 0.15s;
+}
+
+.zero-session-banner .banner-dismiss:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+/* Analysis mode accent */
+.zero-session-banner.analysis .banner-title {
+    color: #60a5fa;
+}
+
+.zero-session-banner.analysis .banner-dismiss {
+    border-color: rgba(96, 165, 250, 0.2);
+}
+
+/* Shadow mode accent */
+.zero-session-banner.shadow .banner-title {
+    color: #a78bfa;
+}
+
+.zero-session-banner.shadow .banner-dismiss {
+    border-color: rgba(139, 92, 246, 0.2);
+}
+
+/* ==========================================
+   MODE SESSION SUMMARY HEADER
+   ========================================== */
+
+.zero-session-summary-header {
+    margin-bottom: 12px;
+}
+
+.zero-session-summary-header .summary-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: #f8fafc;
+    letter-spacing: 0.2px;
+}
+
+.zero-session-summary-header .summary-subtitle {
+    font-size: 11px;
+    color: #64748b;
+    margin-top: 4px;
+    letter-spacing: 0.3px;
+}
+
+.zero-session-summary-header .summary-footer {
+    font-size: 11px;
+    color: #8b5cf6;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* ==========================================
+   STATS SEPARATION TABS
+   ========================================== */
+
+.zero-stats-tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.zero-stats-tab {
+    flex: 1;
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #64748b;
+    text-align: center;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: color 0.15s, border-color 0.15s;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+}
+
+.zero-stats-tab:hover {
+    color: #94a3b8;
+}
+
+.zero-stats-tab.active {
+    color: #f8fafc;
+    border-bottom-color: #14b8a6;
+}
+
+.zero-stats-tab.active.real {
+    border-bottom-color: #60a5fa;
+}
+
+/* ==========================================
+   MODE TOOLTIP
+   ========================================== */
+
+.zero-mode-tooltip {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1e293b;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 11px;
+    color: #94a3b8;
+    line-height: 1.4;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 10;
+}
+
+.zero-mode-badge:hover .zero-mode-tooltip {
+    opacity: 1;
+}
+
+/* ==========================================
+   ANIMATIONS
+   ========================================== */
+
+@keyframes modeFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes modeSlideIn {
+    from { transform: translateY(16px) scale(0.97); opacity: 0; }
+    to { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+/* ==========================================
+   CONTAINER MODE CLASSES
+   ========================================== */
+
+:host(.zero-analysis-mode) #paper-mode-banner .dot {
+    background: #60a5fa;
+    box-shadow: 0 0 6px rgba(96, 165, 250, 0.4);
+}
+
+:host(.zero-shadow-mode) #paper-mode-banner .dot {
+    background: #a78bfa;
+    box-shadow: 0 0 6px rgba(139, 92, 246, 0.4);
+}
+`;
+
+  // src/modules/ui/shadow-insights-styles.js
+  var SHADOW_INSIGHTS_CSS = `
+/* ==========================================
+   SHADOW INSIGHTS MODAL
+   ========================================== */
+
+.zero-shadow-insights-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483647;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.7);
+    animation: modeFadeIn 0.3s ease-out;
+}
+
+.zero-shadow-insights-modal {
+    width: 400px;
+    background: #0f172a;
+    border: 1px solid rgba(139, 92, 246, 0.2);
+    border-radius: 14px;
+    padding: 28px 24px 20px;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    animation: modeSlideIn 0.35s ease-out;
+}
+
+.zero-shadow-insights-modal .si-header {
+    margin-bottom: 20px;
+}
+
+.zero-shadow-insights-modal .si-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: #a78bfa;
+    letter-spacing: 0.3px;
+    margin-bottom: 6px;
+}
+
+.zero-shadow-insights-modal .si-subtitle {
+    font-size: 12px;
+    color: #64748b;
+    line-height: 1.5;
+}
+
+/* Individual insight card */
+.zero-shadow-insights-modal .si-insight {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px;
+    background: rgba(139, 92, 246, 0.05);
+    border: 1px solid rgba(139, 92, 246, 0.1);
+    border-radius: 10px;
+    margin-bottom: 8px;
+}
+
+.zero-shadow-insights-modal .si-insight-num {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(139, 92, 246, 0.15);
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #a78bfa;
+}
+
+.zero-shadow-insights-modal .si-insight-text {
+    font-size: 12px;
+    color: #cbd5e1;
+    line-height: 1.55;
+}
+
+.zero-shadow-insights-modal .si-insight-label {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: #64748b;
+    margin-bottom: 3px;
+}
+
+/* Footer disclaimer */
+.zero-shadow-insights-modal .si-footer {
+    font-size: 11px;
+    color: #475569;
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    font-style: italic;
+}
+
+/* Action button */
+.zero-shadow-insights-modal .si-action {
+    display: block;
+    width: 100%;
+    margin-top: 16px;
+    padding: 11px;
+    background: rgba(139, 92, 246, 0.12);
+    border: 1px solid rgba(139, 92, 246, 0.25);
+    border-radius: 8px;
+    color: #c4b5fd;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: center;
+    transition: background 0.15s;
+    letter-spacing: 0.2px;
+}
+
+.zero-shadow-insights-modal .si-action:hover {
+    background: rgba(139, 92, 246, 0.2);
+}
+`;
+
+  // src/modules/ui/shadow-hud-styles.js
+  var SHADOW_HUD_CSS = `
+
+/* ===== Shadow HUD Root ===== */
+#${IDS.shadowHud} {
+    z-index: 2147483644;
+    pointer-events: auto;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    color: #e2e8f0;
+    width: 320px;
+}
+
+#${IDS.shadowHud}.floating {
+    position: fixed;
+    left: 20px;
+    top: 400px;
+}
+
+#${IDS.shadowHud}.docked {
+    position: fixed;
+    right: 16px;
+    bottom: 100px;
+    width: 320px;
+}
+
+/* ===== Main Card ===== */
+#${IDS.shadowHud} .sh-card {
+    background: #0d1117;
+    border: 1px solid rgba(139, 92, 246, 0.2);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+/* ===== Header ===== */
+#${IDS.shadowHud} .sh-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: rgba(139, 92, 246, 0.06);
+    border-bottom: 1px solid rgba(139, 92, 246, 0.12);
+    cursor: grab;
+    user-select: none;
+}
+
+#${IDS.shadowHud} .sh-header:active {
+    cursor: grabbing;
+}
+
+#${IDS.shadowHud} .sh-header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+#${IDS.shadowHud} .sh-header-icon {
+    color: #a78bfa;
+    display: flex;
+    align-items: center;
+}
+
+#${IDS.shadowHud} .sh-header-title {
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    color: #a78bfa;
+}
+
+#${IDS.shadowHud} .sh-header-btns {
+    display: flex;
+    gap: 6px;
+}
+
+#${IDS.shadowHud} .sh-header-btns .sh-btn {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: rgba(139, 92, 246, 0.08);
+    border: 1px solid rgba(139, 92, 246, 0.15);
+    color: #94a3b8;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+#${IDS.shadowHud} .sh-header-btns .sh-btn:hover {
+    background: rgba(139, 92, 246, 0.15);
+    color: #a78bfa;
+}
+
+#${IDS.shadowHud} .sh-subtitle {
+    font-size: 10px;
+    color: #64748b;
+    padding: 0 14px 8px;
+    background: rgba(139, 92, 246, 0.03);
+}
+
+/* ===== Section Common ===== */
+#${IDS.shadowHud} .sh-section {
+    border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+#${IDS.shadowHud} .sh-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    cursor: pointer;
+    transition: background 0.15s;
+    user-select: none;
+}
+
+#${IDS.shadowHud} .sh-section-header:hover {
+    background: rgba(139, 92, 246, 0.04);
+}
+
+#${IDS.shadowHud} .sh-section-header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+#${IDS.shadowHud} .sh-section-icon {
+    color: #8b5cf6;
+    opacity: 0.7;
+    display: flex;
+    align-items: center;
+}
+
+#${IDS.shadowHud} .sh-section-title {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #94a3b8;
+}
+
+#${IDS.shadowHud} .sh-section-chevron {
+    color: #475569;
+    display: flex;
+    align-items: center;
+    transition: transform 0.2s;
+}
+
+#${IDS.shadowHud} .sh-section-chevron.expanded {
+    transform: rotate(180deg);
+}
+
+#${IDS.shadowHud} .sh-section-body {
+    padding: 0 14px 12px;
+}
+
+#${IDS.shadowHud} .sh-section-body.collapsed {
+    display: none;
+}
+
+/* ===== Market Context \u2014 Score Bar ===== */
+#${IDS.shadowHud} .sh-trust-summary {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 14px 8px;
+}
+
+#${IDS.shadowHud} .sh-trust-score {
+    font-size: 13px;
+    font-weight: 800;
+    color: #e2e8f0;
+}
+
+#${IDS.shadowHud} .sh-trust-score .score-val {
+    color: #a78bfa;
+}
+
+#${IDS.shadowHud} .sh-trust-bar {
+    flex: 1;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.06);
+    overflow: hidden;
+}
+
+#${IDS.shadowHud} .sh-trust-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.3s ease;
+}
+
+#${IDS.shadowHud} .sh-trust-bar-fill.low {
+    background: #ef4444;
+}
+
+#${IDS.shadowHud} .sh-trust-bar-fill.mid {
+    background: #f59e0b;
+}
+
+#${IDS.shadowHud} .sh-trust-bar-fill.high {
+    background: #10b981;
+}
+
+/* ===== Micro-Signals ===== */
+#${IDS.shadowHud} .sh-signals {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 14px 8px;
+}
+
+#${IDS.shadowHud} .sh-signal-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    position: relative;
+}
+
+#${IDS.shadowHud} .sh-signal-dot.positive {
+    background: #10b981;
+}
+
+#${IDS.shadowHud} .sh-signal-dot.neutral {
+    background: #f59e0b;
+}
+
+#${IDS.shadowHud} .sh-signal-dot.unavailable {
+    background: #475569;
+}
+
+#${IDS.shadowHud} .sh-signal-label {
+    font-size: 9px;
+    color: #64748b;
+    margin-left: 2px;
+}
+
+/* ===== Tabs (Market Context Expanded) ===== */
+#${IDS.shadowHud} .sh-tabs {
+    display: flex;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    margin-bottom: 8px;
+}
+
+#${IDS.shadowHud} .sh-tab {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 6px 4px;
+    font-size: 9px;
+    font-weight: 600;
+    color: #64748b;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.15s;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+#${IDS.shadowHud} .sh-tab:hover {
+    color: #94a3b8;
+    background: rgba(139, 92, 246, 0.04);
+}
+
+#${IDS.shadowHud} .sh-tab.active {
+    color: #a78bfa;
+    border-bottom-color: #8b5cf6;
+}
+
+#${IDS.shadowHud} .sh-tab-icon {
+    display: flex;
+    align-items: center;
+    color: inherit;
+}
+
+#${IDS.shadowHud} .sh-tab-content {
+    max-height: 250px;
+    overflow-y: auto;
+}
+
+/* ===== Trust Fields (Key-Value Pairs) ===== */
+#${IDS.shadowHud} .nt-field {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 5px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+#${IDS.shadowHud} .nt-field:last-child {
+    border-bottom: none;
+}
+
+#${IDS.shadowHud} .nt-label {
+    font-size: 10px;
+    color: #64748b;
+    font-weight: 600;
+    flex-shrink: 0;
+    min-width: 80px;
+}
+
+#${IDS.shadowHud} .nt-value {
+    font-size: 10px;
+    color: #cbd5e1;
+    text-align: right;
+    word-break: break-word;
+}
+
+#${IDS.shadowHud} .nt-field.unavailable .nt-value {
+    color: #475569;
+    font-style: italic;
+}
+
+/* ===== Strategy Section ===== */
+#${IDS.shadowHud} .sh-strategy-select {
+    width: 100%;
+    padding: 7px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    background: #0f172a;
+    border: 1px solid rgba(139, 92, 246, 0.15);
+    border-radius: 6px;
+    color: #e2e8f0;
+    cursor: pointer;
+    outline: none;
+    transition: border-color 0.15s;
+    -webkit-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' xmlns='http://www.w3.org/2000/svg'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    background-size: 10px;
+}
+
+#${IDS.shadowHud} .sh-strategy-select:hover,
+#${IDS.shadowHud} .sh-strategy-select:focus {
+    border-color: rgba(139, 92, 246, 0.4);
+}
+
+#${IDS.shadowHud} .sh-strategy-label {
+    font-size: 9px;
+    color: #64748b;
+    margin-bottom: 6px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+/* ===== Trade Notes Section ===== */
+#${IDS.shadowHud} .sh-notes-input {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+#${IDS.shadowHud} .sh-notes-textarea {
+    flex: 1;
+    padding: 7px 10px;
+    font-size: 11px;
+    font-family: inherit;
+    background: #0f172a;
+    border: 1px solid rgba(139, 92, 246, 0.12);
+    border-radius: 6px;
+    color: #e2e8f0;
+    resize: none;
+    outline: none;
+    min-height: 32px;
+    max-height: 60px;
+    transition: border-color 0.15s;
+}
+
+#${IDS.shadowHud} .sh-notes-textarea::placeholder {
+    color: #475569;
+}
+
+#${IDS.shadowHud} .sh-notes-textarea:focus {
+    border-color: rgba(139, 92, 246, 0.4);
+}
+
+#${IDS.shadowHud} .sh-notes-add {
+    padding: 7px 10px;
+    font-size: 10px;
+    font-weight: 700;
+    background: rgba(139, 92, 246, 0.1);
+    border: 1px solid rgba(139, 92, 246, 0.2);
+    border-radius: 6px;
+    color: #a78bfa;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+
+#${IDS.shadowHud} .sh-notes-add:hover {
+    background: rgba(139, 92, 246, 0.2);
+    border-color: rgba(139, 92, 246, 0.4);
+}
+
+#${IDS.shadowHud} .sh-notes-list {
+    max-height: 140px;
+    overflow-y: auto;
+}
+
+#${IDS.shadowHud} .sh-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+#${IDS.shadowHud} .sh-note:last-child {
+    border-bottom: none;
+}
+
+#${IDS.shadowHud} .sh-note-time {
+    font-size: 9px;
+    color: #475569;
+    font-weight: 600;
+    flex-shrink: 0;
+    min-width: 38px;
+    padding-top: 1px;
+}
+
+#${IDS.shadowHud} .sh-note-text {
+    font-size: 11px;
+    color: #cbd5e1;
+    line-height: 1.4;
+    flex: 1;
+}
+
+#${IDS.shadowHud} .sh-note-actions {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+#${IDS.shadowHud} .sh-note:hover .sh-note-actions {
+    opacity: 1;
+}
+
+#${IDS.shadowHud} .sh-note-action {
+    padding: 2px;
+    background: none;
+    border: none;
+    color: #475569;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    transition: color 0.15s;
+}
+
+#${IDS.shadowHud} .sh-note-action:hover {
+    color: #ef4444;
+}
+
+#${IDS.shadowHud} .sh-note-char-count {
+    font-size: 9px;
+    color: #475569;
+    text-align: right;
+    margin-top: 2px;
+}
+
+/* ===== Loading State ===== */
+#${IDS.shadowHud} .sh-trust-loading-state {
+    flex-direction: column;
+    gap: 6px;
+}
+
+#${IDS.shadowHud} .sh-loading-text {
+    font-size: 10px;
+    color: #8b5cf6;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+}
+
+#${IDS.shadowHud} .sh-loading-bar {
+    width: 100%;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.06);
+    overflow: hidden;
+}
+
+#${IDS.shadowHud} .sh-loading-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    background: linear-gradient(90deg, #8b5cf6, #a78bfa, #8b5cf6);
+    background-size: 200% 100%;
+    animation: shLoadProgress 4s ease-out forwards, shLoadShimmer 1.5s ease-in-out infinite;
+}
+
+#${IDS.shadowHud} .sh-signal-loading {
+    color: #8b5cf6;
+    font-style: italic;
+}
+
+@keyframes shLoadProgress {
+    0% { width: 5%; }
+    30% { width: 35%; }
+    60% { width: 55%; }
+    80% { width: 70%; }
+    100% { width: 80%; }
+}
+
+@keyframes shLoadShimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
+
+/* ===== Empty / Loading States ===== */
+#${IDS.shadowHud} .sh-empty {
+    font-size: 10px;
+    color: #475569;
+    text-align: center;
+    padding: 12px 0;
+    font-style: italic;
+}
+
+#${IDS.shadowHud} .sh-confidence-badge {
+    font-size: 8px;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+#${IDS.shadowHud} .sh-confidence-badge.low {
+    background: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+}
+
+#${IDS.shadowHud} .sh-confidence-badge.medium {
+    background: rgba(245, 158, 11, 0.1);
+    color: #f59e0b;
+}
+
+#${IDS.shadowHud} .sh-confidence-badge.high {
+    background: rgba(16, 185, 129, 0.1);
+    color: #10b981;
+}
+
+/* ===== Scrollbar ===== */
+#${IDS.shadowHud} ::-webkit-scrollbar {
+    width: 4px;
+}
+
+#${IDS.shadowHud} ::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+#${IDS.shadowHud} ::-webkit-scrollbar-thumb {
+    background: rgba(139, 92, 246, 0.2);
+    border-radius: 2px;
+}
+
+#${IDS.shadowHud} ::-webkit-scrollbar-thumb:hover {
+    background: rgba(139, 92, 246, 0.4);
+}
+`;
+
   // src/modules/ui/styles.js
-  var CSS = COMMON_CSS + BANNER_CSS + PNL_HUD_CSS + BUY_HUD_CSS + MODALS_CSS + PROFESSOR_CSS + THEME_OVERRIDES_CSS + ELITE_CSS;
+  var CSS = COMMON_CSS + BANNER_CSS + PNL_HUD_CSS + BUY_HUD_CSS + MODALS_CSS + PROFESSOR_CSS + THEME_OVERRIDES_CSS + ELITE_CSS + SETTINGS_PANEL_CSS + MODES_CSS + SHADOW_INSIGHTS_CSS + SHADOW_HUD_CSS;
 
   // src/modules/ui/overlay.js
   var OverlayManager = {
@@ -2834,6 +4012,19 @@ input:checked + .slider:before {
     EMO_ANGRY: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Angry"><path d="M12 22c-4 0-7-3-7-7 0-3 3-6 5-9l2-3 2 3c2 3 5 6 5 9 0 4-3 7-7 7z"/></svg>`,
     EMO_BORED: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2.5" stroke-linecap="round" role="img" aria-label="Bored"><circle cx="12" cy="12" r="8"/><line x1="7" y1="12" x2="17" y2="12"/></svg>`,
     EMO_CONFIDENT: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Confident"><line x1="12" y1="22" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>`,
+    // Mode Icons
+    MODE_PAPER: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/></svg>`,
+    MODE_ANALYSIS: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><circle cx="8" cy="8" r="1.5" fill="currentColor" stroke="none"/></svg>`,
+    MODE_SHADOW: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><clipPath id="sh"><path d="M0 0L16 0L16 16Z"/></clipPath><circle cx="8" cy="8" r="6.5" fill="currentColor" stroke="none" clip-path="url(#sh)"/></svg>`,
+    // Shadow HUD Section Icons
+    SHADOW_HUD_ICON: `<svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.5"/><clipPath id="shh"><path d="M0 0L16 0L16 16Z"/></clipPath><circle cx="8" cy="8" r="6.5" fill="currentColor" stroke="none" clip-path="url(#shh)"/></svg>`,
+    TRUST_SHIELD: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`,
+    STRATEGY_COMPASS: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>`,
+    NOTES_DOC: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`,
+    TAB_X_ACCOUNT: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4l6.5 8L4 20h2l5.5-6.8L16 20h4l-6.8-8.4L19.5 4h-2l-5 6.2L8 4H4z"/></svg>`,
+    TAB_COMMUNITY: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
+    TAB_WEBSITE: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`,
+    TAB_DEVELOPER: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>`,
     // General UI
     LOCK: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`,
     BRAIN: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.97-3.06 2.5 2.5 0 0 1-1.95-4.36 2.5 2.5 0 0 1 2-4.11 2.5 2.5 0 0 1 5.38-2.45Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.97-3.06 2.5 2.5 0 0 0 1.95-4.36 2.5 2.5 0 0 0-2-4.11 2.5 2.5 0 0 0-5.38-2.45Z"/></svg>`,
@@ -2844,8 +4035,97 @@ input:checked + .slider:before {
   };
 
   // src/modules/ui/professor.js
+  init_store();
+  var TUTORIAL_STEPS = [
+    {
+      title: "\u{1F44B} Welcome to ZER\xD8!",
+      message: "I'm Professor Zero, and I'm here to help you master Solana trading without risking a single penny!<br><br>This is a <b>Paper Trading Simulation</b>. Everything looks real, but your wallet is completely safe.",
+      highlightId: null
+    },
+    {
+      title: "\u{1F6E1}\uFE0F Zero Risk, Real Data",
+      message: "See that overlay? That's your command center.<br><br>We use <b>real-time market data</b> to simulate exactly what would happen if you traded for real. Same prices, same thrills, zero risk.",
+      highlightId: IDS.banner
+    },
+    {
+      title: "\u{1F4CA} Your P&L Tracker",
+      message: "Keep an eye on the <b>P&L (Profit & Loss)</b> bar.<br><br>It tracks your wins and losses in real-time. I'll pop in occasionally to give you tips!<br><br>\u26A0\uFE0F The <b>RESET</b> button clears your entire session \u2014 balance, trades, and P&L.",
+      highlightId: IDS.pnlHud
+    },
+    {
+      title: "\u{1F4B8} Buying & Selling",
+      message: "Use the <b>HUD Panel</b> to place trades.<br><br>Enter an amount and click <b>BUY</b>. When you're ready to exit, switch to the <b>SELL</b> tab.<br><br>Try to build your 10 SOL starting balance into a fortune!",
+      highlightId: IDS.buyHud
+    },
+    {
+      title: "\u{1F680} Ready to Trade?",
+      message: "That's it! You're ready to hit the markets.<br><br>Remember: The goal is to learn. Don't be afraid to make mistakes here\u2014that's how you get better.<br><br><b>Good luck, trader!</b>",
+      highlightId: null
+    }
+  ];
   var Professor = {
     init() {
+    },
+    /**
+     * Start the walkthrough tutorial.
+     * @param {boolean} [isReplay=false] - If true, replays even if already completed.
+     */
+    startWalkthrough(isReplay = false) {
+      this._showStep(0);
+    },
+    /** @private */
+    _showStep(stepIndex) {
+      const container = OverlayManager.getContainer();
+      const shadowRoot = OverlayManager.getShadowRoot();
+      if (!container || !shadowRoot)
+        return;
+      const step = TUTORIAL_STEPS[stepIndex];
+      if (!step)
+        return;
+      const highlighted = container.querySelectorAll(".highlight-active");
+      highlighted.forEach((el) => el.classList.remove("highlight-active"));
+      if (step.highlightId) {
+        const target = shadowRoot.getElementById(step.highlightId);
+        if (target) {
+          target.classList.add("highlight-active");
+        }
+      }
+      const existing = container.querySelector(".professor-overlay");
+      if (existing)
+        existing.remove();
+      const professorImgUrl = typeof chrome !== "undefined" && chrome.runtime?.getURL ? chrome.runtime.getURL("src/professor.png") : "";
+      const overlay = document.createElement("div");
+      overlay.className = "professor-overlay tutorial-mode";
+      const isLastStep = stepIndex === TUTORIAL_STEPS.length - 1;
+      const btnText = isLastStep ? "Let's Go! \u{1F680}" : "Next \u27A1\uFE0F";
+      overlay.innerHTML = `
+            <div class="professor-container">
+                ${professorImgUrl ? `<img class="professor-image" src="${professorImgUrl}" alt="Professor">` : ""}
+                <div class="professor-bubble">
+                    <div class="professor-title">${step.title}</div>
+                    <div class="professor-message">${step.message}</div>
+                    <div class="professor-stats" style="margin-top:10px;text-align:right;color:#64748b;font-size:12px;">
+                        Step ${stepIndex + 1} of ${TUTORIAL_STEPS.length}
+                    </div>
+                    <button class="professor-dismiss">${btnText}</button>
+                </div>
+            </div>
+        `;
+      container.appendChild(overlay);
+      overlay.querySelector(".professor-dismiss").addEventListener("click", async () => {
+        if (isLastStep) {
+          overlay.style.animation = "professorFadeIn 0.2s ease-out reverse";
+          setTimeout(() => overlay.remove(), 200);
+          const hl = container.querySelectorAll(".highlight-active");
+          hl.forEach((el) => el.classList.remove("highlight-active"));
+          if (Store.state?.settings) {
+            Store.state.settings.tutorialCompleted = true;
+            await Store.save();
+          }
+        } else {
+          this._showStep(stepIndex + 1);
+        }
+      });
     },
     showCritique(trigger, value, analysisState) {
       return;
@@ -2997,6 +4277,8 @@ input:checked + .slider:before {
     ADVANCED_COACHING: "elite",
     BEHAVIOR_BASELINE: "elite",
     MARKET_CONTEXT: "elite",
+    NARRATIVE_TRUST: "elite",
+    SHADOW_HUD: "elite",
     TRADER_PROFILE: "elite",
     // Tease-card keys (for Settings/Insights UI)
     ELITE_TRADE_PLAN: "elite",
@@ -3021,7 +4303,8 @@ input:checked + .slider:before {
       { id: "ELITE_RISK_METRICS", name: "Risk Metrics", desc: "Advanced risk-adjusted performance metrics for serious traders." },
       { id: "ELITE_SESSION_REPLAY", name: "Session Replay", desc: "Replay your sessions to review decisions and improve execution." },
       { id: "ELITE_TRADER_PROFILE", name: "Trader Profile", desc: "Your personal trading identity \u2014 strengths, weaknesses, and growth." },
-      { id: "ELITE_MARKET_CONTEXT", name: "Market Context", desc: "Overlay market conditions to see how context affected your trades." }
+      { id: "ELITE_MARKET_CONTEXT", name: "Market Context", desc: "Overlay market conditions to see how context affected your trades." },
+      { id: "ELITE_NARRATIVE_TRUST", name: "Narrative Trust", desc: "Observe social signals, community presence, and developer history for any token." }
     ]
   };
   var FeatureManager = {
@@ -3241,7 +4524,8 @@ input:checked + .slider:before {
       marketCapUsd: 0,
       liquidityUsd: 0,
       symbol: null,
-      name: null
+      name: null,
+      info: null
     },
     listeners: [],
     init() {
@@ -3262,7 +4546,7 @@ input:checked + .slider:before {
         return;
       this.currentMint = mint;
       this.stopPolling();
-      this.data = { priceUsd: 0, marketCapUsd: 0, liquidityUsd: 0, symbol: null, name: null };
+      this.data = { priceUsd: 0, marketCapUsd: 0, liquidityUsd: 0, symbol: null, name: null, info: null };
       this.isStale = false;
       this.dexHasData = true;
       if (mint) {
@@ -3319,7 +4603,8 @@ input:checked + .slider:before {
                 marketCapUsd: mc,
                 liquidityUsd: bestPair.liquidity?.usd || 0,
                 symbol: bestPair.baseToken?.symbol,
-                name: bestPair.baseToken?.name
+                name: bestPair.baseToken?.name,
+                info: bestPair.info || null
               };
               this.lastUpdateTs = Date.now();
               this.isStale = false;
@@ -3355,7 +4640,8 @@ input:checked + .slider:before {
               marketCapUsd: this.data.marketCapUsd || 0,
               liquidityUsd: this.data.liquidityUsd || 0,
               symbol: this.data.symbol,
-              name: this.data.name
+              name: this.data.name,
+              info: this.data.info || null
             };
             this.lastUpdateTs = Date.now();
             this.isStale = false;
@@ -3494,6 +4780,346 @@ input:checked + .slider:before {
 
   // src/modules/ui/banner.js
   init_store();
+
+  // src/modules/mode-manager.js
+  init_store();
+  var MODES = {
+    PAPER: "paper",
+    ANALYSIS: "analysis",
+    SHADOW: "shadow"
+  };
+  var MODE_META = {
+    [MODES.PAPER]: {
+      label: "PAPER MODE",
+      badge: "PAPER MODE",
+      tier: "free",
+      showBuyHud: true,
+      isRealTrading: false,
+      shareCopy: "Paper trading session tracked with ZERO.",
+      sessionBanner: null
+      // Paper mode has no session disclaimer
+    },
+    [MODES.ANALYSIS]: {
+      label: "ANALYSIS MODE",
+      badge: "ANALYSIS MODE",
+      tier: "free",
+      showBuyHud: false,
+      isRealTrading: true,
+      shareCopy: "Real trades observed and reviewed with ZERO.",
+      sessionBanner: {
+        title: "Analysis Mode Active",
+        body: "You are trading real money.\nZERO is quietly observing and recording trades for review.",
+        footer: "No execution. No automation. Analysis only."
+      },
+      tooltip: "ZERO does not execute or automate trades in this mode.",
+      subtext: "Observing real trades only",
+      summaryHeader: "Session Summary \u2014 Real Trades",
+      summarySubheader: "Observed \u2022 No interpretation applied",
+      summaryFooter: "Advanced behavioral insights are available in Shadow Mode."
+    },
+    [MODES.SHADOW]: {
+      label: "SHADOW MODE",
+      badge: "SHADOW MODE",
+      tier: "elite",
+      showBuyHud: false,
+      showShadowHud: true,
+      isRealTrading: true,
+      shareCopy: "Real trades analyzed using ZERO's advanced behavioral analysis.",
+      sessionBanner: {
+        title: "Shadow Mode Active",
+        body: "You are trading real money.\nZERO is analyzing your trades with advanced behavioral intelligence.",
+        footer: "No execution. No automation. Elite analysis active."
+      },
+      tooltip: "ZERO observes and analyzes your real trades using advanced behavioral patterns.",
+      subtext: "Elite behavioral analysis active"
+    }
+  };
+  var ModeManager = {
+    /**
+     * Get the current active mode key.
+     */
+    getMode() {
+      return Store.state?.settings?.tradingMode || MODES.PAPER;
+    },
+    /**
+     * Get metadata for the current mode.
+     */
+    getMeta() {
+      return MODE_META[this.getMode()] || MODE_META[MODES.PAPER];
+    },
+    /**
+     * Get metadata for a specific mode.
+     */
+    getMetaFor(mode) {
+      return MODE_META[mode] || MODE_META[MODES.PAPER];
+    },
+    /**
+     * Set the active mode, with tier check for Shadow.
+     * Returns true if mode was set, false if gated.
+     */
+    async setMode(mode) {
+      if (!MODES[mode.toUpperCase()] && !Object.values(MODES).includes(mode)) {
+        console.warn("[ModeManager] Unknown mode:", mode);
+        return false;
+      }
+      if (mode === MODES.SHADOW && !FeatureManager.isElite(Store.state)) {
+        return false;
+      }
+      Store.state.settings.tradingMode = mode;
+      await Store.save();
+      return true;
+    },
+    /**
+     * Whether the BUY/SELL HUD should be rendered in the DOM.
+     */
+    shouldShowBuyHud() {
+      const meta = this.getMeta();
+      return meta.showBuyHud;
+    },
+    /**
+     * Whether the current mode operates on real trades.
+     */
+    isRealTrading() {
+      const meta = this.getMeta();
+      return meta.isRealTrading;
+    },
+    /**
+     * Get the share copy for the current mode.
+     */
+    getShareCopy() {
+      const meta = this.getMeta();
+      return meta.shareCopy;
+    },
+    /**
+     * Whether the current mode has a session disclaimer banner.
+     */
+    hasSessionBanner() {
+      const meta = this.getMeta();
+      return !!meta.sessionBanner;
+    },
+    /**
+     * Get the CSS class to apply to the overlay container.
+     */
+    getContainerClass() {
+      const mode = this.getMode();
+      if (mode === MODES.ANALYSIS)
+        return "zero-analysis-mode";
+      if (mode === MODES.SHADOW)
+        return "zero-shadow-mode";
+      return "";
+    },
+    /**
+     * Whether the Shadow HUD should be rendered in the DOM.
+     */
+    shouldShowShadowHud() {
+      return this.getMode() === MODES.SHADOW;
+    },
+    /**
+     * Check if Shadow Mode first-session aha moment should show.
+     * Returns true only once per user (first shadow session completion).
+     */
+    shouldShowShadowAha() {
+      if (this.getMode() !== MODES.SHADOW)
+        return false;
+      if (!FeatureManager.isElite(Store.state))
+        return false;
+      return !Store.state.settings._shadowAhaShown;
+    },
+    /**
+     * Mark Shadow aha moment as shown.
+     */
+    async markShadowAhaShown() {
+      Store.state.settings._shadowAhaShown = true;
+      await Store.save();
+    }
+  };
+
+  // src/modules/ui/modes-ui.js
+  init_store();
+  var sessionBannerShownForSession = null;
+  function getModeIcon(mode) {
+    if (mode === MODES.ANALYSIS)
+      return ICONS.MODE_ANALYSIS;
+    if (mode === MODES.SHADOW)
+      return ICONS.MODE_SHADOW;
+    return ICONS.MODE_PAPER;
+  }
+  var ModesUI = {
+    /**
+     * Render an inline mode badge HTML string.
+     * Usage: insert into banner or header HTML.
+     */
+    renderBadge(mode) {
+      mode = mode || ModeManager.getMode();
+      const meta = MODE_META[mode] || MODE_META[MODES.PAPER];
+      const icon = getModeIcon(mode);
+      const tooltip = meta.tooltip || "";
+      const subtext = meta.subtext || "";
+      let html = `<span class="zero-mode-badge ${mode}" title="${tooltip}">`;
+      html += icon;
+      html += ` ${meta.badge}`;
+      if (subtext) {
+        html += `<span class="mode-subtext">${subtext}</span>`;
+      }
+      if (tooltip) {
+        html += `<span class="zero-mode-tooltip">${tooltip}</span>`;
+      }
+      html += `</span>`;
+      return html;
+    },
+    /**
+     * Show the once-per-session disclaimer banner for Analysis or Shadow mode.
+     * Returns immediately if already shown for this session or if mode has no banner.
+     */
+    showSessionBanner() {
+      const mode = ModeManager.getMode();
+      const meta = ModeManager.getMeta();
+      if (!meta.sessionBanner)
+        return;
+      const sessionId = Store.state?.session?.id;
+      if (sessionBannerShownForSession === sessionId)
+        return;
+      sessionBannerShownForSession = sessionId;
+      const container = OverlayManager.getContainer();
+      if (!container)
+        return;
+      if (container.querySelector(".zero-session-banner-overlay"))
+        return;
+      const icon = getModeIcon(mode);
+      const banner = meta.sessionBanner;
+      const overlay = document.createElement("div");
+      overlay.className = "zero-session-banner-overlay";
+      overlay.innerHTML = `
+            <div class="zero-session-banner ${mode}">
+                <div class="banner-icon">
+                    ${icon}
+                    <span class="banner-title">${banner.title}</span>
+                </div>
+                <div class="banner-body">${banner.body}</div>
+                <div class="banner-footer">${banner.footer}</div>
+                <button class="banner-dismiss">Continue</button>
+            </div>
+        `;
+      container.appendChild(overlay);
+      const dismiss = () => overlay.remove();
+      overlay.querySelector(".banner-dismiss").onclick = dismiss;
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay)
+          dismiss();
+      });
+    },
+    /**
+     * Render session summary header HTML for the current mode.
+     * Used in dashboard / session review.
+     */
+    renderSessionSummaryHeader() {
+      const mode = ModeManager.getMode();
+      const meta = ModeManager.getMeta();
+      if (mode === MODES.PAPER) {
+        return `
+                <div class="zero-session-summary-header">
+                    <div class="summary-title">Session Summary &mdash; Paper Trades</div>
+                    <div class="summary-subtitle">Simulated &bull; Risk-free practice</div>
+                </div>
+            `;
+      }
+      if (mode === MODES.ANALYSIS) {
+        return `
+                <div class="zero-session-summary-header">
+                    <div class="summary-title">${meta.summaryHeader}</div>
+                    <div class="summary-subtitle">${meta.summarySubheader}</div>
+                    <div class="summary-footer">${meta.summaryFooter}</div>
+                </div>
+            `;
+      }
+      return `
+            <div class="zero-session-summary-header">
+                <div class="summary-title">Session Summary &mdash; Real Trades</div>
+                <div class="summary-subtitle">Analyzed &bull; Elite behavioral insights applied</div>
+            </div>
+        `;
+    },
+    /**
+     * Render stats section tabs (Paper Trading / Real Trading) HTML.
+     * Only renders tabs if the user has trades in both modes.
+     */
+    renderStatsTabs(activeTab) {
+      activeTab = activeTab || "paper";
+      return `
+            <div class="zero-stats-tabs">
+                <div class="zero-stats-tab ${activeTab === "paper" ? "active" : ""}" data-stats-tab="paper">Paper Trading</div>
+                <div class="zero-stats-tab real ${activeTab === "real" ? "active" : ""}" data-stats-tab="real">Real Trading (Observed)</div>
+            </div>
+        `;
+    },
+    /**
+     * Get the banner hint text based on current mode.
+     */
+    getBannerHint() {
+      const mode = ModeManager.getMode();
+      if (mode === MODES.ANALYSIS)
+        return "(Analysis Mode)";
+      if (mode === MODES.SHADOW)
+        return "(Shadow Mode)";
+      return "(Paper Trading Overlay)";
+    },
+    /**
+     * Get the banner label text based on current mode.
+     */
+    getBannerLabel() {
+      const mode = ModeManager.getMode();
+      const meta = ModeManager.getMeta();
+      return meta.badge;
+    },
+    /**
+     * Apply the correct mode container class to the overlay root.
+     */
+    applyContainerClass() {
+      const container = OverlayManager.getContainer();
+      if (!container)
+        return;
+      container.classList.remove("zero-shadow-mode", "zero-analysis-mode");
+      const cls = ModeManager.getContainerClass();
+      if (cls)
+        container.classList.add(cls);
+      const host = OverlayManager.shadowHost;
+      if (host) {
+        host.classList.remove("zero-shadow-mode", "zero-analysis-mode");
+        if (cls)
+          host.classList.add(cls);
+      }
+    },
+    /**
+     * Check whether trades exist in both paper and real categories.
+     * Used to decide if stats tabs should render.
+     */
+    hasMultipleTradeSources() {
+      const trades = Object.values(Store.state?.trades || {});
+      let hasPaper = false;
+      let hasReal = false;
+      for (const t of trades) {
+        if (t.mode === "paper" || !t.mode)
+          hasPaper = true;
+        if (t.mode === "analysis" || t.mode === "shadow")
+          hasReal = true;
+        if (hasPaper && hasReal)
+          return true;
+      }
+      return false;
+    },
+    /**
+     * Filter trades by source category.
+     */
+    filterTradesBySource(source) {
+      const trades = Object.values(Store.state?.trades || {});
+      if (source === "paper") {
+        return trades.filter((t) => t.mode === "paper" || !t.mode);
+      }
+      return trades.filter((t) => t.mode === "analysis" || t.mode === "shadow");
+    }
+  };
+
+  // src/modules/ui/banner.js
   var Banner = {
     ensurePageOffset() {
       const body = document.body;
@@ -3527,20 +5153,21 @@ input:checked + .slider:before {
         return;
       bar = document.createElement("div");
       bar.id = IDS.banner;
+      const modeHint = ModesUI.getBannerHint();
       bar.innerHTML = `
             <div class="inner" style="cursor:pointer;" title="Click to toggle ZER\xD8 Mode">
                 <div class="dot"></div>
                 <div class="label">ZER\xD8 MODE</div>
                 <div class="state">ENABLED</div>
-                <div class="hint" style="margin-left:8px; opacity:0.5; font-size:11px;">(Paper Trading Overlay)</div>
+                <div class="hint" style="margin-left:8px; opacity:0.5; font-size:11px;">${modeHint}</div>
             </div>
-            <div style="position:absolute; right:20px; font-size:10px; color:#334155; pointer-events:none;">v${Store2.state?.version || "0.9.1"}</div>
+            <div style="position:absolute; right:20px; font-size:10px; color:#334155; pointer-events:none;">v${Store.state?.version || "0.9.1"}</div>
         `;
       bar.addEventListener("click", async () => {
-        if (!Store2.state)
+        if (!Store.state)
           return;
-        Store2.state.settings.enabled = !Store2.state.settings.enabled;
-        await Store2.save();
+        Store.state.settings.enabled = !Store.state.settings.enabled;
+        await Store.save();
         if (window.ZeroHUD && window.ZeroHUD.updateAll) {
           window.ZeroHUD.updateAll();
         }
@@ -3551,21 +5178,24 @@ input:checked + .slider:before {
     updateBanner() {
       const root = OverlayManager.getShadowRoot();
       const bar = root?.getElementById(IDS.banner);
-      if (!bar || !Store2.state)
+      if (!bar || !Store.state)
         return;
-      const enabled = Store2.state.settings.enabled;
+      const enabled = Store.state.settings.enabled;
       const stateEl = bar.querySelector(".state");
       if (stateEl)
         stateEl.textContent = enabled ? "ENABLED" : "DISABLED";
       bar.classList.toggle("disabled", !enabled);
+      const hintEl = bar.querySelector(".hint");
+      if (hintEl)
+        hintEl.textContent = ModesUI.getBannerHint();
       this.updateAlerts();
     },
     updateAlerts() {
       const root = OverlayManager.getShadowRoot();
-      if (!root || !Store2.state)
+      if (!root || !Store.state)
         return;
-      const flags = FeatureManager.resolveFlags(Store2.state, "TILT_DETECTION");
-      if (!flags.visible || !Store2.state.settings.behavioralAlerts) {
+      const flags = FeatureManager.resolveFlags(Store.state, "TILT_DETECTION");
+      if (!flags.visible || !Store.state.settings.behavioralAlerts) {
         const existing = root.getElementById("elite-alert-container");
         if (existing)
           existing.remove();
@@ -3578,7 +5208,7 @@ input:checked + .slider:before {
         container.className = "elite-alert-overlay";
         root.appendChild(container);
       }
-      const alerts = Store2.state.session.activeAlerts || [];
+      const alerts = Store.state.session.activeAlerts || [];
       const existingIds = Array.from(container.children).map((c) => c.dataset.ts);
       alerts.forEach((alert) => {
         if (!existingIds.includes(alert.ts.toString())) {
@@ -3887,11 +5517,11 @@ input:checked + .slider:before {
       const vol = ctx.vol24h;
       const chg = Math.abs(ctx.priceChange24h);
       if (vol < 5e5 && Date.now() - (state.lastRegimeAlert || 0) > 36e5) {
-        this.addAlert(state, "MARKET_REGIME", "\u{1F4C9} LOW VOLUME: Liquidity is thin ($<500k). Slippage may be high.");
+        this.addAlert(state, "MARKET_REGIME", "LOW VOLUME: Liquidity is thin ($<500k). Slippage may be high.");
         state.lastRegimeAlert = Date.now();
       }
       if (chg > 50 && Date.now() - (state.lastRegimeAlert || 0) > 36e5) {
-        this.addAlert(state, "MARKET_REGIME", "\u26A0\uFE0F HIGH VOLATILITY: 24h change is >50%. Expect rapid swings.");
+        this.addAlert(state, "MARKET_REGIME", "HIGH VOLATILITY: 24h change is >50%. Expect rapid swings.");
         state.lastRegimeAlert = Date.now();
       }
     },
@@ -3901,7 +5531,7 @@ input:checked + .slider:before {
         return;
       const lossStreak = state.session.lossStreak || 0;
       if (lossStreak >= 3) {
-        this.addAlert(state, "TILT", `\u26A0\uFE0F TILT DETECTED: ${lossStreak} Losses in a row. Take a break.`);
+        this.addAlert(state, "TILT", `TILT DETECTED: ${lossStreak} Losses in a row. Take a break.`);
         state.behavior.tiltFrequency = (state.behavior.tiltFrequency || 0) + 1;
       }
     },
@@ -3913,7 +5543,7 @@ input:checked + .slider:before {
         return;
       const pos = state.positions[trade.mint];
       if (pos && (pos.pnlSol || 0) < 0) {
-        this.addAlert(state, "SUNK_COST", "\u{1F4C9} SUNK COST: Averaging down into a losing position increases risk.");
+        this.addAlert(state, "SUNK_COST", "SUNK COST: Averaging down into a losing position increases risk.");
         state.behavior.sunkCostFrequency = (state.behavior.sunkCostFrequency || 0) + 1;
       }
     },
@@ -3935,7 +5565,7 @@ input:checked + .slider:before {
       const timeSinceLast = Date.now() - last5[4].ts;
       if (timeSpan < 3e5 && timeSinceLast < 3e5) {
         console.log(`[ZER\xD8 ALERT] Overtrading Detected: 5 trades in ${(timeSpan / 1e3).toFixed(1)}s`, last5.map((t) => t.id));
-        this.addAlert(state, "VELOCITY", "\u26A0\uFE0F OVERTRADING: You're trading too fast. Stop and evaluate setups.");
+        this.addAlert(state, "VELOCITY", "OVERTRADING: You're trading too fast. Stop and evaluate setups.");
         state.behavior.overtradingFrequency = (state.behavior.overtradingFrequency || 0) + 1;
         state.lastOvertradingAlert = Date.now();
       }
@@ -3949,7 +5579,7 @@ input:checked + .slider:before {
         const peakPct = pos.peakPnlPct !== void 0 ? pos.peakPnlPct : 0;
         if (peakPct > 10 && pnlPct < 0) {
           if (!pos.alertedGreenToRed) {
-            this.addAlert(state, "PROFIT_NEGLECT", `\u{1F34F} GREEN-TO-RED: ${pos.symbol} was up 10%+. Don't let winners die.`);
+            this.addAlert(state, "PROFIT_NEGLECT", `GREEN-TO-RED: ${pos.symbol} was up 10%+. Don't let winners die.`);
             pos.alertedGreenToRed = true;
             state.behavior.profitNeglectFrequency = (state.behavior.profitNeglectFrequency || 0) + 1;
           }
@@ -3966,7 +5596,7 @@ input:checked + .slider:before {
         const trades = Object.values(state.trades || {});
         const profitableStrategies = trades.filter((t) => (t.realizedPnlSol || 0) > 0 && t.strategy !== "Unknown").map((t) => t.strategy);
         if (profitableStrategies.length >= 3) {
-          this.addAlert(state, "DRIFT", "\u{1F575}\uFE0F STRATEGY DRIFT: Playing 'Unknown' instead of your winning setups.");
+          this.addAlert(state, "DRIFT", "STRATEGY DRIFT: Playing 'Unknown' instead of your winning setups.");
           state.behavior.strategyDriftFrequency = (state.behavior.strategyDriftFrequency || 0) + 1;
         }
       }
@@ -3980,7 +5610,7 @@ input:checked + .slider:before {
       const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
       const prevTrade = trades.length > 1 ? trades[trades.length - 2] : null;
       if (prevTrade && trade.ts - prevTrade.ts < 3e4 && prevTrade.side === "SELL" && (prevTrade.realizedPnlSol || 0) < 0) {
-        this.addAlert(state, "FOMO", "\u{1F6A8} FOMO ALERT: Revenge trading detected.");
+        this.addAlert(state, "FOMO", "FOMO ALERT: Revenge trading detected.");
         state.behavior.fomoTrades = (state.behavior.fomoTrades || 0) + 1;
       }
     },
@@ -3991,7 +5621,7 @@ input:checked + .slider:before {
       if (!flags.enabled)
         return;
       if (trade.entryTs && trade.ts - trade.entryTs < 45e3 && (trade.realizedPnlSol || 0) < 0) {
-        this.addAlert(state, "PANIC", "\u{1F631} PANIC SELL: You're cutting too early. Trust your stops.");
+        this.addAlert(state, "PANIC", "PANIC SELL: You're cutting too early. Trust your stops.");
         state.behavior.panicSells = (state.behavior.panicSells || 0) + 1;
       }
     },
@@ -4035,6 +5665,7 @@ input:checked + .slider:before {
       return { score, critique };
     },
     generateXShareText(state) {
+      const mode = state.settings?.tradingMode || "paper";
       const trades = Object.values(state.trades || {});
       const sellTrades = trades.filter((t) => t.side === "SELL");
       const wins = sellTrades.filter((t) => (t.realizedPnlSol || 0) > 0).length;
@@ -4047,7 +5678,7 @@ input:checked + .slider:before {
       const currentStreak = winStreak > 0 ? `${winStreak}W` : lossStreak > 0 ? `${lossStreak}L` : "0";
       const pnlFormatted = totalPnl >= 0 ? `+${totalPnl.toFixed(3)}` : totalPnl.toFixed(3);
       const pnlTag = totalPnl >= 0 ? "[PROFIT]" : "[DRAWDOWN]";
-      let text = `ZER\xD8 Trading Session Complete
+      let text = `ZERO Trading Session Complete
 
 `;
       text += `${pnlTag} P&L: ${pnlFormatted} SOL
@@ -4061,23 +5692,72 @@ input:checked + .slider:before {
       text += `DISCIPLINE: ${disciplineScore}/100
 
 `;
-      if (winRate >= 70) {
-        text += `Systematic Excellence. \u{1F4AA}
-
+      if (mode === "shadow") {
+        text += `Real trades analyzed using ZERO's advanced behavioral analysis.
 `;
-      } else if (winRate >= 50) {
-        text += `Disciplined Execution. \u{1F4CA}
-
+      } else if (mode === "analysis") {
+        text += `Real trades observed and reviewed with ZERO.
 `;
-      } else if (sellTrades.length >= 3) {
-        text += `Baseline Established. \u{1F4DA}
-
+      } else {
+        text += `Paper trading session tracked with ZERO.
 `;
       }
-      text += `Paper trading with ZER\xD8 on Solana
+      text += `https://get-zero.xyz
+
 `;
       text += `#Solana #PaperTrading #Crypto`;
       return text;
+    },
+    /**
+     * Analyze trades filtered by source category.
+     * source: 'paper' | 'real' | 'all'
+     */
+    analyzeTradesBySource(state, source) {
+      const allTrades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+      let trades;
+      if (source === "paper") {
+        trades = allTrades.filter((t) => t.mode === "paper" || !t.mode);
+      } else if (source === "real") {
+        trades = allTrades.filter((t) => t.mode === "analysis" || t.mode === "shadow");
+      } else {
+        trades = allTrades;
+      }
+      if (trades.length === 0)
+        return null;
+      const recentTrades = trades.slice(-10);
+      let wins = 0, losses = 0;
+      let totalPnlSol = 0;
+      for (const trade of recentTrades) {
+        const pnl = trade.realizedPnlSol || 0;
+        if (pnl > 0)
+          wins++;
+        else if (pnl < 0)
+          losses++;
+        totalPnlSol += pnl;
+      }
+      const winRate = recentTrades.length > 0 ? wins / recentTrades.length * 100 : 0;
+      const grossProfits = recentTrades.reduce((sum, t) => sum + Math.max(0, t.realizedPnlSol || 0), 0);
+      const grossLosses = Math.abs(recentTrades.reduce((sum, t) => sum + Math.min(0, t.realizedPnlSol || 0), 0));
+      const profitFactor = grossLosses > 0 ? (grossProfits / grossLosses).toFixed(2) : grossProfits > 0 ? "MAX" : "0.00";
+      let peak = 0, maxDd = 0, currentBal = 0;
+      recentTrades.forEach((t) => {
+        currentBal += t.realizedPnlSol || 0;
+        if (currentBal > peak)
+          peak = currentBal;
+        const dd = peak - currentBal;
+        if (dd > maxDd)
+          maxDd = dd;
+      });
+      return {
+        totalTrades: recentTrades.length,
+        wins,
+        losses,
+        winRate: winRate.toFixed(1),
+        profitFactor,
+        maxDrawdown: maxDd.toFixed(4),
+        totalPnlSol,
+        source
+      };
     },
     // ==========================================
     // EXPORT FUNCTIONALITY
@@ -4785,7 +6465,7 @@ input:checked + .slider:before {
       const now = Date.now();
       if (priceWasUpdated && now - this.lastPriceSave > 5e3) {
         this.lastPriceSave = now;
-        Store2.save();
+        Store.save();
       }
       return totalUnrealizedSol;
     }
@@ -4797,7 +6477,7 @@ input:checked + .slider:before {
     // ENTRY Action
     // tokenInfo arg matches existing UI signature but we rely on Market.currentMint for truth
     async buy(solAmount, strategy = "MANUAL", tokenInfo = null, tradePlan = null) {
-      const state = Store2.state;
+      const state = Store.state;
       const mint = Market.currentMint;
       const priceUsd = Market.price;
       const symbol = Market.currentSymbol || "UNKNOWN";
@@ -4806,7 +6486,7 @@ input:checked + .slider:before {
       if (solAmount <= 0)
         return { success: false, error: "Invalid SOL amount" };
       if (priceUsd <= 0)
-        return { success: false, error: `Market Data Unavailable (Price: ${priceUsd})` };
+        return { success: false, error: `Price not available (${priceUsd})` };
       const tickAge = Date.now() - Market.lastTickTs;
       console.log(`[EXEC] BUY DIAG: price=$${priceUsd}, mcap=$${Market.marketCap}, source=${Market.lastSource}, tickAge=${tickAge}ms`);
       const solUsd = PnlCalculator.getSolPrice();
@@ -4852,12 +6532,12 @@ input:checked + .slider:before {
       };
       const fillId = this.recordFill(state, fillData);
       state.session.balance -= solAmount;
-      await Store2.save();
+      await Store.save();
       return { success: true, message: `Bought ${symbol}`, trade: { id: fillId } };
     },
     // EXIT Action
     async sell(percent, strategy = "MANUAL", tokenInfo = null) {
-      const state = Store2.state;
+      const state = Store.state;
       const mint = Market.currentMint;
       const priceUsd = Market.price;
       const symbol = Market.currentSymbol || "UNKNOWN";
@@ -4911,16 +6591,16 @@ input:checked + .slider:before {
         Analytics.updateStreaks({ side: "SELL", realizedPnlSol: pnlEventSol }, state);
       } catch (e) {
       }
-      await Store2.save();
+      await Store.save();
       return { success: true, message: `Sold ${pct}% ${symbol}`, trade: { id: fillId } };
     },
     // Tagging (Emotion/Notes)
     async tagTrade(tradeId, updates) {
-      const state = Store2.state;
+      const state = Store.state;
       const fill = state.fills ? state.fills.find((f) => f.id === tradeId) : null;
       if (fill) {
         Object.assign(fill, updates);
-        await Store2.save();
+        await Store.save();
         return true;
       }
       return false;
@@ -5088,8 +6768,8 @@ input:checked + .slider:before {
       console.log("[Paywall] Redirecting to Elite upgrade page");
     },
     unlockDemo(tier = "elite") {
-      Store2.state.settings.tier = "elite";
-      Store2.save();
+      Store.state.settings.tier = "elite";
+      Store.save();
       console.log(`[Paywall] Demo mode unlocked - ${tier.toUpperCase()} tier activated`);
       const root = OverlayManager.getShadowRoot();
       const toast = document.createElement("div");
@@ -5116,7 +6796,7 @@ input:checked + .slider:before {
     isFeatureLocked(featureName) {
       if (!FeatureManager)
         return false;
-      const flags = FeatureManager.resolveFlags(Store2.state, featureName);
+      const flags = FeatureManager.resolveFlags(Store.state, featureName);
       return flags.gated;
     }
   };
@@ -5640,7 +7320,7 @@ canvas#equity-canvas {
         }
         root.appendChild(overlay);
       }
-      const state = Store2.state;
+      const state = Store.state;
       const stats = this.computeSessionStats(state);
       const hasEquityData = (state.session.equityHistory || []).length >= 2;
       const pnlSign = stats.sessionPnl >= 0 ? "+" : "";
@@ -5817,7 +7497,7 @@ canvas#equity-canvas {
         });
         notesInput.addEventListener("blur", async () => {
           state.session.notes = notesInput.value.slice(0, 280);
-          await Store2.save();
+          await Store.save();
         });
       }
       if (notesSave) {
@@ -5825,7 +7505,7 @@ canvas#equity-canvas {
           e.preventDefault();
           e.stopPropagation();
           state.session.notes = notesInput.value.slice(0, 280);
-          await Store2.save();
+          await Store.save();
           notesSave.textContent = "Saved";
           notesSave.style.color = "#10b981";
           setTimeout(() => {
@@ -6079,7 +7759,7 @@ canvas#equity-canvas {
         }
         root.appendChild(overlay);
       }
-      const state = Store2.state;
+      const state = Store.state;
       const isElite = FeatureManager.isElite(state);
       overlay.innerHTML = `
             <div class="insights-modal">
@@ -6192,7 +7872,8 @@ canvas#equity-canvas {
         existing.remove();
       const overlay = document.createElement("div");
       overlay.className = "confirm-modal-overlay zero-settings-overlay";
-      const isShadow = Store2.state.settings.tradingMode === "shadow";
+      const currentMode = Store.state.settings.tradingMode || "paper";
+      const isElite = FeatureManager.isElite(Store.state);
       const diagState = DiagnosticsStore.state || {};
       const isAutoSend = diagState.settings?.privacy?.autoSendDiagnostics || false;
       const lastUpload = diagState.settings?.diagnostics?.lastUploadedEventTs || 0;
@@ -6201,21 +7882,45 @@ canvas#equity-canvas {
       overlay.innerHTML = `
             <div class="settings-modal" style="width:440px; max-height:85vh; overflow-y:auto;">
                 <div class="settings-header">
-                    <div class="settings-title"><span>\u2699\uFE0F</span> Settings</div>
+                    <div class="settings-title">${ICONS.MODE_PAPER} Settings</div>
                     <button class="settings-close">\xD7</button>
                 </div>
 
-                <!-- General -->
-                <div class="settings-section-title">General</div>
+                <!-- Mode Selection -->
+                <div class="settings-section-title">Trading Mode</div>
 
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <div class="setting-name">Shadow Real Mode</div>
-                        <div class="setting-desc">Tag trades as "Real" for journaling.</div>
-                    </div>
-                    <label class="toggle-switch">
-                        <input type="checkbox" data-setting="shadow" ${isShadow ? "checked" : ""}>
-                        <span class="slider"></span>
+                <div class="setting-row" style="flex-direction:column; align-items:stretch; gap:8px;">
+                    <label class="mode-option ${currentMode === "paper" ? "active" : ""}" data-mode="paper" style="display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; cursor:pointer; border:1px solid ${currentMode === "paper" ? "rgba(20,184,166,0.3)" : "rgba(255,255,255,0.06)"}; background:${currentMode === "paper" ? "rgba(20,184,166,0.06)" : "transparent"};">
+                        <input type="radio" name="tradingMode" value="paper" ${currentMode === "paper" ? "checked" : ""} style="accent-color:#14b8a6;">
+                        <div style="flex:1;">
+                            <div style="font-size:12px; font-weight:600; color:#f8fafc; display:flex; align-items:center; gap:6px;">
+                                ${ICONS.MODE_PAPER} Paper Mode
+                                <span style="font-size:9px; padding:1px 6px; border-radius:3px; background:rgba(20,184,166,0.12); color:#14b8a6; font-weight:700;">FREE</span>
+                            </div>
+                            <div style="font-size:11px; color:#64748b; margin-top:3px;">Simulated trades. BUY / SELL HUD visible.</div>
+                        </div>
+                    </label>
+
+                    <label class="mode-option ${currentMode === "analysis" ? "active" : ""}" data-mode="analysis" style="display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; cursor:pointer; border:1px solid ${currentMode === "analysis" ? "rgba(96,165,250,0.3)" : "rgba(255,255,255,0.06)"}; background:${currentMode === "analysis" ? "rgba(96,165,250,0.06)" : "transparent"};">
+                        <input type="radio" name="tradingMode" value="analysis" ${currentMode === "analysis" ? "checked" : ""} style="accent-color:#60a5fa;">
+                        <div style="flex:1;">
+                            <div style="font-size:12px; font-weight:600; color:#f8fafc; display:flex; align-items:center; gap:6px;">
+                                ${ICONS.MODE_ANALYSIS} Analysis Mode
+                                <span style="font-size:9px; padding:1px 6px; border-radius:3px; background:rgba(96,165,250,0.12); color:#60a5fa; font-weight:700;">FREE</span>
+                            </div>
+                            <div style="font-size:11px; color:#64748b; margin-top:3px;">Observes real trades only. No BUY / SELL HUD.</div>
+                        </div>
+                    </label>
+
+                    <label class="mode-option ${currentMode === "shadow" ? "active" : ""}" data-mode="shadow" style="display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; cursor:pointer; border:1px solid ${currentMode === "shadow" ? "rgba(139,92,246,0.3)" : "rgba(255,255,255,0.06)"}; background:${currentMode === "shadow" ? "rgba(139,92,246,0.06)" : "transparent"}; ${!isElite ? "opacity:0.6;" : ""}">
+                        <input type="radio" name="tradingMode" value="shadow" ${currentMode === "shadow" ? "checked" : ""} ${!isElite ? "disabled" : ""} style="accent-color:#a78bfa;">
+                        <div style="flex:1;">
+                            <div style="font-size:12px; font-weight:600; color:#f8fafc; display:flex; align-items:center; gap:6px;">
+                                ${ICONS.MODE_SHADOW} Shadow Mode
+                                <span style="font-size:9px; padding:1px 6px; border-radius:3px; background:rgba(139,92,246,0.12); color:#a78bfa; font-weight:700;">ELITE</span>
+                            </div>
+                            <div style="font-size:11px; color:#64748b; margin-top:3px;">Observes real trades with elite behavioral analysis.${!isElite ? " Requires Elite." : ""}</div>
+                        </div>
                     </label>
                 </div>
 
@@ -6291,12 +7996,12 @@ canvas#equity-canvas {
                 <!-- Elite -->
                 <div class="settings-section-title" style="display:flex; align-items:center; gap:8px;">
                     Elite
-                    <span style="font-size:9px; font-weight:800; padding:2px 8px; border-radius:4px; background:${FeatureManager.isElite(Store2.state) ? "rgba(16,185,129,0.15)" : "rgba(139,92,246,0.15)"}; color:${FeatureManager.isElite(Store2.state) ? "#10b981" : "#8b5cf6"}; letter-spacing:0.5px; text-transform:uppercase;">
-                        ${FeatureManager.isElite(Store2.state) ? "Active" : "Free"}
+                    <span style="font-size:9px; font-weight:800; padding:2px 8px; border-radius:4px; background:${FeatureManager.isElite(Store.state) ? "rgba(16,185,129,0.15)" : "rgba(139,92,246,0.15)"}; color:${FeatureManager.isElite(Store.state) ? "#10b981" : "#8b5cf6"}; letter-spacing:0.5px; text-transform:uppercase;">
+                        ${FeatureManager.isElite(Store.state) ? "Active" : "Free"}
                     </span>
                 </div>
 
-                ${FeatureManager.isElite(Store2.state) ? `
+                ${FeatureManager.isElite(Store.state) ? `
                 <div style="padding:12px 16px; background:rgba(16,185,129,0.05); border:1px solid rgba(16,185,129,0.15); border-radius:10px; margin-bottom:12px;">
                     <div style="font-size:12px; font-weight:600; color:#10b981;">Elite Active</div>
                     <div style="font-size:11px; color:#64748b; margin-top:4px;">All advanced insights and behavioral analytics are unlocked.</div>
@@ -6311,7 +8016,7 @@ canvas#equity-canvas {
                 `}
 
                 <div style="margin-top:20px; text-align:center; font-size:11px; color:#64748b;">
-                    ZER\xD8 v${Store2.state.version || "1.11.6"}
+                    ZER\xD8 v${Store.state.version || "1.11.6"}
                 </div>
             </div>
         `;
@@ -6329,15 +8034,29 @@ canvas#equity-canvas {
         if (e.target === overlay)
           close();
       });
-      const shadowToggle = overlay.querySelector('[data-setting="shadow"]');
-      if (shadowToggle) {
-        shadowToggle.onchange = async (e) => {
-          Store2.state.settings.tradingMode = e.target.checked ? "shadow" : "paper";
-          await Store2.save();
-          const c = OverlayManager.getContainer();
-          c.classList.toggle("zero-shadow-mode", e.target.checked);
+      const modeRadios = overlay.querySelectorAll('input[name="tradingMode"]');
+      modeRadios.forEach((radio) => {
+        radio.onchange = async (e) => {
+          const newMode = e.target.value;
+          const success = await ModeManager.setMode(newMode);
+          if (!success) {
+            const currentRadio = overlay.querySelector(`input[name="tradingMode"][value="${ModeManager.getMode()}"]`);
+            if (currentRadio)
+              currentRadio.checked = true;
+            return;
+          }
+          overlay.querySelectorAll(".mode-option").forEach((opt) => {
+            const mode = opt.getAttribute("data-mode");
+            const isActive = mode === newMode;
+            const colors = { paper: "20,184,166", analysis: "96,165,250", shadow: "139,92,246" };
+            const c = colors[mode] || colors.paper;
+            opt.style.borderColor = isActive ? `rgba(${c},0.3)` : "rgba(255,255,255,0.06)";
+            opt.style.background = isActive ? `rgba(${c},0.06)` : "transparent";
+          });
+          if (window.ZeroHUD && window.ZeroHUD.renderAll)
+            window.ZeroHUD.renderAll();
         };
-      }
+      });
       const autoSendToggle = overlay.querySelector('[data-setting="autoSend"]');
       if (autoSendToggle) {
         autoSendToggle.onchange = (e) => {
@@ -6466,7 +8185,7 @@ canvas#equity-canvas {
         clientId: "<redacted>",
         createdAt: Date.now(),
         schemaVersion: 3,
-        extensionVersion: Store2.state.version || "1.11.6",
+        extensionVersion: Store.state.version || "1.11.6",
         eventsDelta: [
           { eventId: "evt_sample1", ts: Date.now() - 6e4, type: "SESSION_STARTED", platform: "AXIOM", payload: {} },
           { eventId: "evt_sample2", ts: Date.now() - 3e4, type: "TRADE_OPENED", platform: "AXIOM", payload: { side: "BUY", symbol: "TOKEN" } },
@@ -6538,7 +8257,7 @@ canvas#equity-canvas {
       const container = OverlayManager.getContainer();
       const rootId = IDS.pnlHud;
       let root = container.querySelector("#" + rootId);
-      if (!Store2.state.settings.enabled) {
+      if (!Store.state.settings.enabled) {
         if (root)
           root.style.display = "none";
         return;
@@ -6550,10 +8269,10 @@ canvas#equity-canvas {
         isNew = true;
         root = document.createElement("div");
         root.id = rootId;
-        root.className = Store2.state.settings.pnlDocked ? "docked" : "floating";
-        if (!Store2.state.settings.pnlDocked) {
-          root.style.left = px(Store2.state.settings.pnlPos.x);
-          root.style.top = px(Store2.state.settings.pnlPos.y);
+        root.className = Store.state.settings.pnlDocked ? "docked" : "floating";
+        if (!Store.state.settings.pnlDocked) {
+          root.style.left = px(Store.state.settings.pnlPos.x);
+          root.style.top = px(Store.state.settings.pnlPos.y);
         }
         container.appendChild(root);
         this.bindPnlEvents(root);
@@ -6625,12 +8344,12 @@ canvas#equity-canvas {
         inp.addEventListener("change", async () => {
           const v = parseFloat(inp.value);
           if (v > 0) {
-            if ((Store2.state.session.trades || []).length === 0) {
-              Store2.state.session.balance = v;
-              Store2.state.session.equity = v;
+            if ((Store.state.session.trades || []).length === 0) {
+              Store.state.session.balance = v;
+              Store.state.session.equity = v;
             }
-            Store2.state.settings.startSol = v;
-            await Store2.save();
+            Store.state.settings.startSol = v;
+            await Store.save();
             this.updatePnlHud();
           }
         });
@@ -6641,16 +8360,16 @@ canvas#equity-canvas {
       if (!header || !makeDraggable)
         return;
       makeDraggable(header, (dx, dy) => {
-        if (Store2.state.settings.pnlDocked)
+        if (Store.state.settings.pnlDocked)
           return;
-        const s = Store2.state.settings;
+        const s = Store.state.settings;
         s.pnlPos.x = clamp(s.pnlPos.x + dx, 0, window.innerWidth - 40);
         s.pnlPos.y = clamp(s.pnlPos.y + dy, 34, window.innerHeight - 40);
         root.style.left = px(s.pnlPos.x);
         root.style.top = px(s.pnlPos.y);
       }, async () => {
-        if (!Store2.state.settings.pnlDocked)
-          await Store2.save();
+        if (!Store.state.settings.pnlDocked)
+          await Store.save();
       });
     },
     bindPnlEvents(root) {
@@ -6665,8 +8384,8 @@ canvas#equity-canvas {
         e.preventDefault();
         e.stopPropagation();
         if (act === "dock") {
-          Store2.state.settings.pnlDocked = !Store2.state.settings.pnlDocked;
-          await Store2.save();
+          Store.state.settings.pnlDocked = !Store.state.settings.pnlDocked;
+          await Store.save();
           this.updatePnlHud();
         }
         if (act === "reset") {
@@ -6686,13 +8405,13 @@ canvas#equity-canvas {
           }
         }
         if (act === "toggleTokenUnit") {
-          Store2.state.settings.tokenDisplayUsd = !Store2.state.settings.tokenDisplayUsd;
-          await Store2.save();
+          Store.state.settings.tokenDisplayUsd = !Store.state.settings.tokenDisplayUsd;
+          await Store.save();
           this.updatePnlHud();
         }
         if (act === "toggleSessionUnit") {
-          Store2.state.settings.sessionDisplayUsd = !Store2.state.settings.sessionDisplayUsd;
-          await Store2.save();
+          Store.state.settings.sessionDisplayUsd = !Store.state.settings.sessionDisplayUsd;
+          await Store.save();
           this.updatePnlHud();
         }
         if (act === "settings") {
@@ -6713,29 +8432,29 @@ canvas#equity-canvas {
       });
     },
     shareToX() {
-      const shareText = Analytics.generateXShareText(Store2.state);
+      const shareText = Analytics.generateXShareText(Store.state);
       const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}`;
       window.open(url, "_blank", "width=550,height=420");
       console.log("[PNL HUD] Sharing session to X");
     },
     async updatePnlHud() {
       const root = OverlayManager.getContainer().querySelector("#" + IDS.pnlHud);
-      if (!root || !Store2.state)
+      if (!root || !Store.state)
         return;
-      const s = Store2.state;
+      const s = Store.state;
       const shareFlags = FeatureManager.resolveFlags(s, "SHARE_TO_X");
       const shareBtn = root.querySelector("#pnl-share-btn");
       if (shareBtn)
         shareBtn.style.display = shareFlags.visible && !shareFlags.gated ? "" : "none";
-      if (!Store2.state.settings.enabled) {
+      if (!Store.state.settings.enabled) {
         root.style.display = "none";
         return;
       }
       root.style.display = "";
-      root.className = Store2.state.settings.pnlDocked ? "docked" : "floating";
-      if (!Store2.state.settings.pnlDocked) {
-        root.style.left = px(Store2.state.settings.pnlPos.x);
-        root.style.top = px(Store2.state.settings.pnlPos.y);
+      root.className = Store.state.settings.pnlDocked ? "docked" : "floating";
+      if (!Store.state.settings.pnlDocked) {
+        root.style.left = px(Store.state.settings.pnlPos.x);
+        root.style.top = px(Store.state.settings.pnlPos.y);
         root.style.transform = "none";
       } else {
         root.style.left = "";
@@ -6818,8 +8537,8 @@ canvas#equity-canvas {
     showResetModal() {
       const overlay = document.createElement("div");
       overlay.className = "confirm-modal-overlay";
-      const duration = Store2.getSessionDuration();
-      const summary = Store2.getSessionSummary();
+      const duration = Store.getSessionDuration();
+      const summary = Store.getSessionSummary();
       overlay.innerHTML = `
             <div class="confirm-modal">
                 <h3>Reset current session?</h3>
@@ -6853,9 +8572,9 @@ canvas#equity-canvas {
       OverlayManager.getContainer().appendChild(overlay);
       overlay.querySelector(".cancel").onclick = () => overlay.remove();
       overlay.querySelector(".confirm").onclick = async () => {
-        await Store2.startNewSession();
-        Store2.state.positions = {};
-        await Store2.save();
+        await Store.startNewSession();
+        Store.state.positions = {};
+        await Store.save();
         window.postMessage({ __paper: true, type: "PAPER_CLEAR_MARKERS" }, "*");
         if (window.ZeroHUD && window.ZeroHUD.updateAll) {
           window.ZeroHUD.updateAll();
@@ -6890,8 +8609,8 @@ canvas#equity-canvas {
       SettingsPanel.show();
     },
     updateTradeList(container) {
-      const trades = Store2.state.session.trades || [];
-      const tradeObjs = trades.map((id) => Store2.state.trades[id]).filter((t) => t).reverse();
+      const trades = Store.state.session.trades || [];
+      const tradeObjs = trades.map((id) => Store.state.trades[id]).filter((t) => t).reverse();
       let html = "";
       tradeObjs.forEach((t) => {
         const side = t.side === "ENTRY" ? "BUY" : t.side === "EXIT" ? "SELL" : t.side;
@@ -6934,7 +8653,7 @@ canvas#equity-canvas {
       container.innerHTML = html || '<div style="padding:10px;color:#64748b;text-align:center;">No trades yet</div>';
     },
     updatePositionsPanel(root) {
-      const s = Store2.state;
+      const s = Store.state;
       const positions = Object.values(s.positions || {}).filter((p) => p.qtyTokens > 0);
       const listEl = root.querySelector('[data-k="positionsList"]');
       const toggleIcon = root.querySelector(".positionsToggle");
@@ -7012,7 +8731,7 @@ canvas#equity-canvas {
       return p.toFixed(leadingZeros + 3);
     },
     async executeQuickSell(mint, pct) {
-      const pos = Store2.state.positions[mint];
+      const pos = Store.state.positions[mint];
       if (!pos) {
         console.error("[PnlHud] Position not found for mint:", mint);
         return;
@@ -7022,7 +8741,7 @@ canvas#equity-canvas {
       if (result.success) {
         console.log(`[PnlHud] Quick sell ${pct}% of ${pos.symbol} successful`);
         if (result.trade && result.trade.id) {
-          const fullTrade = Store2.state.trades && Store2.state.trades[result.trade.id] ? Store2.state.trades[result.trade.id] : Store2.state.fills ? Store2.state.fills.find((f) => f.id === result.trade.id) : null;
+          const fullTrade = Store.state.trades && Store.state.trades[result.trade.id] ? Store.state.trades[result.trade.id] : Store.state.fills ? Store.state.fills.find((f) => f.id === result.trade.id) : null;
           if (fullTrade) {
             const bridgeTrade = {
               ...fullTrade,
@@ -7066,7 +8785,7 @@ canvas#equity-canvas {
       const container = OverlayManager.getContainer();
       const rootId = IDS.buyHud;
       let root = container.querySelector("#" + rootId);
-      if (!Store2.state.settings.enabled) {
+      if (!Store.state.settings.enabled) {
         if (root)
           root.style.display = "none";
         return;
@@ -7076,8 +8795,8 @@ canvas#equity-canvas {
       if (!root) {
         root = document.createElement("div");
         root.id = rootId;
-        root.className = Store2.state.settings.buyHudDocked ? "docked" : "floating";
-        if (!Store2.state.settings.buyHudDocked) {
+        root.className = Store.state.settings.buyHudDocked ? "docked" : "floating";
+        if (!Store.state.settings.buyHudDocked) {
           const safeX = window.innerWidth - 340;
           root.style.left = px2(safeX > 0 ? safeX : 20);
           root.style.top = "100px";
@@ -7111,7 +8830,7 @@ canvas#equity-canvas {
                     <div class="panelTitle"><span class="dot"></span> ZER\xD8 TRADE</div>
                     <div class="panelBtns">
                         <button class="btn" data-act="edit">${this.buyHudEdit ? "Done" : "Edit"}</button>
-                        <button class="btn" data-act="dock">${Store2.state.settings.buyHudDocked ? "Float" : "Dock"}</button>
+                        <button class="btn" data-act="dock">${Store.state.settings.buyHudDocked ? "Float" : "Dock"}</button>
                     </div>
                 </div>
                 <div class="tabs">
@@ -7131,7 +8850,7 @@ canvas#equity-canvas {
                     <div class="strategyRow">
                          <div class="fieldLabel">Context / Strategy</div>
                          <select class="strategySelect" data-k="strategy">
-                            ${(Store2.state.settings.strategies || ["Trend"]).map((s) => `<option value="${s}">${s}</option>`).join("")}
+                            ${(Store.state.settings.strategies || ["Trend"]).map((s) => `<option value="${s}">${s}</option>`).join("")}
                          </select>
                     </div>
                     ${this.renderTradePlanFields()}
@@ -7145,7 +8864,7 @@ canvas#equity-canvas {
       this.bindHeaderDrag(root, makeDraggable);
     },
     renderQuickButtons(isBuy) {
-      const values = isBuy ? Store2.state.settings.quickBuySols : Store2.state.settings.quickSellPcts;
+      const values = isBuy ? Store.state.settings.quickBuySols : Store.state.settings.quickSellPcts;
       return values.map((v) => `
             <button class="qbtn" data-act="quick" data-val="${v}">${v}${isBuy ? " SOL" : "%"}</button>
         `).join("");
@@ -7155,9 +8874,9 @@ canvas#equity-canvas {
       if (!header || !makeDraggable)
         return;
       makeDraggable(header, (dx, dy) => {
-        if (Store2.state.settings.buyHudDocked)
+        if (Store.state.settings.buyHudDocked)
           return;
-        const s = Store2.state.settings;
+        const s = Store.state.settings;
         if (!s.buyHudPos) {
           const rect = root.getBoundingClientRect();
           s.buyHudPos = { x: rect.left, y: rect.top };
@@ -7168,8 +8887,8 @@ canvas#equity-canvas {
         root.style.setProperty("top", px2(s.buyHudPos.y), "important");
         root.style.setProperty("right", "auto", "important");
       }, async () => {
-        if (!Store2.state.settings.buyHudDocked)
-          await Store2.save();
+        if (!Store.state.settings.buyHudDocked)
+          await Store.save();
       });
     },
     setupBuyHudInteractions(root) {
@@ -7183,8 +8902,8 @@ canvas#equity-canvas {
         const act = actEl.getAttribute("data-act");
         e.preventDefault();
         if (act === "dock") {
-          Store2.state.settings.buyHudDocked = !Store2.state.settings.buyHudDocked;
-          await Store2.save();
+          Store.state.settings.buyHudDocked = !Store.state.settings.buyHudDocked;
+          await Store.save();
           this.updateBuyHud();
         }
         if (act === "tab-buy") {
@@ -7197,9 +8916,9 @@ canvas#equity-canvas {
         }
         if (act === "quick") {
           const val = actEl.getAttribute("data-val");
-          const field = root.querySelector('input[data-k="field"]');
-          if (field) {
-            field.value = val;
+          const field2 = root.querySelector('input[data-k="field"]');
+          if (field2) {
+            field2.value = val;
             await this.executeTrade(root);
           }
         }
@@ -7220,8 +8939,8 @@ canvas#equity-canvas {
       });
     },
     showEmotionSelector(tradeId) {
-      const emoFlags = FeatureManager.resolveFlags(Store2.state, "EMOTION_TRACKING");
-      if (!emoFlags.enabled || Store2.state.settings.showJournal === false)
+      const emoFlags = FeatureManager.resolveFlags(Store.state, "EMOTION_TRACKING");
+      if (!emoFlags.enabled || Store.state.settings.showJournal === false)
         return;
       if (!tradeId || tradeId === this.lastEmotionTradeId)
         return;
@@ -7282,8 +9001,8 @@ canvas#equity-canvas {
       container.appendChild(overlay);
       const close = async () => {
         if (overlay.querySelector(".journal-opt-out").checked) {
-          Store2.state.settings.showJournal = false;
-          await Store2.save();
+          Store.state.settings.showJournal = false;
+          await Store.save();
         }
         overlay.remove();
       };
@@ -7298,16 +9017,16 @@ canvas#equity-canvas {
     },
     updateBuyHud() {
       const root = OverlayManager.getContainer().querySelector("#" + IDS.buyHud);
-      if (!root || !Store2.state)
+      if (!root || !Store.state)
         return;
-      if (!Store2.state.settings.enabled) {
+      if (!Store.state.settings.enabled) {
         root.style.display = "none";
         return;
       }
       root.style.display = "";
-      root.className = Store2.state.settings.buyHudDocked ? "docked" : "floating";
-      if (!Store2.state.settings.buyHudDocked) {
-        const p = Store2.state.settings.buyHudPos;
+      root.className = Store.state.settings.buyHudDocked ? "docked" : "floating";
+      if (!Store.state.settings.buyHudDocked) {
+        const p = Store.state.settings.buyHudPos;
         if (p) {
           const maxX = window.innerWidth - 300;
           const safeX = clamp2(p.x, 0, maxX > 0 ? maxX : 0);
@@ -7327,9 +9046,9 @@ canvas#equity-canvas {
       }
     },
     renderMarketContext() {
-      if (!Store2.state)
+      if (!Store.state)
         return "";
-      const flags = FeatureManager.resolveFlags(Store2.state, "MARKET_CONTEXT");
+      const flags = FeatureManager.resolveFlags(Store.state, "MARKET_CONTEXT");
       if (!flags.visible)
         return "";
       const ctx = Market.context;
@@ -7363,14 +9082,14 @@ canvas#equity-canvas {
         `;
     },
     renderTradePlanFields() {
-      if (!Store2.state)
+      if (!Store.state)
         return "";
-      const flags = FeatureManager.resolveFlags(Store2.state, "TRADE_PLAN");
+      const flags = FeatureManager.resolveFlags(Store.state, "TRADE_PLAN");
       if (!flags.visible)
         return "";
       const isGated = flags.gated;
       const isExpanded = this.tradePlanExpanded;
-      const plan = Store2.state.pendingPlan || {};
+      const plan = Store.state.pendingPlan || {};
       if (!isExpanded) {
         return `
                 <div class="plan-toggle" data-act="toggle-plan" style="display:flex; justify-content:space-between; align-items:center;">
@@ -7432,28 +9151,28 @@ canvas#equity-canvas {
     },
     // Save pending plan values as user types
     savePendingPlan(root) {
-      if (!Store2.state.pendingPlan) {
-        Store2.state.pendingPlan = { stopLoss: null, target: null, thesis: "", maxRiskPct: null };
+      if (!Store.state.pendingPlan) {
+        Store.state.pendingPlan = { stopLoss: null, target: null, thesis: "", maxRiskPct: null };
       }
       const stopEl = root.querySelector('[data-k="stopLoss"]');
       const targetEl = root.querySelector('[data-k="target"]');
       const thesisEl = root.querySelector('[data-k="thesis"]');
       if (stopEl) {
         const val = parseFloat(stopEl.value);
-        Store2.state.pendingPlan.stopLoss = isNaN(val) ? null : val;
+        Store.state.pendingPlan.stopLoss = isNaN(val) ? null : val;
       }
       if (targetEl) {
         const val = parseFloat(targetEl.value);
-        Store2.state.pendingPlan.target = isNaN(val) ? null : val;
+        Store.state.pendingPlan.target = isNaN(val) ? null : val;
       }
       if (thesisEl) {
-        Store2.state.pendingPlan.thesis = thesisEl.value.trim();
+        Store.state.pendingPlan.thesis = thesisEl.value.trim();
       }
     },
     // Get and clear pending plan for trade execution
     consumePendingPlan() {
-      const plan = Store2.state.pendingPlan || {};
-      Store2.state.pendingPlan = { stopLoss: null, target: null, thesis: "", maxRiskPct: null };
+      const plan = Store.state.pendingPlan || {};
+      Store.state.pendingPlan = { stopLoss: null, target: null, thesis: "", maxRiskPct: null };
       return {
         plannedStop: plan.stopLoss || null,
         plannedTarget: plan.target || null,
@@ -7474,8 +9193,8 @@ canvas#equity-canvas {
         thesisEl.value = "";
     },
     async executeTrade(root) {
-      const field = root.querySelector('input[data-k="field"]');
-      const val = parseFloat(field?.value || "0");
+      const field2 = root.querySelector('input[data-k="field"]');
+      const val = parseFloat(field2?.value || "0");
       const status = root.querySelector('[data-k="status"]');
       const strategyEl = root.querySelector('select[data-k="strategy"]');
       const strategy = strategyEl ? strategyEl.value : "Trend";
@@ -7504,9 +9223,9 @@ canvas#equity-canvas {
       }
       if (res && res.success) {
         status.textContent = "Trade logged!";
-        field.value = "";
+        field2.value = "";
         if (res.trade && res.trade.id) {
-          const fullTrade = Store2.state.trades && Store2.state.trades[res.trade.id] ? Store2.state.trades[res.trade.id] : Store2.state.fills ? Store2.state.fills.find((f) => f.id === res.trade.id) : null;
+          const fullTrade = Store.state.trades && Store.state.trades[res.trade.id] ? Store.state.trades[res.trade.id] : Store.state.fills ? Store.state.fills.find((f) => f.id === res.trade.id) : null;
           if (fullTrade) {
             const bridgeTrade = {
               ...fullTrade,
@@ -7531,6 +9250,1297 @@ canvas#equity-canvas {
     }
   };
 
+  // src/modules/ui/shadow-hud.js
+  init_store();
+
+  // src/services/socialx/types.js
+  var FIELD_STATUS = {
+    OK: "ok",
+    MISSING_IDENTIFIER: "missing_identifier",
+    NOT_SUPPORTED: "not_supported",
+    PROVIDER_ERROR: "provider_error",
+    RATE_LIMITED: "rate_limited",
+    STALE_CACHED: "stale_cached"
+  };
+  var SOCIALX_SOURCE = {
+    OBSERVED: "observed",
+    API: "api",
+    SCRAPE: "scrape",
+    AGGREGATOR: "aggregator"
+  };
+  var SCHEMA_VERSION2 = "1.0";
+
+  // src/services/shared/proxy-fetch.js
+  async function proxyFetch(url, options) {
+    try {
+      if (typeof chrome === "undefined" || !chrome.runtime?.sendMessage) {
+        return { ok: false, error: "Chrome runtime not available" };
+      }
+      return await chrome.runtime.sendMessage({
+        type: "PROXY_FETCH",
+        url,
+        options: options || { method: "GET" }
+      });
+    } catch (e) {
+      const msg = e?.message || "";
+      if (msg.includes("context invalidated") || msg.includes("Receiving end does not exist")) {
+        return { ok: false, error: "context_invalidated" };
+      }
+      return { ok: false, error: msg || "Proxy fetch failed" };
+    }
+  }
+
+  // src/services/context/client.js
+  var CONTEXT_API_BASE = "https://api.get-zero.xyz";
+  var CACHE_TTL_MS = 6 * 60 * 60 * 1e3;
+  var MAX_CACHE = 30;
+  var STORAGE_PREFIX = "zero_ctx_";
+  var _cache = {};
+  var _inflight = {};
+  async function fetchContext({ ca, existingDexInfo }) {
+    if (!ca)
+      return _emptyResponse("");
+    const cached = _cache[ca];
+    if (cached && Date.now() - cached.fetchedTs < CACHE_TTL_MS) {
+      return cached.response;
+    }
+    if (_inflight[ca]) {
+      return _inflight[ca];
+    }
+    const promise = _fetchContextImpl({ ca, existingDexInfo });
+    _inflight[ca] = promise;
+    try {
+      return await promise;
+    } finally {
+      delete _inflight[ca];
+    }
+  }
+  async function _fetchContextImpl({ ca }) {
+    try {
+      const url = `${CONTEXT_API_BASE}/context?chain=solana&ca=${encodeURIComponent(ca)}`;
+      const response = await proxyFetch(url);
+      if (response.ok && response.data) {
+        const ctx = (
+          /** @type {ContextResponseV1} */
+          response.data
+        );
+        if (!ctx.schemaVersion)
+          ctx.schemaVersion = SCHEMA_VERSION2;
+        if (!ctx.fetchedAt)
+          ctx.fetchedAt = (/* @__PURE__ */ new Date()).toISOString();
+        _cacheAndPersist(ca, ctx);
+        console.log("[MarketContext] context loaded", ca.slice(0, 8));
+        return ctx;
+      }
+      console.warn("[MarketContext] API response not ok, attempting rehydration");
+      const stored = await _rehydrateFromStorage(ca);
+      if (stored) {
+        _markStale(stored);
+        return stored;
+      }
+      return _emptyResponse(ca);
+    } catch (e) {
+      const msg = e?.message || "";
+      console.warn("[MarketContext] Fetch failed, attempting rehydration:", msg);
+      const stored = await _rehydrateFromStorage(ca);
+      if (stored) {
+        _markStale(stored);
+        return stored;
+      }
+      return _emptyResponse(ca);
+    }
+  }
+  function _markStale(ctx) {
+    if (ctx.links?.website?.status === FIELD_STATUS.OK) {
+      ctx.links.website.status = FIELD_STATUS.STALE_CACHED;
+    }
+    if (ctx.links?.x?.status === FIELD_STATUS.OK) {
+      ctx.links.x.status = FIELD_STATUS.STALE_CACHED;
+    }
+    if (ctx.website?.status === FIELD_STATUS.OK) {
+      ctx.website.status = FIELD_STATUS.STALE_CACHED;
+    }
+    if (ctx.dev?.status === FIELD_STATUS.OK) {
+      ctx.dev.status = FIELD_STATUS.STALE_CACHED;
+    }
+    if (ctx.x?.communities?.status === FIELD_STATUS.OK) {
+      ctx.x.communities.status = FIELD_STATUS.STALE_CACHED;
+    }
+    if (ctx.x?.profile?.status === FIELD_STATUS.OK) {
+      ctx.x.profile.status = FIELD_STATUS.STALE_CACHED;
+    }
+    if (ctx.x?.profile?.enrichmentStatus === FIELD_STATUS.OK) {
+      ctx.x.profile.enrichmentStatus = FIELD_STATUS.STALE_CACHED;
+    }
+  }
+  function _emptyResponse(ca) {
+    return {
+      schemaVersion: SCHEMA_VERSION2,
+      token: { ca: ca || "" },
+      links: {
+        website: { url: null, status: FIELD_STATUS.MISSING_IDENTIFIER },
+        x: { url: null, status: FIELD_STATUS.MISSING_IDENTIFIER }
+      },
+      website: {
+        url: null,
+        domain: null,
+        title: null,
+        metaDescription: null,
+        domainAgeDays: null,
+        statusCode: null,
+        tls: null,
+        redirects: null,
+        lastFetched: null,
+        status: FIELD_STATUS.MISSING_IDENTIFIER
+      },
+      x: {
+        profile: { url: null, handle: null, status: FIELD_STATUS.MISSING_IDENTIFIER },
+        communities: { items: [], status: FIELD_STATUS.MISSING_IDENTIFIER, lastFetched: null }
+      },
+      dev: {
+        mintAgeDays: null,
+        deployer: null,
+        deployerMints30d: null,
+        status: FIELD_STATUS.NOT_SUPPORTED,
+        lastFetched: null
+      },
+      fetchedAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+  }
+  function _cacheAndPersist(ca, response) {
+    _cache[ca] = { response, fetchedTs: Date.now() };
+    const keys = Object.keys(_cache);
+    if (keys.length > MAX_CACHE) {
+      const sorted = keys.sort((a, b) => _cache[a].fetchedTs - _cache[b].fetchedTs);
+      sorted.slice(0, keys.length - MAX_CACHE).forEach((k) => delete _cache[k]);
+    }
+    _persistToStorage(ca, response);
+  }
+  function _persistToStorage(ca, response) {
+    try {
+      if (typeof chrome === "undefined" || !chrome.storage?.local)
+        return;
+      const key = STORAGE_PREFIX + ca.slice(0, 12);
+      chrome.storage.local.set({ [key]: { response, ts: Date.now() } });
+    } catch (_) {
+    }
+  }
+  async function _rehydrateFromStorage(ca) {
+    try {
+      if (typeof chrome === "undefined" || !chrome.storage?.local)
+        return null;
+      const key = STORAGE_PREFIX + ca.slice(0, 12);
+      return new Promise((resolve) => {
+        chrome.storage.local.get([key], (res) => {
+          if (chrome.runtime.lastError) {
+            resolve(null);
+            return;
+          }
+          const stored = res[key];
+          if (stored && stored.response && Date.now() - stored.ts < CACHE_TTL_MS) {
+            _cache[ca] = { response: stored.response, fetchedTs: stored.ts };
+            resolve(stored.response);
+          } else {
+            resolve(null);
+          }
+        });
+      });
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // src/services/socialx/observed-adapter.js
+  function parseXHandle(url) {
+    if (!url || typeof url !== "string")
+      return null;
+    try {
+      const cleaned = url.trim().replace(/\/+$/, "").split("?")[0].split("#")[0];
+      const match = cleaned.match(/(?:twitter\.com|x\.com)\/([A-Za-z0-9_]{1,15})$/i);
+      if (match)
+        return match[1].toLowerCase();
+    } catch (_) {
+    }
+    return null;
+  }
+  var ObservedSocialXAdapter = {
+    /**
+     * Get an observed social profile for a token.
+     * @param {{ ca: string, discoveredXUrl?: string|null, discoveredSiteUrl?: string|null, discoveredFrom?: string[] }} input
+     * @returns {Promise<import('./types.js').SocialXProfile>}
+     */
+    async getProfile(input) {
+      const { discoveredXUrl, discoveredFrom } = input || {};
+      const handle = parseXHandle(discoveredXUrl);
+      const presence = !!(handle && discoveredXUrl);
+      return {
+        handle: handle ? `@${handle}` : null,
+        url: discoveredXUrl || null,
+        presence,
+        ageBucket: "unknown",
+        activityBucket: "unknown",
+        followerCount: null,
+        verified: null,
+        caDetected: null,
+        evidence: {
+          discoveredFrom: discoveredFrom || (discoveredXUrl ? ["context_links"] : []),
+          notes: presence ? ["Handle parsed from discovered URL"] : ["No X URL discovered"]
+        },
+        source: SOCIALX_SOURCE.OBSERVED,
+        lastUpdated: (/* @__PURE__ */ new Date()).toISOString(),
+        status: presence ? FIELD_STATUS.OK : FIELD_STATUS.MISSING_IDENTIFIER
+      };
+    }
+  };
+
+  // src/services/context/statusText.js
+  function statusToText(status) {
+    switch (status) {
+      case FIELD_STATUS.OK:
+        return "";
+      case FIELD_STATUS.MISSING_IDENTIFIER:
+        return "Not detected";
+      case FIELD_STATUS.NOT_SUPPORTED:
+        return "Not detected";
+      case FIELD_STATUS.PROVIDER_ERROR:
+        return "Temporarily unavailable";
+      case FIELD_STATUS.RATE_LIMITED:
+        return "Temporarily unavailable";
+      case FIELD_STATUS.STALE_CACHED:
+        return "Cached (updating\u2026)";
+      default:
+        return "Not detected";
+    }
+  }
+
+  // src/services/context/view-model.js
+  function field(value, display, status) {
+    return { value, display, status };
+  }
+  function phase1NotFetched() {
+    return field(null, "Not fetched in Phase 1", FIELD_STATUS.NOT_SUPPORTED);
+  }
+  function enrichmentField(enrichmentStatus) {
+    return field(null, statusToText(enrichmentStatus || FIELD_STATUS.NOT_SUPPORTED), enrichmentStatus || FIELD_STATUS.NOT_SUPPORTED);
+  }
+  function truncateUrl(url) {
+    try {
+      const u = new URL(url);
+      return u.hostname + (u.pathname.length > 1 ? u.pathname.slice(0, 20) + "..." : "");
+    } catch (_) {
+      return url.slice(0, 30) + "...";
+    }
+  }
+  function truncateAddress(addr) {
+    if (!addr || addr.length < 12)
+      return addr || "";
+    return addr.slice(0, 6) + "\u2026" + addr.slice(-4);
+  }
+  function formatCount(n) {
+    if (n == null)
+      return "";
+    if (n >= 1e6)
+      return (n / 1e6).toFixed(1) + "M";
+    if (n >= 1e3)
+      return (n / 1e3).toFixed(1) + "K";
+    return String(n);
+  }
+  function buildMarketContextViewModel(context, social) {
+    return {
+      xAccount: _buildXAccountVM(context, social),
+      website: _buildWebsiteVM(context),
+      developer: _buildDeveloperVM(context),
+      lastUpdated: context?.fetchedAt || null
+    };
+  }
+  function _buildXAccountVM(context, social) {
+    const presence = social?.presence || false;
+    const xStatus = context?.links?.x?.status || FIELD_STATUS.MISSING_IDENTIFIER;
+    const profile = context?.x?.profile;
+    const enrichStatus = profile?.enrichmentStatus || FIELD_STATUS.NOT_SUPPORTED;
+    const isEnriched = enrichStatus === FIELD_STATUS.OK || enrichStatus === FIELD_STATUS.STALE_CACHED;
+    const xComm = context?.x?.communities;
+    const commStatus = xComm?.status || FIELD_STATUS.NOT_SUPPORTED;
+    const commItems = (xComm?.items || []).map((item) => ({
+      name: item.name || "X Community",
+      url: item.url || "",
+      display: item.name || "X Community",
+      memberCount: item.memberCount ?? null,
+      activityLevel: item.activityLevel || "unknown"
+    }));
+    let ageField;
+    if (isEnriched && profile.accountAgeDays != null) {
+      const days = profile.accountAgeDays;
+      const display = days >= 365 ? `${(days / 365).toFixed(1)} years` : `${days} days`;
+      ageField = field(days, display, enrichStatus);
+    } else {
+      ageField = enrichmentField(enrichStatus);
+    }
+    let followersField;
+    if (isEnriched && profile.followerCount != null) {
+      followersField = field(profile.followerCount, formatCount(profile.followerCount), enrichStatus);
+    } else {
+      followersField = enrichmentField(enrichStatus);
+    }
+    let caMentionsField;
+    if (isEnriched && profile.caMentionCount != null) {
+      const cnt = profile.caMentionCount;
+      const display = cnt === 0 ? "None found in recent tweets" : `${cnt} mention${cnt !== 1 ? "s" : ""} in recent tweets`;
+      caMentionsField = field(cnt, display, enrichStatus);
+    } else {
+      caMentionsField = enrichmentField(enrichStatus);
+    }
+    let renameCountField;
+    if (isEnriched && profile.renameCount != null) {
+      const cnt = profile.renameCount;
+      const display = cnt === 0 ? "No renames observed" : `${cnt} rename${cnt !== 1 ? "s" : ""} observed`;
+      renameCountField = field(cnt, display, enrichStatus);
+    } else {
+      renameCountField = enrichmentField(enrichStatus);
+    }
+    return {
+      handle: field(
+        social?.handle || null,
+        social?.handle || statusToText(social?.status || FIELD_STATUS.MISSING_IDENTIFIER),
+        presence ? FIELD_STATUS.OK : FIELD_STATUS.MISSING_IDENTIFIER
+      ),
+      url: field(
+        social?.url || null,
+        social?.url ? truncateUrl(social.url) : statusToText(xStatus),
+        social?.url ? FIELD_STATUS.OK : xStatus
+      ),
+      age: ageField,
+      followers: followersField,
+      bio: phase1NotFetched(),
+      caInBio: phase1NotFetched(),
+      caInPinned: phase1NotFetched(),
+      recentTweets: phase1NotFetched(),
+      caMentions: caMentionsField,
+      renameCount: renameCountField,
+      communities: {
+        items: commItems,
+        status: commStatus,
+        statusDisplay: statusToText(commStatus)
+      }
+    };
+  }
+  function _buildWebsiteVM(context) {
+    const ws = context?.website;
+    const hasUrl = !!ws?.url;
+    return {
+      domain: field(
+        ws?.domain || null,
+        ws?.domain || statusToText(FIELD_STATUS.MISSING_IDENTIFIER),
+        ws?.domain ? FIELD_STATUS.OK : FIELD_STATUS.MISSING_IDENTIFIER
+      ),
+      url: field(
+        ws?.url || null,
+        ws?.url ? truncateUrl(ws.url) : statusToText(FIELD_STATUS.MISSING_IDENTIFIER),
+        hasUrl ? FIELD_STATUS.OK : FIELD_STATUS.MISSING_IDENTIFIER
+      ),
+      domainAge: field(
+        ws?.domainAgeDays ?? null,
+        ws?.domainAgeDays != null ? `${ws.domainAgeDays} days` : statusToText(hasUrl ? FIELD_STATUS.NOT_SUPPORTED : FIELD_STATUS.MISSING_IDENTIFIER),
+        ws?.domainAgeDays != null ? FIELD_STATUS.OK : hasUrl ? FIELD_STATUS.NOT_SUPPORTED : FIELD_STATUS.MISSING_IDENTIFIER
+      ),
+      contentSummary: field(
+        ws?.title || ws?.metaDescription || null,
+        ws?.title || ws?.metaDescription || statusToText(hasUrl ? FIELD_STATUS.NOT_SUPPORTED : FIELD_STATUS.MISSING_IDENTIFIER),
+        ws?.title || ws?.metaDescription ? FIELD_STATUS.OK : hasUrl ? FIELD_STATUS.NOT_SUPPORTED : FIELD_STATUS.MISSING_IDENTIFIER
+      ),
+      narrativeConsistency: field(
+        null,
+        statusToText(FIELD_STATUS.NOT_SUPPORTED),
+        FIELD_STATUS.NOT_SUPPORTED
+      )
+    };
+  }
+  function _buildDeveloperVM(context) {
+    const dev = context?.dev;
+    const devStatus = dev?.status || FIELD_STATUS.NOT_SUPPORTED;
+    return {
+      knownLaunches: field(
+        dev?.deployer || null,
+        dev?.deployer ? truncateAddress(dev.deployer) : statusToText(devStatus),
+        dev?.deployer ? FIELD_STATUS.OK : devStatus
+      ),
+      recentLaunches: field(
+        dev?.deployerMints30d ?? null,
+        dev?.deployerMints30d != null ? `${dev.deployerMints30d} mints` : statusToText(devStatus),
+        dev?.deployerMints30d != null ? FIELD_STATUS.OK : devStatus
+      ),
+      historicalSummary: field(
+        dev?.mintAgeDays ?? null,
+        dev?.mintAgeDays != null ? `Token created ${dev.mintAgeDays} days ago` : statusToText(devStatus),
+        dev?.mintAgeDays != null ? FIELD_STATUS.OK : devStatus
+      )
+    };
+  }
+
+  // src/modules/core/narrative-trust.js
+  var NarrativeTrust = {
+    currentMint: null,
+    listeners: [],
+    initialized: false,
+    loading: false,
+    // Current data state
+    data: {
+      mint: null,
+      score: null,
+      confidence: "low",
+      availableSignals: 0,
+      totalSignals: 7,
+      lastFetchTs: 0,
+      // Phase 1: Structured service data
+      context: null,
+      // ContextResponseV1
+      social: null,
+      // SocialXProfile
+      vm: null,
+      // MarketContextVM
+      // Signal dots (collapsed view)
+      signals: {
+        xAccountAge: "unavailable",
+        recentActivity: "unavailable",
+        xCommunities: "unavailable",
+        developerHistory: "unavailable"
+      }
+    },
+    init() {
+      if (this.initialized)
+        return;
+      this.initialized = true;
+      Market.subscribe(() => {
+        const mint = Market.currentMint;
+        if (!mint)
+          return;
+        if (mint !== this.currentMint || this.data.score === null) {
+          this.fetchForMint(mint);
+        }
+      });
+      if (Market.currentMint) {
+        this.fetchForMint(Market.currentMint);
+      }
+    },
+    subscribe(callback) {
+      this.listeners.push(callback);
+    },
+    notify() {
+      this.listeners.forEach((cb) => cb(this.data));
+    },
+    getData() {
+      return this.data;
+    },
+    getScore() {
+      return { score: this.data.score, confidence: this.data.confidence };
+    },
+    getSignals() {
+      return this.data.signals;
+    },
+    /**
+     * Get the view model for rendering (null during loading/before first fetch).
+     * @returns {import('../../services/context/view-model.js').MarketContextVM|null}
+     */
+    getViewModel() {
+      return this.data.vm;
+    },
+    /**
+     * Fetch and score narrative trust for a given mint.
+     * Orchestrates: Context API → SocialX Adapter → View Model → Score.
+     *
+     * No longer requires DexScreener info — the live API handles everything.
+     */
+    async fetchForMint(mint) {
+      if (!mint)
+        return;
+      this.currentMint = mint;
+      this.loading = true;
+      this._setEmptyState(mint);
+      this.notify();
+      try {
+        const context = await fetchContext({ ca: mint });
+        const social = await ObservedSocialXAdapter.getProfile({
+          ca: mint,
+          discoveredXUrl: context.links?.x?.url || null,
+          discoveredSiteUrl: context.links?.website?.url || null,
+          discoveredFrom: context.links?.x?.url ? ["context_links"] : []
+        });
+        const vm = buildMarketContextViewModel(context, social);
+        const scoring = this._calculateScore(context, social);
+        const signals = this._buildSignals(context, social);
+        this.loading = false;
+        this.data = {
+          mint,
+          score: scoring.score,
+          confidence: scoring.confidence,
+          availableSignals: scoring.availableSignals,
+          totalSignals: scoring.totalSignals,
+          lastFetchTs: Date.now(),
+          context,
+          social,
+          vm,
+          signals
+        };
+        this.notify();
+      } catch (e) {
+        console.warn("[NarrativeTrust] Fetch failed:", e?.message || e);
+        this.loading = false;
+        if (this.data.mint !== mint) {
+          this._setEmptyState(mint);
+        }
+        this.notify();
+      }
+    },
+    /**
+     * Set empty/loading state for a given mint.
+     */
+    _setEmptyState(mint) {
+      this.data = {
+        mint,
+        score: null,
+        confidence: "low",
+        availableSignals: 0,
+        totalSignals: 7,
+        lastFetchTs: 0,
+        context: null,
+        social: null,
+        vm: null,
+        signals: {
+          xAccountAge: "unavailable",
+          recentActivity: "unavailable",
+          xCommunities: "unavailable",
+          developerHistory: "unavailable"
+        }
+      };
+    },
+    /**
+     * Build signal dot map from context and social data.
+     * Values: 'detected' (green), 'not_detected' (yellow/neutral), 'unavailable' (gray)
+     */
+    _buildSignals(context, social) {
+      const xStatus = social?.presence ? "detected" : "not_detected";
+      const enrichStatus = context?.x?.profile?.enrichmentStatus;
+      const accountAge = context?.x?.profile?.accountAgeDays;
+      const activityStatus = enrichStatus === FIELD_STATUS.OK && accountAge != null ? accountAge > 30 ? "established" : "new" : social?.activityBucket === "recent" ? "detected" : social?.activityBucket === "stale" ? "not_detected" : "unavailable";
+      const xCommStatus = context?.x?.communities?.status;
+      const xCommSignal = xCommStatus === FIELD_STATUS.OK ? "detected" : xCommStatus === FIELD_STATUS.NOT_SUPPORTED ? "unavailable" : xCommStatus === FIELD_STATUS.MISSING_IDENTIFIER ? "not_detected" : "unavailable";
+      const devStatus = context?.dev?.status === FIELD_STATUS.OK ? "detected" : context?.dev?.status === FIELD_STATUS.NOT_SUPPORTED ? "unavailable" : "not_detected";
+      return {
+        xAccountAge: xStatus,
+        recentActivity: activityStatus,
+        xCommunities: xCommSignal,
+        developerHistory: devStatus
+      };
+    },
+    /**
+     * Calculate trust score based on available data.
+     * Fields with NOT_SUPPORTED or unavailable status are excluded
+     * from both numerator and denominator.
+     */
+    _calculateScore(context, social) {
+      let earned = 0;
+      let possible = 0;
+      let checked = 0;
+      const enriched = context?.x?.profile?.enrichmentStatus === FIELD_STATUS.OK || context?.x?.profile?.enrichmentStatus === FIELD_STATUS.STALE_CACHED;
+      const rules = [
+        // X/Twitter presence (from SocialX adapter)
+        {
+          weight: 15,
+          available: social?.status !== FIELD_STATUS.NOT_SUPPORTED,
+          passes: social?.presence === true
+        },
+        // Website URL detected (from Context API)
+        {
+          weight: 10,
+          available: true,
+          // Always checked
+          passes: context?.links?.website?.status === FIELD_STATUS.OK
+        },
+        // Website domain resolved
+        {
+          weight: 5,
+          available: !!context?.website?.domain,
+          passes: !!context?.website?.domain
+        },
+        // Multiple social/project links detected (>= 2)
+        {
+          weight: 5,
+          available: true,
+          passes: _countDetectedLinks(context) >= 2
+        },
+        // X Communities detected (from Context API)
+        {
+          weight: 10,
+          available: context?.x?.communities?.status !== FIELD_STATUS.NOT_SUPPORTED,
+          passes: context?.x?.communities?.status === FIELD_STATUS.OK && (context?.x?.communities?.items?.length || 0) > 0
+        },
+        // Token has image/logo (from Context API)
+        {
+          weight: 5,
+          available: true,
+          passes: !!context?.token?.hasImage
+        },
+        // Dev: mint age known
+        {
+          weight: 10,
+          available: context?.dev?.status === FIELD_STATUS.OK,
+          passes: context?.dev?.mintAgeDays != null
+        },
+        // Dev: deployer known
+        {
+          weight: 5,
+          available: context?.dev?.status === FIELD_STATUS.OK,
+          passes: !!context?.dev?.deployer
+        },
+        // Enriched: X account age > 30 days (established account)
+        {
+          weight: 10,
+          available: enriched && context?.x?.profile?.accountAgeDays != null,
+          passes: (context?.x?.profile?.accountAgeDays || 0) > 30
+        },
+        // Enriched: CA mentioned in recent tweets
+        {
+          weight: 10,
+          available: enriched && context?.x?.profile?.caMentionCount != null,
+          passes: (context?.x?.profile?.caMentionCount || 0) > 0
+        },
+        // Enriched: No excessive renames (< 3)
+        {
+          weight: 5,
+          available: enriched && context?.x?.profile?.renameCount != null,
+          passes: (context?.x?.profile?.renameCount || 0) < 3
+        }
+      ];
+      rules.forEach((rule) => {
+        if (!rule.available)
+          return;
+        possible += rule.weight;
+        checked++;
+        if (rule.passes) {
+          earned += rule.weight;
+        }
+      });
+      const maxPossible = rules.reduce((sum, r) => sum + r.weight, 0);
+      const coverage = maxPossible > 0 ? possible / maxPossible : 0;
+      let score = possible > 0 ? Math.round(earned / possible * 100) : null;
+      const hasAge = context?.x?.profile?.accountAgeDays != null;
+      const hasCAProof = (context?.x?.profile?.caMentionCount || 0) > 0;
+      const dataCapped = score !== null && (!hasAge || !hasCAProof);
+      if (dataCapped) {
+        score = Math.min(score, 70);
+      }
+      let confidence = coverage >= 0.7 ? "high" : coverage >= 0.4 ? "medium" : "low";
+      if (dataCapped && confidence === "high") {
+        confidence = "medium";
+      }
+      return {
+        score,
+        confidence,
+        availableSignals: checked,
+        totalSignals: rules.length
+      };
+    }
+  };
+  function _countDetectedLinks(context) {
+    if (!context?.links)
+      return 0;
+    let count = 0;
+    if (context.links.x?.status === FIELD_STATUS.OK)
+      count++;
+    if (context.links.website?.status === FIELD_STATUS.OK)
+      count++;
+    return count;
+  }
+
+  // src/modules/core/trade-notes.js
+  init_store();
+  var MAX_NOTES = 50;
+  var MAX_NOTE_LENGTH = 280;
+  var TradeNotes = {
+    /**
+     * Add a new note for the current session and token.
+     */
+    async addNote(text) {
+      if (!Store.state?.shadow)
+        return null;
+      if (!text || !text.trim())
+        return null;
+      const trimmed = text.trim().slice(0, MAX_NOTE_LENGTH);
+      const note = {
+        id: `note_${Date.now()}_${Math.floor(Math.random() * 1e4)}`,
+        ts: Date.now(),
+        text: trimmed,
+        mint: Market.currentMint || null,
+        symbol: Market.currentSymbol || null,
+        sessionId: Store.state.session?.id || null,
+        edited: false,
+        editedTs: null
+      };
+      const notes = Store.state.shadow.notes || [];
+      notes.push(note);
+      while (notes.length > MAX_NOTES) {
+        notes.shift();
+      }
+      Store.state.shadow.notes = notes;
+      await Store.save();
+      return note;
+    },
+    /**
+     * Edit an existing note by ID.
+     */
+    async editNote(noteId, text) {
+      if (!Store.state?.shadow)
+        return false;
+      if (!text || !text.trim())
+        return false;
+      const notes = Store.state.shadow.notes || [];
+      const note = notes.find((n) => n.id === noteId);
+      if (!note)
+        return false;
+      note.text = text.trim().slice(0, MAX_NOTE_LENGTH);
+      note.edited = true;
+      note.editedTs = Date.now();
+      await Store.save();
+      return true;
+    },
+    /**
+     * Delete a note by ID.
+     */
+    async deleteNote(noteId) {
+      if (!Store.state?.shadow)
+        return false;
+      const notes = Store.state.shadow.notes || [];
+      const idx = notes.findIndex((n) => n.id === noteId);
+      if (idx === -1)
+        return false;
+      notes.splice(idx, 1);
+      await Store.save();
+      return true;
+    },
+    /**
+     * Get notes for the current session.
+     */
+    getSessionNotes() {
+      if (!Store.state?.shadow)
+        return [];
+      const sessionId = Store.state.session?.id;
+      if (!sessionId)
+        return [];
+      return (Store.state.shadow.notes || []).filter((n) => n.sessionId === sessionId).sort((a, b) => b.ts - a.ts);
+    },
+    /**
+     * Get notes tagged with a specific token mint.
+     */
+    getNotesForMint(mint) {
+      if (!Store.state?.shadow || !mint)
+        return [];
+      return (Store.state.shadow.notes || []).filter((n) => n.mint === mint).sort((a, b) => b.ts - a.ts);
+    }
+  };
+
+  // src/modules/ui/shadow-hud.js
+  function px3(n) {
+    return n + "px";
+  }
+  function clamp3(v, min, max) {
+    return Math.max(min, Math.min(max, v));
+  }
+  var ShadowHud = {
+    // UI state (not persisted — resets each page load)
+    marketContextExpanded: false,
+    strategyExpanded: true,
+    notesExpanded: false,
+    activeTab: "xAccount",
+    // 'xAccount' | 'website' | 'developer'
+    makeDraggableRef: null,
+    // ==================== Lifecycle ====================
+    mountShadowHud(makeDraggable) {
+      if (makeDraggable)
+        this.makeDraggableRef = makeDraggable;
+      const dragger = makeDraggable || this.makeDraggableRef;
+      const container = OverlayManager.getContainer();
+      if (!container)
+        return;
+      const rootId = IDS.shadowHud;
+      let root = container.querySelector("#" + rootId);
+      if (!Store.state?.settings?.enabled) {
+        if (root)
+          root.style.display = "none";
+        return;
+      }
+      if (root) {
+        root.style.display = "";
+        return;
+      }
+      root = document.createElement("div");
+      root.id = rootId;
+      const shadow = Store.state.shadow || {};
+      root.className = shadow.hudDocked ? "docked" : "floating";
+      if (!shadow.hudDocked) {
+        const pos = shadow.hudPos || { x: 20, y: 400 };
+        root.style.left = px3(pos.x);
+        root.style.top = px3(pos.y);
+      }
+      container.appendChild(root);
+      this.renderContent(root, dragger);
+      this.bindEvents(root);
+      NarrativeTrust.subscribe(() => {
+        this._updateMarketContext(root);
+      });
+    },
+    removeShadowHud() {
+      const container = OverlayManager.getContainer();
+      if (!container)
+        return;
+      const root = container.querySelector("#" + IDS.shadowHud);
+      if (root)
+        root.remove();
+    },
+    updateShadowHud() {
+      const container = OverlayManager.getContainer();
+      if (!container)
+        return;
+      const root = container.querySelector("#" + IDS.shadowHud);
+      if (!root || !Store.state)
+        return;
+      if (!Store.state.settings.enabled) {
+        root.style.display = "none";
+        return;
+      }
+      root.style.display = "";
+      const shadow = Store.state.shadow || {};
+      root.className = shadow.hudDocked ? "docked" : "floating";
+      if (!shadow.hudDocked) {
+        const pos = shadow.hudPos || { x: 20, y: 400 };
+        root.style.left = px3(pos.x);
+        root.style.top = px3(pos.y);
+      }
+      this._updateMarketContext(root);
+      this._updateNotesList(root);
+    },
+    // ==================== Rendering ====================
+    renderContent(root, makeDraggable) {
+      const shadow = Store.state?.shadow || {};
+      const strategies = Store.state?.settings?.strategies || ["Trend", "Breakout", "Reversal", "Scalp", "News", "Other"];
+      const currentStrategy = shadow.declaredStrategy || strategies[0];
+      root.innerHTML = `
+            <div class="sh-card">
+                <!-- Header -->
+                <div class="sh-header">
+                    <div class="sh-header-left">
+                        <div class="sh-header-icon">${ICONS.SHADOW_HUD_ICON}</div>
+                        <div class="sh-header-title">ZER\xD8 \u2014 Shadow Mode</div>
+                    </div>
+                    <div class="sh-header-btns">
+                        <button class="sh-btn" data-act="dock">${shadow.hudDocked ? "Float" : "Dock"}</button>
+                    </div>
+                </div>
+                <div class="sh-subtitle">Real trade analysis \xB7 Observation only</div>
+
+                <!-- Section 1: Market Context -->
+                <div class="sh-section" data-section="marketContext">
+                    <div class="sh-section-header" data-act="toggle-section" data-target="marketContext">
+                        <div class="sh-section-header-left">
+                            <div class="sh-section-icon">${ICONS.TRUST_SHIELD}</div>
+                            <div class="sh-section-title">Market Context</div>
+                        </div>
+                        <div class="sh-section-chevron ${this.marketContextExpanded ? "expanded" : ""}">${ICONS.CHEVRON_DOWN}</div>
+                    </div>
+                    ${this._renderTrustSummary()}
+                    ${this._renderSignals()}
+                    <div class="sh-section-body ${this.marketContextExpanded ? "" : "collapsed"}" data-body="marketContext">
+                        ${this._renderTabs()}
+                        <div class="sh-tab-content" data-tab-content>
+                            ${this._renderTabContent()}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 2: Strategy (Declared) -->
+                <div class="sh-section" data-section="strategy">
+                    <div class="sh-section-header" data-act="toggle-section" data-target="strategy">
+                        <div class="sh-section-header-left">
+                            <div class="sh-section-icon">${ICONS.STRATEGY_COMPASS}</div>
+                            <div class="sh-section-title">Strategy (declared)</div>
+                        </div>
+                        <div class="sh-section-chevron ${this.strategyExpanded ? "expanded" : ""}">${ICONS.CHEVRON_DOWN}</div>
+                    </div>
+                    <div class="sh-section-body ${this.strategyExpanded ? "" : "collapsed"}" data-body="strategy">
+                        <div class="sh-strategy-label">Current strategy</div>
+                        <select class="sh-strategy-select" data-act="strategy-change">
+                            ${strategies.map((s) => `<option value="${s}" ${s === currentStrategy ? "selected" : ""}>${s}</option>`).join("")}
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Section 3: Trade Notes -->
+                <div class="sh-section" data-section="notes">
+                    <div class="sh-section-header" data-act="toggle-section" data-target="notes">
+                        <div class="sh-section-header-left">
+                            <div class="sh-section-icon">${ICONS.NOTES_DOC}</div>
+                            <div class="sh-section-title">Trade Notes</div>
+                        </div>
+                        <div class="sh-section-chevron ${this.notesExpanded ? "expanded" : ""}">${ICONS.CHEVRON_DOWN}</div>
+                    </div>
+                    <div class="sh-section-body ${this.notesExpanded ? "" : "collapsed"}" data-body="notes">
+                        <div class="sh-notes-input">
+                            <textarea class="sh-notes-textarea" data-act="note-input" placeholder="Add a note..." maxlength="280" rows="1"></textarea>
+                            <button class="sh-notes-add" data-act="add-note">Add</button>
+                        </div>
+                        <div class="sh-note-char-count" data-char-count></div>
+                        <div class="sh-notes-list" data-notes-list>
+                            ${this._renderNotesList()}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+      this.bindDrag(root, makeDraggable);
+    },
+    // ==================== Market Context Rendering ====================
+    _renderTrustSummary() {
+      const data = NarrativeTrust.getData();
+      const score = data.score;
+      const confidence = data.confidence;
+      const isLoading = NarrativeTrust.loading;
+      if (isLoading) {
+        return `
+                <div class="sh-trust-summary sh-trust-loading-state">
+                    <div class="sh-loading-text">Scanning market context...</div>
+                    <div class="sh-loading-bar"><div class="sh-loading-bar-fill"></div></div>
+                </div>
+            `;
+      }
+      if (score === null) {
+        return `
+                <div class="sh-trust-summary">
+                    <div class="sh-trust-score">Trust: <span class="score-val">--</span>/100</div>
+                    <div class="sh-trust-bar"><div class="sh-trust-bar-fill" style="width:0%"></div></div>
+                    <span class="sh-confidence-badge low">no data</span>
+                </div>
+            `;
+      }
+      const barClass = score >= 70 ? "high" : score >= 40 ? "mid" : "low";
+      return `
+            <div class="sh-trust-summary">
+                <div class="sh-trust-score">Trust: <span class="score-val">${score}</span>/100</div>
+                <div class="sh-trust-bar"><div class="sh-trust-bar-fill ${barClass}" style="width:${score}%"></div></div>
+                <span class="sh-confidence-badge ${confidence}">${confidence}</span>
+            </div>
+        `;
+    },
+    _renderSignals() {
+      const isLoading = NarrativeTrust.loading;
+      if (isLoading) {
+        return `<div class="sh-signals"><span class="sh-signal-label sh-signal-loading">Waiting for data...</span></div>`;
+      }
+      const signals = NarrativeTrust.getSignals();
+      const items = [
+        { key: "xAccountAge", label: "X" },
+        { key: "recentActivity", label: "Activity" },
+        { key: "xCommunities", label: "X Comm" },
+        { key: "developerHistory", label: "Dev" }
+      ];
+      const presentCount = items.filter((item) => signals[item.key] !== "unavailable").length;
+      return `
+            <div class="sh-signals">
+                ${items.map((item) => {
+        const val = signals[item.key];
+        const cls = val === "unavailable" ? "unavailable" : val === "detected" || val === "active" || val === "established" || val === "known" ? "positive" : "neutral";
+        return `<div class="sh-signal-dot ${cls}" title="${item.label}: ${val}"></div>`;
+      }).join("")}
+                <span class="sh-signal-label">${presentCount} of ${items.length} signals</span>
+            </div>
+        `;
+    },
+    _renderTabs() {
+      const tabs = [
+        { id: "xAccount", label: "X", icon: ICONS.TAB_X_ACCOUNT },
+        { id: "website", label: "Website", icon: ICONS.TAB_WEBSITE },
+        { id: "developer", label: "Dev", icon: ICONS.TAB_DEVELOPER }
+      ];
+      return `
+            <div class="sh-tabs">
+                ${tabs.map((t) => `
+                    <div class="sh-tab ${t.id === this.activeTab ? "active" : ""}" data-act="tab" data-tab="${t.id}">
+                        <span class="sh-tab-icon">${t.icon}</span> ${t.label}
+                    </div>
+                `).join("")}
+            </div>
+        `;
+    },
+    _renderTabContent() {
+      const vm = NarrativeTrust.getViewModel();
+      if (!vm) {
+        return '<div class="sh-empty">Fetching context data...</div>';
+      }
+      switch (this.activeTab) {
+        case "xAccount":
+          return this._renderXAccountTab(vm.xAccount);
+        case "website":
+          return this._renderWebsiteTab(vm.website);
+        case "developer":
+          return this._renderDeveloperTab(vm.developer);
+        default:
+          return "";
+      }
+    },
+    _renderXAccountTab(x) {
+      if (!x)
+        return "";
+      const enrichedRows = [
+        { label: "Age", f: x.age },
+        { label: "Followers", f: x.followers },
+        { label: "CA Mentions", f: x.caMentions },
+        { label: "Renames", f: x.renameCount }
+      ].filter((r) => r.f && r.f.status === "ok").map((r) => this._field(r.label, r.f)).join("");
+      let commHtml;
+      const comm = x.communities;
+      if (comm && comm.status === "ok" && comm.items.length > 0) {
+        const itemsHtml = comm.items.map((item) => {
+          const meta = [];
+          if (item.memberCount != null)
+            meta.push(`${item.memberCount} members`);
+          if (item.activityLevel && item.activityLevel !== "unknown")
+            meta.push(item.activityLevel);
+          const metaStr = meta.length > 0 ? ` <span style="opacity:0.6; font-size:10px;">(${meta.join(" \xB7 ")})</span>` : "";
+          return `<div class="nt-community-item"><a href="${item.url}" target="_blank" rel="noopener" style="color:#a78bfa; text-decoration:none;">${this._escapeHtml(item.name)}</a>${metaStr}</div>`;
+        }).join("");
+        commHtml = `
+                <div class="nt-section-divider" style="margin:8px 0 4px; padding-top:6px; border-top:1px solid rgba(255,255,255,0.06);">
+                    <div class="nt-label" style="font-weight:600; margin-bottom:4px;">X Communities</div>
+                    ${itemsHtml}
+                </div>
+            `;
+      } else {
+        commHtml = `
+                <div class="nt-section-divider" style="margin:8px 0 4px; padding-top:6px; border-top:1px solid rgba(255,255,255,0.06);">
+                    <div class="nt-field unavailable"><div class="nt-label">X Communities</div><div class="nt-value">No X community detected</div></div>
+                </div>
+            `;
+      }
+      return `
+            ${this._field("Account", x.handle)}
+            ${this._field("URL", x.url)}
+            ${enrichedRows}
+            ${commHtml}
+        `;
+    },
+    _renderWebsiteTab(w) {
+      if (!w)
+        return "";
+      return `
+            ${this._field("Domain", w.domain)}
+            ${this._field("URL", w.url)}
+            ${this._field("Domain Age", w.domainAge)}
+            ${this._field("Content", w.contentSummary)}
+            ${this._field("Narrative", w.narrativeConsistency)}
+        `;
+    },
+    _renderDeveloperTab(d) {
+      if (!d)
+        return "";
+      return `
+            ${this._field("Deployer", d.knownLaunches)}
+            ${this._field("Recent (30d)", d.recentLaunches)}
+            ${this._field("Mint Age", d.historicalSummary)}
+        `;
+    },
+    /**
+     * Render a key-value field. Accepts a VMField { display, status } or a raw string.
+     * Never outputs "Data unavailable". Uses status-aware display text.
+     */
+    _field(label, vmField) {
+      let display, isUnavailable, isStale;
+      if (vmField && typeof vmField === "object" && "display" in vmField) {
+        display = vmField.display;
+        isUnavailable = vmField.status !== "ok" && vmField.status !== "stale_cached";
+        isStale = vmField.status === "stale_cached";
+      } else {
+        display = vmField || "Not detected";
+        isUnavailable = !vmField || vmField === "unavailable";
+        isStale = false;
+      }
+      const cls = isUnavailable ? "unavailable" : isStale ? "stale" : "";
+      return `
+            <div class="nt-field ${cls}">
+                <div class="nt-label">${label}</div>
+                <div class="nt-value">${display}</div>
+            </div>
+        `;
+    },
+    // ==================== Notes Rendering ====================
+    _renderNotesList() {
+      const notes = TradeNotes.getSessionNotes();
+      if (notes.length === 0) {
+        return '<div class="sh-empty">No notes this session</div>';
+      }
+      return notes.map((note) => {
+        const time = new Date(note.ts);
+        const timeStr = `${String(time.getHours()).padStart(2, "0")}:${String(time.getMinutes()).padStart(2, "0")}`;
+        return `
+                <div class="sh-note" data-note-id="${note.id}">
+                    <div class="sh-note-time">${timeStr}</div>
+                    <div class="sh-note-text">${this._escapeHtml(note.text)}</div>
+                    <div class="sh-note-actions">
+                        <button class="sh-note-action" data-act="delete-note" data-note-id="${note.id}" title="Delete">${ICONS.X}</button>
+                    </div>
+                </div>
+            `;
+      }).join("");
+    },
+    _escapeHtml(str) {
+      const div = document.createElement("div");
+      div.textContent = str;
+      return div.innerHTML;
+    },
+    // ==================== Partial Updates ====================
+    _updateMarketContext(root) {
+      if (!root)
+        return;
+      const summaryEl = root.querySelector(".sh-trust-summary");
+      if (summaryEl) {
+        summaryEl.outerHTML = this._renderTrustSummary();
+      }
+      const signalsEl = root.querySelector(".sh-signals");
+      if (signalsEl) {
+        signalsEl.outerHTML = this._renderSignals();
+      }
+      if (this.marketContextExpanded) {
+        const tabContent = root.querySelector("[data-tab-content]");
+        if (tabContent) {
+          tabContent.innerHTML = this._renderTabContent();
+        }
+      }
+    },
+    _updateNotesList(root) {
+      if (!root)
+        return;
+      const listEl = root.querySelector("[data-notes-list]");
+      if (listEl) {
+        listEl.innerHTML = this._renderNotesList();
+      }
+    },
+    // ==================== Event Binding ====================
+    bindEvents(root) {
+      root.addEventListener("click", async (e) => {
+        const t = e.target;
+        if (t.matches("input, select, textarea, option"))
+          return;
+        const actEl = t.closest("[data-act]");
+        if (!actEl)
+          return;
+        const act = actEl.getAttribute("data-act");
+        e.preventDefault();
+        e.stopPropagation();
+        if (act === "toggle-section") {
+          const target = actEl.getAttribute("data-target");
+          this._toggleSection(root, target);
+        }
+        if (act === "tab") {
+          const tab = actEl.getAttribute("data-tab");
+          this._switchTab(root, tab);
+        }
+        if (act === "dock") {
+          const shadow = Store.state.shadow || {};
+          shadow.hudDocked = !shadow.hudDocked;
+          Store.state.shadow = shadow;
+          await Store.save();
+          root.className = shadow.hudDocked ? "docked" : "floating";
+          actEl.textContent = shadow.hudDocked ? "Float" : "Dock";
+          if (!shadow.hudDocked) {
+            const pos = shadow.hudPos || { x: 20, y: 400 };
+            root.style.left = px3(pos.x);
+            root.style.top = px3(pos.y);
+          }
+        }
+        if (act === "add-note") {
+          const textarea = root.querySelector(".sh-notes-textarea");
+          if (textarea && textarea.value.trim()) {
+            await TradeNotes.addNote(textarea.value);
+            textarea.value = "";
+            this._updateNotesList(root);
+            const charCount = root.querySelector("[data-char-count]");
+            if (charCount)
+              charCount.textContent = "";
+          }
+        }
+        if (act === "delete-note") {
+          const noteId = actEl.getAttribute("data-note-id");
+          if (noteId) {
+            await TradeNotes.deleteNote(noteId);
+            this._updateNotesList(root);
+          }
+        }
+      });
+      root.addEventListener("change", async (e) => {
+        if (e.target.matches(".sh-strategy-select")) {
+          if (!Store.state.shadow)
+            Store.state.shadow = {};
+          Store.state.shadow.declaredStrategy = e.target.value;
+          await Store.save();
+        }
+      });
+      root.addEventListener("input", (e) => {
+        if (e.target.matches(".sh-notes-textarea")) {
+          const charCount = root.querySelector("[data-char-count]");
+          if (charCount) {
+            const len = e.target.value.length;
+            charCount.textContent = len > 0 ? `${len}/280` : "";
+          }
+        }
+      });
+    },
+    _toggleSection(root, section) {
+      if (section === "marketContext")
+        this.marketContextExpanded = !this.marketContextExpanded;
+      if (section === "strategy")
+        this.strategyExpanded = !this.strategyExpanded;
+      if (section === "notes")
+        this.notesExpanded = !this.notesExpanded;
+      const body = root.querySelector(`[data-body="${section}"]`);
+      if (body) {
+        body.classList.toggle("collapsed");
+      }
+      const header = root.querySelector(`[data-target="${section}"]`);
+      if (header) {
+        const chevron = header.querySelector(".sh-section-chevron");
+        if (chevron)
+          chevron.classList.toggle("expanded");
+      }
+    },
+    _switchTab(root, tab) {
+      this.activeTab = tab;
+      root.querySelectorAll(".sh-tab").forEach((el) => {
+        el.classList.toggle("active", el.getAttribute("data-tab") === tab);
+      });
+      const tabContent = root.querySelector("[data-tab-content]");
+      if (tabContent) {
+        tabContent.innerHTML = this._renderTabContent();
+      }
+    },
+    // ==================== Drag ====================
+    bindDrag(root, makeDraggable) {
+      const header = root.querySelector(".sh-header");
+      if (!header || !makeDraggable)
+        return;
+      makeDraggable(header, (dx, dy) => {
+        if (!Store.state.shadow || Store.state.shadow.hudDocked)
+          return;
+        const pos = Store.state.shadow.hudPos || { x: 20, y: 400 };
+        pos.x = clamp3(pos.x + dx, 0, window.innerWidth - 40);
+        pos.y = clamp3(pos.y + dy, 34, window.innerHeight - 40);
+        Store.state.shadow.hudPos = pos;
+        root.style.left = px3(pos.x);
+        root.style.top = px3(pos.y);
+      }, async () => {
+        if (Store.state.shadow && !Store.state.shadow.hudDocked) {
+          await Store.save();
+        }
+      });
+    }
+  };
+
   // src/modules/ui/hud.js
   var HUD = {
     renderScheduled: false,
@@ -7539,8 +10549,8 @@ canvas#equity-canvas {
       window.ZeroHUD = this;
       this.renderAll();
       window.addEventListener("resize", () => this.scheduleRender());
-      if (Store2.state.trades) {
-        const trades = Object.values(Store2.state.trades).map((t) => ({
+      if (Store.state.trades) {
+        const trades = Object.values(Store.state.trades).map((t) => ({
           ...t,
           side: t.side === "ENTRY" ? "BUY" : t.side === "EXIT" ? "SELL" : t.side,
           priceUsd: t.fillPriceUsd || t.priceUsd,
@@ -7553,6 +10563,10 @@ canvas#equity-canvas {
       Market.subscribe(async () => {
         this.scheduleRender();
       });
+      if (ModeManager.getMode() === MODES.SHADOW) {
+        NarrativeTrust.init();
+      }
+      ModesUI.showSessionBanner();
     },
     scheduleRender() {
       if (this.renderScheduled)
@@ -7565,25 +10579,35 @@ canvas#equity-canvas {
       });
     },
     renderAll() {
-      if (!Store2.state)
+      if (!Store.state)
         return;
       Banner.mountBanner();
       PnlHud.mountPnlHud(this.makeDraggable.bind(this));
-      BuyHud.mountBuyHud(this.makeDraggable.bind(this));
+      if (ModeManager.shouldShowBuyHud()) {
+        BuyHud.mountBuyHud(this.makeDraggable.bind(this));
+      } else {
+        const container = OverlayManager.getContainer();
+        const buyRoot = container.querySelector("#" + IDS.buyHud);
+        if (buyRoot)
+          buyRoot.remove();
+      }
+      if (ModeManager.shouldShowShadowHud()) {
+        ShadowHud.mountShadowHud(this.makeDraggable.bind(this));
+      } else {
+        ShadowHud.removeShadowHud();
+      }
       this.updateAll();
     },
     async updateAll() {
-      if (Store2.state && Store2.state.settings) {
-        const container = OverlayManager.getContainer();
-        if (Store2.state.settings.tradingMode === "shadow") {
-          container.classList.add("zero-shadow-mode");
-        } else {
-          container.classList.remove("zero-shadow-mode");
-        }
-      }
+      ModesUI.applyContainerClass();
       Banner.updateBanner();
       await PnlHud.updatePnlHud();
-      BuyHud.updateBuyHud();
+      if (ModeManager.shouldShowBuyHud()) {
+        BuyHud.updateBuyHud();
+      }
+      if (ModeManager.shouldShowShadowHud()) {
+        ShadowHud.updateShadowHud();
+      }
     },
     // Shared utility for making elements draggable
     makeDraggable(handle, onMove, onStop) {
@@ -7669,13 +10693,13 @@ canvas#equity-canvas {
     TokenContextResolver.init(PLATFORM);
     try {
       Logger.info("Loading Store...");
-      const state = await Store2.load();
+      const state = await Store.load();
       if (!state)
         throw new Error("Store state is null");
       if (!state.settings.enabled) {
         Logger.info("Force-enabling for Beta test...");
         state.settings.enabled = true;
-        await Store2.save();
+        await Store.save();
       }
       Logger.info("Store loaded:", state.settings?.enabled ? "Enabled" : "Disabled");
     } catch (e) {
@@ -7726,17 +10750,17 @@ canvas#equity-canvas {
         return;
       const { type, val } = e.data;
       if (type === "SET_TIER") {
-        const state = Store2.state;
+        const state = Store.state;
         if (state && state.settings) {
           Logger.info(`Admin: Setting tier to ${val}...`);
           state.settings.tier = val;
-          await Store2.save();
+          await Store.save();
           location.reload();
         }
       }
       if (type === "RESET_STORE") {
         Logger.warn("Admin: Resetting store...");
-        await Store2.clear();
+        await Store.clear();
         location.reload();
       }
     });

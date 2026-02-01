@@ -3,8 +3,8 @@
   const CONFIG = {
     AXIOM_URL: "https://axiom.trade/@takep",
     TERMINAL_URL: "https://trade.padre.gg/rk/take",
-    TELEGRAM_URL: "https://t.me/ZERO_SupportBot",
     WEBSITE_URL: "https://get-zero.xyz",
+    X_URL: "https://x.com/get_zero_xyz",
   };
 
   const $ = (id) => document.getElementById(id);
@@ -27,13 +27,13 @@
     if (tab?.id) chrome.tabs.update(tab.id, { url: CONFIG.TERMINAL_URL });
   });
 
-  $("telegramLink").addEventListener("click", (e) => {
-    e.preventDefault();
-    chrome.tabs.create({ url: CONFIG.TELEGRAM_URL });
-  });
-
-  $("websiteLink").addEventListener("click", (e) => {
+  $("supportLink").addEventListener("click", (e) => {
     e.preventDefault();
     chrome.tabs.create({ url: CONFIG.WEBSITE_URL });
+  });
+
+  $("xLink").addEventListener("click", (e) => {
+    e.preventDefault();
+    chrome.tabs.create({ url: CONFIG.X_URL });
   });
 })();

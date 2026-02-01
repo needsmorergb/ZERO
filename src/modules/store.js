@@ -1,3 +1,7 @@
+// Build-time dev override — flip to false before shipping.
+// Baked into the bundle as a literal; cannot be changed from the console.
+const DEV_FORCE_ELITE = true;
+
 export const EXT_KEY = "sol_paper_trader_v1";
 
 const DEFAULTS = {
@@ -15,7 +19,7 @@ const DEFAULTS = {
         tokenDisplayUsd: false,
         sessionDisplayUsd: false,
         tutorialCompleted: false,
-        tradingMode: 'paper', // 'paper' | 'shadow'
+        tradingMode: 'paper', // 'paper' | 'analysis' | 'shadow'
         showProfessor: true, // Show trade analysis popup
         rolloutPhase: 'full', // 'beta' | 'preview' | 'full'
         featureOverrides: {}, // For remote kill-switches
@@ -54,6 +58,13 @@ const DEFAULTS = {
         target: null,        // Price in USD or % above entry
         thesis: '',          // Entry reasoning
         maxRiskPct: null     // Max % of balance to risk
+    },
+    shadow: {
+        declaredStrategy: 'Trend',
+        notes: [],
+        hudDocked: false,
+        hudPos: { x: 20, y: 400 },
+        narrativeTrustCache: {}
     },
     behavior: {
         tiltFrequency: 0,
@@ -241,6 +252,11 @@ export const Store = {
             // Migrate Pro tier to Free (Pro tier removed in 2-tier model)
             if (this.state.settings.tier === 'pro') {
                 this.state.settings.tier = 'free';
+            }
+
+            // Build-time Elite override for dev testing
+            if (DEV_FORCE_ELITE) {
+                this.state.settings.tier = 'elite';
             }
 
             // Migrate old ENTRY/EXIT side values to BUY/SELL

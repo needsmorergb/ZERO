@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="8" cy="8" r="6.5"/>
+  <path d="M12.6 3.4L3.4 12.6" stroke="none"/>
+  <clipPath id="shadow-half">
+    <path d="M0 0L16 0L16 16Z"/>
+  </clipPath>
+  <circle cx="8" cy="8" r="6.5" fill="currentColor" stroke="none" clip-path="url(#shadow-half)"/>
+</svg>
