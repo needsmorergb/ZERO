@@ -1,47 +1,47 @@
-import { Store } from '../store.js';
-import { OverlayManager } from './overlay.js';
-import { FeatureManager } from '../featureManager.js';
-import { License } from '../license.js';
-import { ICONS } from './icons.js';
+import { Store } from "../store.js";
+import { OverlayManager } from "./overlay.js";
+import { FeatureManager } from "../featureManager.js";
+import { License } from "../license.js";
+import { ICONS } from "./icons.js";
 
 export const Paywall = {
-    showUpgradeModal(lockedFeature = null) {
-        const root = OverlayManager.getShadowRoot();
+  showUpgradeModal(lockedFeature = null) {
+    const root = OverlayManager.getShadowRoot();
 
-        // Remove existing modal if any
-        const existing = root.getElementById('paywall-modal-overlay');
-        if (existing) existing.remove();
+    // Remove existing modal if any
+    const existing = root.getElementById("paywall-modal-overlay");
+    if (existing) existing.remove();
 
-        // Create modal overlay
-        const overlay = document.createElement('div');
-        overlay.id = 'paywall-modal-overlay';
-        overlay.className = 'paywall-modal-overlay';
+    // Create modal overlay
+    const overlay = document.createElement("div");
+    overlay.id = "paywall-modal-overlay";
+    overlay.className = "paywall-modal-overlay";
 
-        // Feature-specific messaging
-        let featureTitle = 'ZERØ Elite';
-        let featureDesc = 'Advanced behavioral analytics and cross-session insights';
+    // Feature-specific messaging
+    let featureTitle = "ZERØ Elite";
+    let featureDesc = "Advanced behavioral analytics and cross-session insights";
 
-        if (lockedFeature === 'TRADE_PLAN') {
-            featureTitle = 'Trade Planning';
-            featureDesc = 'Set stop losses, targets, and capture your thesis before every trade.';
-        } else if (lockedFeature === 'DETAILED_LOGS') {
-            featureTitle = 'Detailed Logs';
-            featureDesc = 'Export comprehensive trade logs for analysis.';
-        } else if (lockedFeature === 'AI_DEBRIEF') {
-            featureTitle = 'AI Debrief';
-            featureDesc = 'Post-session behavioral analysis to accelerate your learning.';
-        } else if (lockedFeature === 'BEHAVIOR_BASELINE') {
-            featureTitle = 'Behavioral Profile';
-            featureDesc = 'Deep psychological profiling and real-time intervention.';
-        } else if (lockedFeature === 'DISCIPLINE_SCORING') {
-            featureTitle = 'Discipline Scoring';
-            featureDesc = 'Track how well you stick to your trading rules.';
-        } else if (lockedFeature === 'MARKET_CONTEXT') {
-            featureTitle = 'Market Context';
-            featureDesc = 'Overlay market conditions to see how context affected your trades.';
-        }
+    if (lockedFeature === "TRADE_PLAN") {
+      featureTitle = "Trade Planning";
+      featureDesc = "Set stop losses, targets, and capture your thesis before every trade.";
+    } else if (lockedFeature === "DETAILED_LOGS") {
+      featureTitle = "Detailed Logs";
+      featureDesc = "Export comprehensive trade logs for analysis.";
+    } else if (lockedFeature === "AI_DEBRIEF") {
+      featureTitle = "AI Debrief";
+      featureDesc = "Post-session behavioral analysis to accelerate your learning.";
+    } else if (lockedFeature === "BEHAVIOR_BASELINE") {
+      featureTitle = "Behavioral Profile";
+      featureDesc = "Deep psychological profiling and real-time intervention.";
+    } else if (lockedFeature === "DISCIPLINE_SCORING") {
+      featureTitle = "Discipline Scoring";
+      featureDesc = "Track how well you stick to your trading rules.";
+    } else if (lockedFeature === "MARKET_CONTEXT") {
+      featureTitle = "Market Context";
+      featureDesc = "Overlay market conditions to see how context affected your trades.";
+    }
 
-        overlay.innerHTML = `
+    overlay.innerHTML = `
             <div class="paywall-modal">
                 <div class="paywall-header">
                     <div class="paywall-badge">
@@ -125,73 +125,89 @@ export const Paywall = {
             </div>
         `;
 
-        // Event handlers
-        overlay.addEventListener('click', async (e) => {
-            if (e.target === overlay || e.target.closest('[data-act="close"]')) {
-                overlay.remove();
-            }
+    // Event handlers
+    overlay.addEventListener("click", async (e) => {
+      if (e.target === overlay || e.target.closest('[data-act="close"]')) {
+        overlay.remove();
+      }
 
-            if (e.target.closest('[data-act="purchase"]')) {
-                License.openPurchasePage();
-            }
-
-            if (e.target.closest('[data-act="show-key-input"]')) {
-                const keySection = overlay.querySelector('.paywall-key-section');
-                if (keySection) {
-                    keySection.style.display = keySection.style.display === 'none' ? 'block' : 'none';
-                    const input = keySection.querySelector('.paywall-license-input');
-                    if (input) input.focus();
-                }
-            }
-
-            if (e.target.closest('[data-act="activate"]')) {
-                const input = overlay.querySelector('.paywall-license-input');
-                const statusEl = overlay.querySelector('.paywall-key-status');
-                const key = input?.value?.trim();
-                if (!key) {
-                    if (statusEl) { statusEl.textContent = 'Please enter a license key'; statusEl.style.color = '#f59e0b'; }
-                    return;
-                }
-
-                // Show loading state
-                const btn = e.target.closest('[data-act="activate"]');
-                const origText = btn.textContent;
-                btn.textContent = 'Verifying...';
-                btn.disabled = true;
-                if (statusEl) { statusEl.textContent = 'Verifying your license...'; statusEl.style.color = '#94a3b8'; }
-
-                const result = await License.activate(key);
-
-                btn.textContent = origText;
-                btn.disabled = false;
-
-                if (result.ok) {
-                    if (statusEl) { statusEl.textContent = 'Elite activated!'; statusEl.style.color = '#10b981'; }
-                    this._showSuccessToast(License.getPlanLabel());
-                    setTimeout(() => overlay.remove(), 1500);
-                } else {
-                    const errorMsg = result.error === 'invalid_key' ? 'Invalid license key'
-                        : result.error === 'invalid_product' ? 'Key not for this product'
-                        : result.error === 'membership_inactive' ? 'Membership is not active'
-                        : 'Verification failed — try again';
-                    if (statusEl) { statusEl.textContent = errorMsg; statusEl.style.color = '#ef4444'; }
-                }
-            }
-        });
-
-        root.appendChild(overlay);
-    },
-
-    handleUpgrade() {
+      if (e.target.closest('[data-act="purchase"]')) {
         License.openPurchasePage();
-    },
+      }
 
-    _showSuccessToast(planLabel = '') {
-        const root = OverlayManager.getShadowRoot();
-        const toast = document.createElement('div');
-        toast.className = 'paywall-toast';
-        toast.textContent = planLabel ? `Elite Activated (${planLabel})` : 'Elite Activated';
-        toast.style.cssText = `
+      if (e.target.closest('[data-act="show-key-input"]')) {
+        const keySection = overlay.querySelector(".paywall-key-section");
+        if (keySection) {
+          keySection.style.display = keySection.style.display === "none" ? "block" : "none";
+          const input = keySection.querySelector(".paywall-license-input");
+          if (input) input.focus();
+        }
+      }
+
+      if (e.target.closest('[data-act="activate"]')) {
+        const input = overlay.querySelector(".paywall-license-input");
+        const statusEl = overlay.querySelector(".paywall-key-status");
+        const key = input?.value?.trim();
+        if (!key) {
+          if (statusEl) {
+            statusEl.textContent = "Please enter a license key";
+            statusEl.style.color = "#f59e0b";
+          }
+          return;
+        }
+
+        // Show loading state
+        const btn = e.target.closest('[data-act="activate"]');
+        const origText = btn.textContent;
+        btn.textContent = "Verifying...";
+        btn.disabled = true;
+        if (statusEl) {
+          statusEl.textContent = "Verifying your license...";
+          statusEl.style.color = "#94a3b8";
+        }
+
+        const result = await License.activate(key);
+
+        btn.textContent = origText;
+        btn.disabled = false;
+
+        if (result.ok) {
+          if (statusEl) {
+            statusEl.textContent = "Elite activated!";
+            statusEl.style.color = "#10b981";
+          }
+          this._showSuccessToast(License.getPlanLabel());
+          setTimeout(() => overlay.remove(), 1500);
+        } else {
+          const errorMsg =
+            result.error === "invalid_key"
+              ? "Invalid license key"
+              : result.error === "invalid_product"
+                ? "Key not for this product"
+                : result.error === "membership_inactive"
+                  ? "Membership is not active"
+                  : "Verification failed — try again";
+          if (statusEl) {
+            statusEl.textContent = errorMsg;
+            statusEl.style.color = "#ef4444";
+          }
+        }
+      }
+    });
+
+    root.appendChild(overlay);
+  },
+
+  handleUpgrade() {
+    License.openPurchasePage();
+  },
+
+  _showSuccessToast(planLabel = "") {
+    const root = OverlayManager.getShadowRoot();
+    const toast = document.createElement("div");
+    toast.className = "paywall-toast";
+    toast.textContent = planLabel ? `Elite Activated (${planLabel})` : "Elite Activated";
+    toast.style.cssText = `
             position: fixed;
             top: 80px;
             left: 50%;
@@ -205,13 +221,13 @@ export const Paywall = {
             z-index: 2147483647;
             pointer-events: none;
         `;
-        root.appendChild(toast);
-        setTimeout(() => toast.remove(), 3000);
-    },
+    root.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
+  },
 
-    isFeatureLocked(featureName) {
-        if (!FeatureManager) return false;
-        const flags = FeatureManager.resolveFlags(Store.state, featureName);
-        return flags.gated;
-    }
+  isFeatureLocked(featureName) {
+    if (!FeatureManager) return false;
+    const flags = FeatureManager.resolveFlags(Store.state, featureName);
+    return flags.gated;
+  },
 };

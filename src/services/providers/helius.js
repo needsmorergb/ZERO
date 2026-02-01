@@ -9,8 +9,8 @@
  * Caching: In-memory with 24-hour TTL per CA.
  */
 
-import { proxyFetch } from '../shared/proxy-fetch.js';
-import { FIELD_STATUS } from '../socialx/types.js';
+import { proxyFetch } from "../shared/proxy-fetch.js";
+import { FIELD_STATUS } from "../socialx/types.js";
 
 /** Set to a valid Helius API key to enable developer enrichment. */
 const HELIUS_API_KEY = null;
@@ -36,103 +36,103 @@ const _cache = {};
  * @returns {Promise<HeliusDevResult>}
  */
 export async function fetchHeliusDev(ca) {
-    // No API key → immediately return NOT_SUPPORTED
-    if (!HELIUS_API_KEY) {
-        return {
-            mintAgeDays: null,
-            deployer: null,
-            deployerMints30d: null,
-            status: FIELD_STATUS.NOT_SUPPORTED,
-            lastFetched: null
-        };
-    }
-
-    if (!ca) {
-        return _notSupported();
-    }
-
-    // Check cache
-    const cached = _cache[ca];
-    if (cached && (Date.now() - cached.fetchedTs) < CACHE_TTL_MS) {
-        return cached.data;
-    }
-
-    try {
-        const url = `https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`;
-        const response = await proxyFetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                jsonrpc: '2.0',
-                id: 'zero-dev-ctx',
-                method: 'getAsset',
-                params: { id: ca }
-            })
-        });
-
-        if (!response.ok || !response.data?.result) {
-            const result = {
-                mintAgeDays: null,
-                deployer: null,
-                deployerMints30d: null,
-                status: FIELD_STATUS.PROVIDER_ERROR,
-                lastFetched: new Date().toISOString()
-            };
-            _cacheResult(ca, result);
-            return result;
-        }
-
-        const asset = response.data.result;
-        const authorities = asset.authorities || [];
-        const deployer = authorities.length > 0 ? authorities[0].address : null;
-
-        // Derive mint age from creation timestamp if available
-        let mintAgeDays = null;
-        if (asset.created_at) {
-            const created = new Date(asset.created_at);
-            if (!isNaN(created.getTime())) {
-                mintAgeDays = Math.floor((Date.now() - created.getTime()) / (24 * 60 * 60 * 1000));
-            }
-        }
-
-        const result = {
-            mintAgeDays,
-            deployer,
-            deployerMints30d: null, // Not available without additional queries
-            status: FIELD_STATUS.OK,
-            lastFetched: new Date().toISOString()
-        };
-
-        _cacheResult(ca, result);
-        return result;
-    } catch (e) {
-        console.warn('[Helius] Fetch failed:', e?.message || e);
-        return {
-            mintAgeDays: null,
-            deployer: null,
-            deployerMints30d: null,
-            status: FIELD_STATUS.PROVIDER_ERROR,
-            lastFetched: new Date().toISOString()
-        };
-    }
-}
-
-function _notSupported() {
+  // No API key → immediately return NOT_SUPPORTED
+  if (!HELIUS_API_KEY) {
     return {
+      mintAgeDays: null,
+      deployer: null,
+      deployerMints30d: null,
+      status: FIELD_STATUS.NOT_SUPPORTED,
+      lastFetched: null,
+    };
+  }
+
+  if (!ca) {
+    return _notSupported();
+  }
+
+  // Check cache
+  const cached = _cache[ca];
+  if (cached && Date.now() - cached.fetchedTs < CACHE_TTL_MS) {
+    return cached.data;
+  }
+
+  try {
+    const url = `https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`;
+    const response = await proxyFetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "zero-dev-ctx",
+        method: "getAsset",
+        params: { id: ca },
+      }),
+    });
+
+    if (!response.ok || !response.data?.result) {
+      const result = {
         mintAgeDays: null,
         deployer: null,
         deployerMints30d: null,
-        status: FIELD_STATUS.NOT_SUPPORTED,
-        lastFetched: null
+        status: FIELD_STATUS.PROVIDER_ERROR,
+        lastFetched: new Date().toISOString(),
+      };
+      _cacheResult(ca, result);
+      return result;
+    }
+
+    const asset = response.data.result;
+    const authorities = asset.authorities || [];
+    const deployer = authorities.length > 0 ? authorities[0].address : null;
+
+    // Derive mint age from creation timestamp if available
+    let mintAgeDays = null;
+    if (asset.created_at) {
+      const created = new Date(asset.created_at);
+      if (!isNaN(created.getTime())) {
+        mintAgeDays = Math.floor((Date.now() - created.getTime()) / (24 * 60 * 60 * 1000));
+      }
+    }
+
+    const result = {
+      mintAgeDays,
+      deployer,
+      deployerMints30d: null, // Not available without additional queries
+      status: FIELD_STATUS.OK,
+      lastFetched: new Date().toISOString(),
     };
+
+    _cacheResult(ca, result);
+    return result;
+  } catch (e) {
+    console.warn("[Helius] Fetch failed:", e?.message || e);
+    return {
+      mintAgeDays: null,
+      deployer: null,
+      deployerMints30d: null,
+      status: FIELD_STATUS.PROVIDER_ERROR,
+      lastFetched: new Date().toISOString(),
+    };
+  }
+}
+
+function _notSupported() {
+  return {
+    mintAgeDays: null,
+    deployer: null,
+    deployerMints30d: null,
+    status: FIELD_STATUS.NOT_SUPPORTED,
+    lastFetched: null,
+  };
 }
 
 function _cacheResult(ca, data) {
-    _cache[ca] = { data, fetchedTs: Date.now() };
+  _cache[ca] = { data, fetchedTs: Date.now() };
 
-    const keys = Object.keys(_cache);
-    if (keys.length > MAX_CACHE) {
-        const sorted = keys.sort((a, b) => (_cache[a].fetchedTs) - (_cache[b].fetchedTs));
-        sorted.slice(0, keys.length - MAX_CACHE).forEach(k => delete _cache[k]);
-    }
+  const keys = Object.keys(_cache);
+  if (keys.length > MAX_CACHE) {
+    const sorted = keys.sort((a, b) => _cache[a].fetchedTs - _cache[b].fetchedTs);
+    sorted.slice(0, keys.length - MAX_CACHE).forEach((k) => delete _cache[k]);
+  }
 }

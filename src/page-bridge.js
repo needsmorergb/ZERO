@@ -1,10 +1,10 @@
 /**
  * Page Bridge Script
- * 
+ *
  * Runs in the PAGE context (not extension isolated world).
  * Hooks fetch, XMLHttpRequest, and WebSocket APIs to intercept price updates.
  * Emits PRICE_TICK messages to the content script via window.postMessage.
- * 
+ *
  * Context Matching:
  * - Content script sends PAPER_SET_CONTEXT with { mint, symbol }
  * - Only emits prices when the response matches the current context
@@ -21,7 +21,13 @@
     minEmitGapMs: 150, // do not spam the content script
   };
 
-  const safe = (fn) => { try { return fn(); } catch { return undefined; } };
+  const safe = (fn) => {
+    try {
+      return fn();
+    } catch {
+      return undefined;
+    }
+  };
 
   function send(payload) {
     window.postMessage({ [CHANNEL]: true, ...payload }, "*");
@@ -32,7 +38,9 @@
   }
 
   function normalizeSymbol(s) {
-    return String(s || "").trim().toUpperCase();
+    return String(s || "")
+      .trim()
+      .toUpperCase();
   }
 
   function throttleEmit() {
@@ -67,8 +75,12 @@
 
     // Prefer explicit USD fields first
     const preferred = [
-      "priceUsd", "usdPrice", "price_usd",
-      "markPriceUsd", "lastPriceUsd", "closeUsd"
+      "priceUsd",
+      "usdPrice",
+      "price_usd",
+      "markPriceUsd",
+      "lastPriceUsd",
+      "closeUsd",
     ];
     for (const k of preferred) {
       const v = obj[k];
@@ -160,7 +172,7 @@
       price: r.price,
       confidence: r.confidence, // 3 = likely USD, 1 = generic
       key: r.key || null,
-      ts: Date.now()
+      ts: Date.now(),
     });
   }
 
@@ -195,10 +207,13 @@
       const clone = res.clone();
 
       // Try JSON only
-      clone.json().then((json) => {
-        tryHandleJson(url, json);
-      }).catch(() => { });
-    } catch { }
+      clone
+        .json()
+        .then((json) => {
+          tryHandleJson(url, json);
+        })
+        .catch(() => {});
+    } catch { /* swallowed */ }
     return res;
   };
 
@@ -227,7 +242,7 @@
 
         const json = JSON.parse(text);
         tryHandleJson(url, json);
-      } catch { }
+      } catch { /* swallowed */ }
     });
 
     return XHRSend.apply(this, args);
@@ -256,7 +271,7 @@
           const json = safe(() => JSON.parse(s));
           if (json) tryHandleJson(url, json);
         }
-      } catch { }
+      } catch { /* swallowed */ }
     });
 
     return ws;

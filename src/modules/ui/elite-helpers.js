@@ -1,4 +1,4 @@
-import { ICONS } from './icons.js';
+import { ICONS } from "./icons.js";
 
 /**
  * Render a locked Elite feature card with consistent UI.
@@ -6,7 +6,7 @@ import { ICONS } from './icons.js';
  * No upgrade CTA — payments not live. Informational only.
  */
 export function renderEliteLockedCard(title, desc) {
-    return `
+  return `
         <div class="elite-locked-card">
             <div class="elite-locked-card-header">
                 <div class="elite-locked-card-icon">${ICONS.LOCK}</div>

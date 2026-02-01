@@ -1,19 +1,19 @@
 // Import and re-export IDS from separate file
-export { IDS } from './ids.js';
+export { IDS } from "./ids.js";
 
 // Import all style modules
-import { COMMON_CSS } from './common-styles.js';
-import { BANNER_CSS } from './banner-styles.js';
-import { PNL_HUD_CSS } from './pnl-hud-styles.js';
-import { BUY_HUD_CSS } from './buy-hud-styles.js';
-import { MODALS_CSS } from './modals-styles.js';
-import { PROFESSOR_CSS } from './professor-styles.js';
-import { THEME_OVERRIDES_CSS } from './theme-overrides.js';
-import { ELITE_CSS } from './elite-styles.js';
-import { SETTINGS_PANEL_CSS } from './settings-panel-styles.js';
-import { MODES_CSS } from './modes-styles.js';
-import { SHADOW_INSIGHTS_CSS } from './shadow-insights-styles.js';
-import { SHADOW_HUD_CSS } from './shadow-hud-styles.js';
+import { COMMON_CSS } from "./common-styles.js";
+import { BANNER_CSS } from "./banner-styles.js";
+import { PNL_HUD_CSS } from "./pnl-hud-styles.js";
+import { BUY_HUD_CSS } from "./buy-hud-styles.js";
+import { MODALS_CSS } from "./modals-styles.js";
+import { PROFESSOR_CSS } from "./professor-styles.js";
+import { THEME_OVERRIDES_CSS } from "./theme-overrides.js";
+import { ELITE_CSS } from "./elite-styles.js";
+import { SETTINGS_PANEL_CSS } from "./settings-panel-styles.js";
+import { MODES_CSS } from "./modes-styles.js";
+import { SHADOW_INSIGHTS_CSS } from "./shadow-insights-styles.js";
+import { SHADOW_HUD_CSS } from "./shadow-hud-styles.js";
 
 // Concatenate all CSS modules
 export const CSS =

@@ -1,9 +1,9 @@
-import { Store } from '../store.js';
-import { OverlayManager } from './overlay.js';
-import { Analytics } from '../core/analytics.js';
-import { FeatureManager } from '../featureManager.js';
-import { Paywall } from './paywall.js';
-import { ICONS } from './icons.js';
+import { Store } from "../store.js";
+import { OverlayManager } from "./overlay.js";
+import { Analytics } from "../core/analytics.js";
+import { FeatureManager } from "../featureManager.js";
+import { Paywall } from "./paywall.js";
+import { ICONS } from "./icons.js";
 
 const PROFILE_CSS = `
 .trader-profile-overlay {
@@ -569,62 +569,62 @@ const PROFILE_CSS = `
 `;
 
 export const TraderProfile = {
-    isOpen: false,
+  isOpen: false,
 
-    open() {
-        this.isOpen = true;
-        this.render();
-    },
+  open() {
+    this.isOpen = true;
+    this.render();
+  },
 
-    close() {
-        this.isOpen = false;
-        const overlay = OverlayManager.getShadowRoot().querySelector('.trader-profile-overlay');
-        if (overlay) overlay.remove();
-    },
+  close() {
+    this.isOpen = false;
+    const overlay = OverlayManager.getShadowRoot().querySelector(".trader-profile-overlay");
+    if (overlay) overlay.remove();
+  },
 
-    render() {
-        const root = OverlayManager.getShadowRoot();
-        let overlay = root.querySelector('.trader-profile-overlay');
+  render() {
+    const root = OverlayManager.getShadowRoot();
+    let overlay = root.querySelector(".trader-profile-overlay");
 
-        if (!overlay) {
-            overlay = document.createElement('div');
-            overlay.className = 'trader-profile-overlay';
+    if (!overlay) {
+      overlay = document.createElement("div");
+      overlay.className = "trader-profile-overlay";
 
-            if (!root.getElementById('trader-profile-styles')) {
-                const style = document.createElement('style');
-                style.id = 'trader-profile-styles';
-                style.textContent = PROFILE_CSS;
-                root.appendChild(style);
-            }
+      if (!root.getElementById("trader-profile-styles")) {
+        const style = document.createElement("style");
+        style.id = "trader-profile-styles";
+        style.textContent = PROFILE_CSS;
+        root.appendChild(style);
+      }
 
-            root.appendChild(overlay);
-        }
+      root.appendChild(overlay);
+    }
 
-        const state = Store.state;
-        const flags = FeatureManager.resolveFlags(state, 'TRADER_PROFILE');
+    const state = Store.state;
+    const flags = FeatureManager.resolveFlags(state, "TRADER_PROFILE");
 
-        // Check if gated
-        if (flags.gated) {
-            overlay.innerHTML = this.renderLockedState();
-            this.bindEvents(overlay);
-            return;
-        }
+    // Check if gated
+    if (flags.gated) {
+      overlay.innerHTML = this.renderLockedState();
+      this.bindEvents(overlay);
+      return;
+    }
 
-        // Generate profile
-        const profile = Analytics.generateTraderProfile(state);
+    // Generate profile
+    const profile = Analytics.generateTraderProfile(state);
 
-        if (!profile.ready) {
-            overlay.innerHTML = this.renderBuildingState(profile);
-            this.bindEvents(overlay);
-            return;
-        }
+    if (!profile.ready) {
+      overlay.innerHTML = this.renderBuildingState(profile);
+      this.bindEvents(overlay);
+      return;
+    }
 
-        overlay.innerHTML = this.renderFullProfile(profile);
-        this.bindEvents(overlay);
-    },
+    overlay.innerHTML = this.renderFullProfile(profile);
+    this.bindEvents(overlay);
+  },
 
-    renderLockedState() {
-        return `
+  renderLockedState() {
+    return `
             <div class="trader-profile-modal">
                 <div class="profile-header">
                     <div class="profile-header-left">
@@ -647,11 +647,11 @@ export const TraderProfile = {
                 </div>
             </div>
         `;
-    },
+  },
 
-    renderBuildingState(profile) {
-        const progress = ((10 - profile.tradesNeeded) / 10) * 100;
-        return `
+  renderBuildingState(profile) {
+    const progress = ((10 - profile.tradesNeeded) / 10) * 100;
+    return `
             <div class="trader-profile-modal">
                 <div class="profile-header">
                     <div class="profile-header-left">
@@ -676,10 +676,10 @@ export const TraderProfile = {
                 </div>
             </div>
         `;
-    },
+  },
 
-    renderFullProfile(profile) {
-        return `
+  renderFullProfile(profile) {
+    return `
             <div class="trader-profile-modal">
                 <div class="profile-header">
                     <div class="profile-header-left">
@@ -715,7 +715,7 @@ export const TraderProfile = {
                                 <span class="profile-card-title">Risk Profile</span>
                             </div>
                             <div class="risk-display">
-                                <div class="risk-badge ${profile.riskProfile.profile.replace(' ', '')}">
+                                <div class="risk-badge ${profile.riskProfile.profile.replace(" ", "")}">
                                     <div class="risk-label">${profile.riskProfile.profile}</div>
                                 </div>
                                 <div class="risk-stats">
@@ -742,7 +742,11 @@ export const TraderProfile = {
                                 <span class="profile-card-title">Best Strategies</span>
                             </div>
                             <div class="strategy-list">
-                                ${profile.bestStrategies.top.length > 0 ? profile.bestStrategies.top.map((s, i) => `
+                                ${
+                                  profile.bestStrategies.top.length > 0
+                                    ? profile.bestStrategies.top
+                                        .map(
+                                          (s, i) => `
                                     <div class="strategy-item">
                                         <span class="strategy-name">${i + 1}. ${s.name}</span>
                                         <div class="strategy-stats">
@@ -752,11 +756,15 @@ export const TraderProfile = {
                                             </div>
                                             <div class="strategy-stat">
                                                 <span class="label">P&L:</span>
-                                                <span class="value ${s.totalPnl >= 0 ? 'positive' : 'negative'}">${s.totalPnl >= 0 ? '+' : ''}${s.totalPnl.toFixed(4)}</span>
+                                                <span class="value ${s.totalPnl >= 0 ? "positive" : "negative"}">${s.totalPnl >= 0 ? "+" : ""}${s.totalPnl.toFixed(4)}</span>
                                             </div>
                                         </div>
                                     </div>
-                                `).join('') : '<div class="no-data">No strategy data yet</div>'}
+                                `
+                                        )
+                                        .join("")
+                                    : '<div class="no-data">No strategy data yet</div>'
+                                }
                             </div>
                         </div>
 
@@ -767,7 +775,11 @@ export const TraderProfile = {
                                 <span class="profile-card-title">Worst Conditions</span>
                             </div>
                             <div class="condition-list">
-                                ${profile.worstConditions.length > 0 ? profile.worstConditions.map(c => `
+                                ${
+                                  profile.worstConditions.length > 0
+                                    ? profile.worstConditions
+                                        .map(
+                                          (c) => `
                                     <div class="condition-item ${c.severity}">
                                         <div class="condition-header">
                                             <span class="condition-label">${c.label}</span>
@@ -776,7 +788,11 @@ export const TraderProfile = {
                                         <div class="condition-stat">${c.stat}</div>
                                         <div class="condition-advice">${c.advice}</div>
                                     </div>
-                                `).join('') : '<div class="no-data">No problematic patterns detected</div>'}
+                                `
+                                        )
+                                        .join("")
+                                    : '<div class="no-data">No problematic patterns detected</div>'
+                                }
                             </div>
                         </div>
 
@@ -787,17 +803,24 @@ export const TraderProfile = {
                                 <span class="profile-card-title">Best Time of Day</span>
                             </div>
                             <div class="time-grid">
-                                ${profile.bestTimeOfDay.breakdown && profile.bestTimeOfDay.breakdown.length > 0
-                                    ? profile.bestTimeOfDay.breakdown.map(t => `
-                                        <div class="time-slot ${t === profile.bestTimeOfDay.best ? 'best' : ''} ${t === profile.bestTimeOfDay.worst ? 'worst' : ''}">
+                                ${
+                                  profile.bestTimeOfDay.breakdown &&
+                                  profile.bestTimeOfDay.breakdown.length > 0
+                                    ? profile.bestTimeOfDay.breakdown
+                                        .map(
+                                          (t) => `
+                                        <div class="time-slot ${t === profile.bestTimeOfDay.best ? "best" : ""} ${t === profile.bestTimeOfDay.worst ? "worst" : ""}">
                                             <div class="time-range">${t.range}</div>
                                             <div class="time-winrate">${t.winRate}%</div>
-                                            <div class="time-pnl ${t.pnl >= 0 ? 'positive' : 'negative'}" style="color: ${t.pnl >= 0 ? '#10b981' : '#ef4444'}">
-                                                ${t.pnl >= 0 ? '+' : ''}${t.pnl.toFixed(3)}
+                                            <div class="time-pnl ${t.pnl >= 0 ? "positive" : "negative"}" style="color: ${t.pnl >= 0 ? "#10b981" : "#ef4444"}">
+                                                ${t.pnl >= 0 ? "+" : ""}${t.pnl.toFixed(3)}
                                             </div>
                                         </div>
-                                    `).join('')
-                                    : '<div class="no-data" style="grid-column: span 4;">Need more trades across different times</div>'}
+                                    `
+                                        )
+                                        .join("")
+                                    : '<div class="no-data" style="grid-column: span 4;">Need more trades across different times</div>'
+                                }
                             </div>
                         </div>
 
@@ -807,33 +830,45 @@ export const TraderProfile = {
                                 ${ICONS.CHART_BAR}
                                 <span class="profile-card-title">Optimal Session Length</span>
                             </div>
-                            ${profile.optimalSessionLength.optimal ? `
+                            ${
+                              profile.optimalSessionLength.optimal
+                                ? `
                                 <div style="margin-bottom: 12px; font-size: 13px; color: #94a3b8;">
                                     Your best performance: <strong style="color: #8b5cf6;">${profile.optimalSessionLength.optimal}</strong> sessions
                                 </div>
                                 <div class="session-buckets">
-                                    ${Object.entries(profile.optimalSessionLength.buckets).map(([key, b]) => `
-                                        <div class="session-bucket ${b.range === profile.optimalSessionLength.optimal ? 'optimal' : ''}">
+                                    ${Object.entries(profile.optimalSessionLength.buckets)
+                                      .map(
+                                        ([key, b]) => `
+                                        <div class="session-bucket ${b.range === profile.optimalSessionLength.optimal ? "optimal" : ""}">
                                             <div class="bucket-range">${b.range}</div>
-                                            <div class="bucket-pnl" style="color: ${parseFloat(b.avgPnl) >= 0 ? '#10b981' : '#ef4444'}">
-                                                ${parseFloat(b.avgPnl) >= 0 ? '+' : ''}${b.avgPnl}
+                                            <div class="bucket-pnl" style="color: ${parseFloat(b.avgPnl) >= 0 ? "#10b981" : "#ef4444"}">
+                                                ${parseFloat(b.avgPnl) >= 0 ? "+" : ""}${b.avgPnl}
                                             </div>
                                             <div class="bucket-winrate">${b.avgWinRate}% WR</div>
                                         </div>
-                                    `).join('')}
+                                    `
+                                      )
+                                      .join("")}
                                 </div>
-                            ` : '<div class="no-data">Need more session data</div>'}
+                            `
+                                : '<div class="no-data">Need more session data</div>'
+                            }
                         </div>
 
                         <!-- Emotional Patterns -->
-                        ${profile.emotionalPatterns.length > 0 ? `
+                        ${
+                          profile.emotionalPatterns.length > 0
+                            ? `
                             <div class="profile-card full-width">
                                 <div class="profile-card-header">
                                     ${ICONS.BRAIN}
                                     <span class="profile-card-title">Emotional Patterns to Address</span>
                                 </div>
                                 <div class="emotional-patterns">
-                                    ${profile.emotionalPatterns.map(p => `
+                                    ${profile.emotionalPatterns
+                                      .map(
+                                        (p) => `
                                         <div class="pattern-item">
                                             <div class="pattern-info">
                                                 <span class="pattern-type">${p.type}</span>
@@ -841,42 +876,46 @@ export const TraderProfile = {
                                             </div>
                                             <div class="pattern-advice">${p.advice}</div>
                                         </div>
-                                    `).join('')}
+                                    `
+                                      )
+                                      .join("")}
                                 </div>
                             </div>
-                        ` : ''}
+                        `
+                            : ""
+                        }
                     </div>
                 </div>
             </div>
         `;
-    },
+  },
 
-    bindEvents(overlay) {
-        const self = this;
+  bindEvents(overlay) {
+    const self = this;
 
-        const closeBtn = overlay.querySelector('#profile-close-btn');
-        if (closeBtn) {
-            closeBtn.onclick = (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                self.close();
-            };
-        }
-
-        const unlockBtn = overlay.querySelector('#unlock-profile-btn');
-        if (unlockBtn) {
-            unlockBtn.onclick = (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                self.close();
-                Paywall.showUpgradeModal('TRADER_PROFILE');
-            };
-        }
-
-        overlay.onclick = (e) => {
-            if (e.target === overlay) {
-                self.close();
-            }
-        };
+    const closeBtn = overlay.querySelector("#profile-close-btn");
+    if (closeBtn) {
+      closeBtn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        self.close();
+      };
     }
+
+    const unlockBtn = overlay.querySelector("#unlock-profile-btn");
+    if (unlockBtn) {
+      unlockBtn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        self.close();
+        Paywall.showUpgradeModal("TRADER_PROFILE");
+      };
+    }
+
+    overlay.onclick = (e) => {
+      if (e.target === overlay) {
+        self.close();
+      }
+    };
+  },
 };

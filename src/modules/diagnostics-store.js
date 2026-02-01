@@ -4,9 +4,9 @@
  * Handles: event ring buffer, upload queue, privacy settings, client identity.
  */
 
-import { SCHEMA_VERSION, createEvent, uuid } from './schemas.js';
+import { SCHEMA_VERSION, createEvent, uuid } from "./schemas.js";
 
-const STORAGE_KEY = 'zero_state';
+const STORAGE_KEY = "zero_state";
 const EVENTS_CAP = 20000;
 const UPLOAD_QUEUE_CAP = 200;
 const DEBOUNCE_MS = 400;
@@ -27,7 +27,7 @@ function defaultState() {
         includeFeatureClicks: true,
       },
       diagnostics: {
-        endpointUrl: 'https://zero-diagnostics.zerodata1.workers.dev/v1/zero/ingest',
+        endpointUrl: "https://zero-diagnostics.zerodata1.workers.dev/v1/zero/ingest",
         lastUploadedEventTs: 0,
       },
     },
@@ -44,7 +44,7 @@ function defaultState() {
 // ---------------------------------------------------------------------------
 function isStorageAvailable() {
   try {
-    return typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local;
+    return typeof chrome !== "undefined" && chrome.storage && chrome.storage.local;
   } catch {
     return false;
   }
@@ -56,9 +56,9 @@ async function chromeStorageGet(key) {
     try {
       chrome.storage.local.get([key], (res) => {
         if (chrome.runtime.lastError) {
-          const msg = chrome.runtime.lastError.message || '';
-          if (!msg.includes('context invalidated')) {
-            console.warn('[DiagStore] get error:', msg);
+          const msg = chrome.runtime.lastError.message || "";
+          if (!msg.includes("context invalidated")) {
+            console.warn("[DiagStore] get error:", msg);
           }
           resolve(null);
           return;
@@ -66,8 +66,8 @@ async function chromeStorageGet(key) {
         resolve(res[key] || null);
       });
     } catch (e) {
-      if (!String(e).includes('context invalidated')) {
-        console.error('[DiagStore] get exception:', e);
+      if (!String(e).includes("context invalidated")) {
+        console.error("[DiagStore] get exception:", e);
       }
       resolve(null);
     }
@@ -80,16 +80,16 @@ async function chromeStorageSet(key, value) {
     try {
       chrome.storage.local.set({ [key]: value }, () => {
         if (chrome.runtime.lastError) {
-          const msg = chrome.runtime.lastError.message || '';
-          if (!msg.includes('context invalidated')) {
-            console.warn('[DiagStore] set error:', msg);
+          const msg = chrome.runtime.lastError.message || "";
+          if (!msg.includes("context invalidated")) {
+            console.warn("[DiagStore] set error:", msg);
           }
         }
         resolve();
       });
     } catch (e) {
-      if (!String(e).includes('context invalidated')) {
-        console.error('[DiagStore] set exception:', e);
+      if (!String(e).includes("context invalidated")) {
+        console.error("[DiagStore] set exception:", e);
       }
       resolve();
     }
@@ -179,7 +179,7 @@ export const DiagnosticsStore = {
     if (!this.state) return;
 
     // Rate-limit ERROR events
-    if (type === 'ERROR') {
+    if (type === "ERROR") {
       const now = Date.now();
       if (now - this._lastErrorTs < ERROR_COOLDOWN_MS) return;
       this._lastErrorTs = now;
@@ -188,7 +188,7 @@ export const DiagnosticsStore = {
     const evt = createEvent(type, payload, {
       sessionId: ctx.sessionId,
       tradeId: ctx.tradeId,
-      platform: ctx.platform || 'UNKNOWN',
+      platform: ctx.platform || "UNKNOWN",
     });
 
     this.state.events.push(evt);
@@ -215,7 +215,7 @@ export const DiagnosticsStore = {
     if (this.state.upload.queue.length > UPLOAD_QUEUE_CAP) {
       this.state.upload.queue = this.state.upload.queue.slice(-UPLOAD_QUEUE_CAP);
     }
-    this.logEvent('UPLOAD_PACKET_ENQUEUED', { uploadId: packet.uploadId });
+    this.logEvent("UPLOAD_PACKET_ENQUEUED", { uploadId: packet.uploadId });
     this.save();
   },
 
@@ -251,7 +251,7 @@ export const DiagnosticsStore = {
   },
 
   getEndpointUrl() {
-    return this.state?.settings?.diagnostics?.endpointUrl || '';
+    return this.state?.settings?.diagnostics?.endpointUrl || "";
   },
 
   setEndpointUrl(url) {
@@ -320,6 +320,6 @@ export const DiagnosticsStore = {
   },
 
   getClientId() {
-    return this.state?.clientId || '';
+    return this.state?.clientId || "";
   },
 };

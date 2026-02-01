@@ -4,7 +4,7 @@
   function safeJsonParse(data) {
     try {
       if (typeof data === "string") return JSON.parse(data);
-    } catch {}
+    } catch { /* swallowed */ }
     return null;
   }
 
@@ -27,7 +27,7 @@
           mint: String(mint),
           symbol: symbol ? String(symbol) : "",
           price: Number(price),
-          ts: Date.now()
+          ts: Date.now(),
         };
       }
 
@@ -49,10 +49,7 @@
       const tick = extractCandidateTick(obj);
       if (!tick) return;
 
-      window.postMessage(
-        { source: "paper-trader", type: "TICK", tick },
-        "*"
-      );
+      window.postMessage({ source: "paper-trader", type: "TICK", tick }, "*");
     });
 
     return ws;
@@ -60,8 +57,5 @@
 
   window.WebSocket.prototype = NativeWebSocket.prototype;
 
-  window.postMessage(
-    { source: "paper-trader", type: "STATUS", status: "ws_hook_installed" },
-    "*"
-  );
+  window.postMessage({ source: "paper-trader", type: "STATUS", status: "ws_hook_installed" }, "*");
 })();

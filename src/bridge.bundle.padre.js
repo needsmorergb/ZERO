@@ -50,7 +50,14 @@
   function extractPriceUsd(obj) {
     if (!obj || typeof obj !== "object")
       return null;
-    const preferred = ["priceUsd", "usdPrice", "price_usd", "markPriceUsd", "lastPriceUsd", "closeUsd"];
+    const preferred = [
+      "priceUsd",
+      "usdPrice",
+      "price_usd",
+      "markPriceUsd",
+      "lastPriceUsd",
+      "closeUsd"
+    ];
     const common = ["price", "last", "lastPrice", "markPrice", "close", "c", "p"];
     let found = null;
     let steps = 0;
@@ -143,7 +150,9 @@
     const solAmount = solLamports > 1e3 ? solLamports / 1e9 : solLamports;
     const priceUsd = parseFloat(data.priceUsd || data.price || data.tokenPriceUsd || 0);
     const symbol = data.symbol || data.outputSymbol || data.inputSymbol || ctx.symbol || null;
-    console.log(`[ZER\xD8] Swap Detected: ${side} ${symbol || mint.slice(0, 8)} \u2014 ${solAmount.toFixed(4)} SOL, tx=${txid.slice(0, 12)}...`);
+    console.log(
+      `[ZER\xD8] Swap Detected: ${side} ${symbol || mint.slice(0, 8)} \u2014 ${solAmount.toFixed(4)} SOL, tx=${txid.slice(0, 12)}...`
+    );
     send({
       type: "SHADOW_TRADE_DETECTED",
       side,
@@ -212,12 +221,15 @@
             }
             activeMarkers.push({ fmt: "exec", ref: shape });
           } else {
-            const id = chart.createShape({ time: ts, location: isBuy ? "belowbar" : "abovebar" }, {
-              shape: "text",
-              lock: true,
-              text: isBuy ? "\n\n\n\n\u2191\nB" : "S\n\u2193\n\n\n\n",
-              overrides: { color, fontsize: 16, bold: true }
-            });
+            const id = chart.createShape(
+              { time: ts, location: isBuy ? "belowbar" : "abovebar" },
+              {
+                shape: "text",
+                lock: true,
+                text: isBuy ? "\n\n\n\n\u2191\nB" : "S\n\u2193\n\n\n\n",
+                overrides: { color, fontsize: 16, bold: true }
+              }
+            );
             if (id)
               activeMarkers.push({ fmt: "std", id });
           }
@@ -296,7 +308,9 @@
     const ctx = createContext();
     const scrapeDomPrice = () => {
       try {
-        const priceEls = document.querySelectorAll('[class*="price"], [class*="Price"], [class*="token-price"], [class*="tokenPrice"]');
+        const priceEls = document.querySelectorAll(
+          '[class*="price"], [class*="Price"], [class*="token-price"], [class*="tokenPrice"]'
+        );
         for (const priceEl of priceEls) {
           let fullText = "";
           priceEl.childNodes.forEach((node) => {
@@ -558,7 +572,9 @@
       lastChartMCap = mcap;
       const inferredPrice = ctx.refPrice * (mcap / ctx.refMCap);
       if (inferredPrice > 0 && inferredPrice < 1e3) {
-        console.log(`[ZER\xD8] Chart MCap\u2192Price: MCap=$${mcap.toLocaleString()} \u2192 $${inferredPrice.toFixed(10)}`);
+        console.log(
+          `[ZER\xD8] Chart MCap\u2192Price: MCap=$${mcap.toLocaleString()} \u2192 $${inferredPrice.toFixed(10)}`
+        );
         send({
           type: "PRICE_TICK",
           source: "chart",
@@ -582,7 +598,9 @@
           ctx._tvApiLogged = true;
           try {
             const proto = Object.getPrototypeOf(chart);
-            const methods = Object.getOwnPropertyNames(proto).filter((m) => typeof chart[m] === "function");
+            const methods = Object.getOwnPropertyNames(proto).filter(
+              (m) => typeof chart[m] === "function"
+            );
             console.log("[ZER\xD8] TV chart API methods:", methods.join(", "));
           } catch (e) {
           }
@@ -597,7 +615,9 @@
               lastChartMCap = close;
               const inferredPrice = ctx.refPrice * (close / ctx.refMCap);
               if (inferredPrice > 0 && inferredPrice < 1e3) {
-                console.log(`[ZER\xD8] TV API MCap\u2192Price: MCap=$${close.toLocaleString()} \u2192 $${inferredPrice.toFixed(10)}`);
+                console.log(
+                  `[ZER\xD8] TV API MCap\u2192Price: MCap=$${close.toLocaleString()} \u2192 $${inferredPrice.toFixed(10)}`
+                );
                 send({
                   type: "PRICE_TICK",
                   source: "chart-api",

@@ -55,7 +55,7 @@ export const axiomAdapter = {
       if (r.width > 120 || r.height > 60) return false;
       return true;
     });
-  }
+  },
 };
 
 function isLikelySolanaMint(s) {

@@ -1,4 +1,4 @@
-import { IDS } from './ids.js';
+import { IDS } from "./ids.js";
 
 export const THEME_OVERRIDES_CSS = `
 /* Shadow Mode Overrides (Gold/Orange Theme) */

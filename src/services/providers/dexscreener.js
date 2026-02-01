@@ -14,7 +14,7 @@
  * Caching: In-memory with 6-hour TTL per CA. LRU eviction at 50 entries.
  */
 
-import { proxyFetch } from '../shared/proxy-fetch.js';
+import { proxyFetch } from "../shared/proxy-fetch.js";
 
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const MAX_CACHE = 50;
@@ -40,34 +40,36 @@ const _cache = {};
  * @returns {{ xUrl: string|null, websiteUrl: string|null, websiteDomain: string|null, hasImage: boolean, socialLinkCount: number }}
  */
 export function parseDexScreenerInfo(info) {
-    const result = {
-        xUrl: null,
-        websiteUrl: null,
-        websiteDomain: null,
-        hasImage: false,
-        socialLinkCount: 0
-    };
+  const result = {
+    xUrl: null,
+    websiteUrl: null,
+    websiteDomain: null,
+    hasImage: false,
+    socialLinkCount: 0,
+  };
 
-    if (!info) return result;
+  if (!info) return result;
 
-    result.hasImage = !!info.imageUrl;
+  result.hasImage = !!info.imageUrl;
 
-    (info.socials || []).forEach(s => {
-        result.socialLinkCount++;
-        if (s.type === 'twitter' && s.url) result.xUrl = s.url;
-    });
+  (info.socials || []).forEach((s) => {
+    result.socialLinkCount++;
+    if (s.type === "twitter" && s.url) result.xUrl = s.url;
+  });
 
-    (info.websites || []).forEach(w => {
-        result.socialLinkCount++;
-        if (!result.websiteUrl && w.url) {
-            result.websiteUrl = w.url;
-            try {
-                result.websiteDomain = new URL(w.url).hostname;
-            } catch (_) { /* ignore invalid URLs */ }
-        }
-    });
+  (info.websites || []).forEach((w) => {
+    result.socialLinkCount++;
+    if (!result.websiteUrl && w.url) {
+      result.websiteUrl = w.url;
+      try {
+        result.websiteDomain = new URL(w.url).hostname;
+      } catch (_) {
+        /* ignore invalid URLs */
+      }
+    }
+  });
 
-    return result;
+  return result;
 }
 
 /**
@@ -79,55 +81,56 @@ export function parseDexScreenerInfo(info) {
  * @returns {Promise<DexScreenerLinks>}
  */
 export async function fetchDexScreenerLinks(ca, opts) {
-    if (!ca) return _emptyLinks();
+  if (!ca) return _emptyLinks();
 
-    // Check cache
-    const cached = _cache[ca];
-    if (cached && (Date.now() - cached.fetchedTs) < CACHE_TTL_MS) {
-        return cached.data;
+  // Check cache
+  const cached = _cache[ca];
+  if (cached && Date.now() - cached.fetchedTs < CACHE_TTL_MS) {
+    return cached.data;
+  }
+
+  // If caller already has DexScreener info (from TokenMarketDataService), use it
+  if (opts?.existingInfo) {
+    const links = parseDexScreenerInfo(opts.existingInfo);
+    const result = {
+      ...links,
+      symbol: null,
+      name: null,
+      rawInfo: opts.existingInfo,
+    };
+    _cacheResult(ca, result);
+    return result;
+  }
+
+  // Fetch from DexScreener API
+  try {
+    const url = `https://api.dexscreener.com/latest/dex/tokens/${ca}`;
+    const response = await proxyFetch(url);
+
+    if (!response.ok || !response.data?.pairs?.length) {
+      return _emptyLinks();
     }
 
-    // If caller already has DexScreener info (from TokenMarketDataService), use it
-    if (opts?.existingInfo) {
-        const links = parseDexScreenerInfo(opts.existingInfo);
-        const result = {
-            ...links,
-            symbol: null,
-            name: null,
-            rawInfo: opts.existingInfo
-        };
-        _cacheResult(ca, result);
-        return result;
-    }
+    const bestPair = response.data.pairs.sort(
+      (a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0)
+    )[0];
 
-    // Fetch from DexScreener API
-    try {
-        const url = `https://api.dexscreener.com/latest/dex/tokens/${ca}`;
-        const response = await proxyFetch(url);
+    if (!bestPair) return _emptyLinks();
 
-        if (!response.ok || !response.data?.pairs?.length) {
-            return _emptyLinks();
-        }
+    const links = parseDexScreenerInfo(bestPair.info);
+    const result = {
+      ...links,
+      symbol: bestPair.baseToken?.symbol || null,
+      name: bestPair.baseToken?.name || null,
+      rawInfo: bestPair.info || null,
+    };
 
-        const bestPair = response.data.pairs
-            .sort((a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0))[0];
-
-        if (!bestPair) return _emptyLinks();
-
-        const links = parseDexScreenerInfo(bestPair.info);
-        const result = {
-            ...links,
-            symbol: bestPair.baseToken?.symbol || null,
-            name: bestPair.baseToken?.name || null,
-            rawInfo: bestPair.info || null
-        };
-
-        _cacheResult(ca, result);
-        return result;
-    } catch (e) {
-        console.warn('[DexScreener] Fetch failed:', e?.message || e);
-        return _emptyLinks();
-    }
+    _cacheResult(ca, result);
+    return result;
+  } catch (e) {
+    console.warn("[DexScreener] Fetch failed:", e?.message || e);
+    return _emptyLinks();
+  }
 }
 
 /**
@@ -136,33 +139,33 @@ export async function fetchDexScreenerLinks(ca, opts) {
  * @returns {DexScreenerLinks|null}
  */
 export function getCachedDexScreenerLinks(ca) {
-    const cached = _cache[ca];
-    if (cached && (Date.now() - cached.fetchedTs) < CACHE_TTL_MS) {
-        return cached.data;
-    }
-    return null;
+  const cached = _cache[ca];
+  if (cached && Date.now() - cached.fetchedTs < CACHE_TTL_MS) {
+    return cached.data;
+  }
+  return null;
 }
 
 function _emptyLinks() {
-    return {
-        xUrl: null,
-        websiteUrl: null,
-        websiteDomain: null,
-        hasImage: false,
-        socialLinkCount: 0,
-        symbol: null,
-        name: null,
-        rawInfo: null
-    };
+  return {
+    xUrl: null,
+    websiteUrl: null,
+    websiteDomain: null,
+    hasImage: false,
+    socialLinkCount: 0,
+    symbol: null,
+    name: null,
+    rawInfo: null,
+  };
 }
 
 function _cacheResult(ca, data) {
-    _cache[ca] = { data, fetchedTs: Date.now() };
+  _cache[ca] = { data, fetchedTs: Date.now() };
 
-    // LRU eviction
-    const keys = Object.keys(_cache);
-    if (keys.length > MAX_CACHE) {
-        const sorted = keys.sort((a, b) => (_cache[a].fetchedTs) - (_cache[b].fetchedTs));
-        sorted.slice(0, keys.length - MAX_CACHE).forEach(k => delete _cache[k]);
-    }
+  // LRU eviction
+  const keys = Object.keys(_cache);
+  if (keys.length > MAX_CACHE) {
+    const sorted = keys.sort((a, b) => _cache[a].fetchedTs - _cache[b].fetchedTs);
+    sorted.slice(0, keys.length - MAX_CACHE).forEach((k) => delete _cache[k]);
+  }
 }

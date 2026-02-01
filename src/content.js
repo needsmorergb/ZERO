@@ -23,4 +23,3 @@ startBridge((msg) => {
     // Handle status updates
   }
 });
-

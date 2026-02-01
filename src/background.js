@@ -1,12 +1,12 @@
 const CACHE_MS = 5 * 60 * 1000;
-const ZERO_STATE_KEY = 'zero_state';
-const EXT_KEY = 'sol_paper_trader_v1';
-const UPLOAD_ALARM = 'zero_upload';
-const LICENSE_ALARM = 'zero_license_revalidation';
+const ZERO_STATE_KEY = "zero_state";
+const EXT_KEY = "sol_paper_trader_v1";
+const UPLOAD_ALARM = "zero_upload";
+const LICENSE_ALARM = "zero_license_revalidation";
 const UPLOAD_INTERVAL_MIN = 15;
 const LICENSE_CHECK_INTERVAL_MIN = 360; // 6 hours
 const LICENSE_REVALIDATION_MS = 24 * 60 * 60 * 1000; // 24 hours
-const VERIFY_ENDPOINT = 'https://api.get-zero.xyz/verify-membership';
+const VERIFY_ENDPOINT = "https://api.get-zero.xyz/verify-membership";
 const BACKOFF_STEPS = [60000, 300000, 900000, 3600000]; // 1m, 5m, 15m, 60m
 
 let cache = { price: null, feedCount: 0, ts: 0 };
@@ -91,14 +91,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   (async () => {
     if (msg?.type === "GET_SOL_USD") {
       const force = !!msg.force;
-      const stale = !cache.price || (Date.now() - cache.ts) > CACHE_MS;
+      const stale = !cache.price || Date.now() - cache.ts > CACHE_MS;
       if (force || stale) await refreshSolUsd();
 
       sendResponse({
         ok: !!cache.price,
-        data: cache.price
-          ? { price: cache.price, feedCount: cache.feedCount, ts: cache.ts }
-          : null
+        data: cache.price ? { price: cache.price, feedCount: cache.feedCount, ts: cache.ts } : null,
       });
       return;
     }
@@ -114,15 +112,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg?.type === "VERIFY_LICENSE") {
       const { licenseKey } = msg;
       if (!licenseKey) {
-        sendResponse({ ok: false, error: 'no_key' });
+        sendResponse({ ok: false, error: "no_key" });
         return;
       }
       try {
         const ctrl = new AbortController();
         const t = setTimeout(() => ctrl.abort(), 10000);
         const r = await fetch(VERIFY_ENDPOINT, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ licenseKey }),
           signal: ctrl.signal,
         });
@@ -141,22 +139,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
       // Security: Safelist allowed domains to prevent abuse
       const ALLOWED_DOMAINS = [
-        'api.coingecko.com',
-        'api.dexscreener.com',
-        'api.coinbase.com',
-        'api.kraken.com',
-        'api.jup.ag',
-        'lite-api.jup.ag',
-        'mainnet.helius-rpc.com',
-        'api.helius.xyz',
-        'api.get-zero.xyz'
+        "api.coingecko.com",
+        "api.dexscreener.com",
+        "api.coinbase.com",
+        "api.kraken.com",
+        "api.jup.ag",
+        "lite-api.jup.ag",
+        "mainnet.helius-rpc.com",
+        "api.helius.xyz",
+        "api.get-zero.xyz",
       ];
 
       try {
         const hostname = new URL(url).hostname;
         if (!ALLOWED_DOMAINS.includes(hostname)) {
           console.warn(`[Proxy] Blocked domain: ${hostname}`);
-          sendResponse({ ok: false, error: 'Domain not allowed' });
+          sendResponse({ ok: false, error: "Domain not allowed" });
           return;
         }
 
@@ -166,10 +164,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           return;
         }
 
-        const contentType = r.headers.get('content-type');
-        const data = contentType && contentType.includes('application/json')
-          ? await r.json()
-          : await r.text();
+        const contentType = r.headers.get("content-type");
+        const data =
+          contentType && contentType.includes("application/json") ? await r.json() : await r.text();
 
         sendResponse({ ok: true, data });
       } catch (e) {
@@ -182,26 +179,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg?.type === "GET_WALLET_BALANCE") {
       try {
         // Get wallet address from connected wallet (stored in state)
-        const storeData = await chrome.storage.local.get('sol_paper_trader_v1');
+        const storeData = await chrome.storage.local.get("sol_paper_trader_v1");
         const state = storeData?.sol_paper_trader_v1;
         const walletAddress = state?.shadow?.walletAddress;
 
         if (!walletAddress) {
-          sendResponse({ ok: false, error: 'No wallet address stored' });
+          sendResponse({ ok: false, error: "No wallet address stored" });
           return;
         }
 
         // Helius RPC getBalance
-        const rpcUrl = 'https://mainnet.helius-rpc.com/?api-key=public';
+        const rpcUrl = "https://mainnet.helius-rpc.com/?api-key=public";
         const r = await fetch(rpcUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            jsonrpc: '2.0',
+            jsonrpc: "2.0",
             id: 1,
-            method: 'getBalance',
-            params: [walletAddress]
-          })
+            method: "getBalance",
+            params: [walletAddress],
+          }),
         });
 
         const data = await r.json();
@@ -210,7 +207,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
         sendResponse({ ok: true, balance });
       } catch (e) {
-        console.error('[BG] GET_WALLET_BALANCE failed:', e);
+        console.error("[BG] GET_WALLET_BALANCE failed:", e);
         sendResponse({ ok: false, error: e.toString() });
       }
       return;
@@ -263,10 +260,10 @@ async function writeZeroState(state) {
  * Generate a UUID v4.
  */
 function genUUID() {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0;
-    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+    return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
   });
 }
 
@@ -278,30 +275,33 @@ async function handleLicenseRevalidation() {
   try {
     const data = await new Promise((resolve) => {
       chrome.storage.local.get([EXT_KEY], (res) => {
-        if (chrome.runtime.lastError) { resolve(null); return; }
+        if (chrome.runtime.lastError) {
+          resolve(null);
+          return;
+        }
         resolve(res[EXT_KEY] || null);
       });
     });
     if (!data?.settings?.license?.key) return;
 
     const license = data.settings.license;
-    const elapsed = license.lastVerified ? (Date.now() - license.lastVerified) : Infinity;
+    const elapsed = license.lastVerified ? Date.now() - license.lastVerified : Infinity;
     if (elapsed < LICENSE_REVALIDATION_MS) return; // Still fresh
 
-    console.log('[Background] License revalidation triggered');
+    console.log("[Background] License revalidation triggered");
 
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 10000);
     const r = await fetch(VERIFY_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ licenseKey: license.key }),
       signal: ctrl.signal,
     });
     clearTimeout(t);
 
     if (!r.ok) {
-      console.warn('[Background] License revalidation HTTP error:', r.status);
+      console.warn("[Background] License revalidation HTTP error:", r.status);
       return; // Keep cached validity (grace period handles expiry)
     }
 
@@ -309,18 +309,18 @@ async function handleLicenseRevalidation() {
     if (result.ok && result.membership) {
       const m = result.membership;
       data.settings.license.valid = m.valid;
-      data.settings.license.status = m.status || (m.valid ? 'active' : 'expired');
+      data.settings.license.status = m.status || (m.valid ? "active" : "expired");
       data.settings.license.plan = m.plan || license.plan;
       data.settings.license.expiresAt = m.expiresAt || license.expiresAt;
       data.settings.license.lastVerified = Date.now();
-      data.settings.tier = m.valid ? 'elite' : 'free';
+      data.settings.tier = m.valid ? "elite" : "free";
     } else {
       // Verification returned invalid — but respect grace period
       const GRACE_MS = 72 * 60 * 60 * 1000;
-      if (license.lastVerified && (Date.now() - license.lastVerified) > GRACE_MS) {
+      if (license.lastVerified && Date.now() - license.lastVerified > GRACE_MS) {
         data.settings.license.valid = false;
-        data.settings.license.status = 'expired';
-        data.settings.tier = 'free';
+        data.settings.license.status = "expired";
+        data.settings.tier = "free";
       }
     }
 
@@ -328,7 +328,7 @@ async function handleLicenseRevalidation() {
       chrome.storage.local.set({ [EXT_KEY]: data }, () => resolve());
     });
   } catch (e) {
-    console.warn('[Background] License revalidation error:', e?.message || e);
+    console.warn("[Background] License revalidation error:", e?.message || e);
   }
 }
 
@@ -337,21 +337,21 @@ async function handleLicenseRevalidation() {
  */
 async function handleUploadAlarm() {
   // Exclusive lock check (Internal session flag)
-  if (self._isUploading) return 'locked';
+  if (self._isUploading) return "locked";
   self._isUploading = true;
 
   try {
     const state = await readZeroState();
-    if (!state) return 'no_state';
+    if (!state) return "no_state";
 
     // Check opt-in
-    if (!state.settings?.privacy?.autoSendDiagnostics) return 'disabled';
+    if (!state.settings?.privacy?.autoSendDiagnostics) return "disabled";
 
     // Check backoff
-    if (Date.now() < (state.upload?.backoffUntilTs || 0)) return 'backoff';
+    if (Date.now() < (state.upload?.backoffUntilTs || 0)) return "backoff";
 
     const endpointUrl = state.settings?.diagnostics?.endpointUrl;
-    if (!endpointUrl) return 'no_endpoint';
+    if (!endpointUrl) return "no_endpoint";
 
     // Check queue — if empty, build a packet from delta events
     if (!state.upload) state.upload = { queue: [], backoffUntilTs: 0, lastError: null };
@@ -359,15 +359,15 @@ async function handleUploadAlarm() {
     if (state.upload.queue.length === 0) {
       const lastTs = state.settings?.diagnostics?.lastUploadedEventTs || 0;
       const events = (state.events || []).filter((e) => e.ts > lastTs);
-      if (events.length === 0) return 'no_data';
+      if (events.length === 0) return "no_data";
 
       // Build packet
       const packet = {
         uploadId: genUUID(),
-        clientId: state.clientId || 'unknown',
+        clientId: state.clientId || "unknown",
         createdAt: Date.now(),
         schemaVersion: state.schemaVersion || 3,
-        extensionVersion: chrome.runtime.getManifest?.()?.version || '0.0.0',
+        extensionVersion: chrome.runtime.getManifest?.()?.version || "0.0.0",
         eventsDelta: events.slice(-2000), // cap at 2000 events per packet
       };
 
@@ -382,8 +382,8 @@ async function handleUploadAlarm() {
       state.events.push({
         eventId: genUUID(),
         ts: Date.now(),
-        type: 'UPLOAD_PACKET_ENQUEUED',
-        platform: 'UNKNOWN',
+        type: "UPLOAD_PACKET_ENQUEUED",
+        platform: "UNKNOWN",
         payload: { uploadId: packet.uploadId },
       });
 
@@ -397,13 +397,13 @@ async function handleUploadAlarm() {
 
     // Attempt to send first packet
     const item = state.upload.queue[0];
-    if (!item || !item.payload) return 'empty_queue';
+    if (!item || !item.payload) return "empty_queue";
 
     try {
       const headers = {
-        'Content-Type': 'application/json',
-        'X-Zero-Client-Id': state.clientId || '',
-        'X-Zero-Version': chrome.runtime.getManifest?.()?.version || '',
+        "Content-Type": "application/json",
+        "X-Zero-Client-Id": state.clientId || "",
+        "X-Zero-Version": chrome.runtime.getManifest?.()?.version || "",
       };
 
       // Add API key if configured (stored in payload or state)
@@ -414,7 +414,7 @@ async function handleUploadAlarm() {
       const timeout = setTimeout(() => ctrl.abort(), 15000);
 
       const response = await fetch(endpointUrl, {
-        method: 'POST',
+        method: "POST",
         headers,
         body: JSON.stringify(item.payload),
         signal: ctrl.signal,
@@ -441,18 +441,18 @@ async function handleUploadAlarm() {
         state.events.push({
           eventId: genUUID(),
           ts: Date.now(),
-          type: 'UPLOAD_SENT',
-          platform: 'UNKNOWN',
+          type: "UPLOAD_SENT",
+          platform: "UNKNOWN",
           payload: { uploadId: item.uploadId },
         });
 
         await writeZeroState(state);
-        return 'sent';
+        return "sent";
       } else {
         throw new Error(`HTTP ${response.status}`);
       }
     } catch (err) {
-      const errMsg = err?.message || 'Unknown error';
+      const errMsg = err?.message || "Unknown error";
 
       // Calculate backoff step
       const failCount = (state.upload._failCount || 0) + 1;
@@ -466,8 +466,8 @@ async function handleUploadAlarm() {
       state.events.push({
         eventId: genUUID(),
         ts: Date.now(),
-        type: 'UPLOAD_FAILED',
-        platform: 'UNKNOWN',
+        type: "UPLOAD_FAILED",
+        platform: "UNKNOWN",
         payload: { uploadId: item.uploadId, error: errMsg },
       });
 
@@ -477,11 +477,11 @@ async function handleUploadAlarm() {
       }
 
       await writeZeroState(state);
-      return 'failed';
+      return "failed";
     }
   } catch (err) {
-    console.error('[Background] handleUploadAlarm outer error:', err);
-    return 'error';
+    console.error("[Background] handleUploadAlarm outer error:", err);
+    return "error";
   } finally {
     self._isUploading = false;
   }

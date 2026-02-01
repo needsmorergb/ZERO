@@ -26,21 +26,21 @@
 
 /** Enum-like constants for FieldStatus values. */
 export const FIELD_STATUS = {
-    OK: 'ok',
-    MISSING_IDENTIFIER: 'missing_identifier',
-    NOT_SUPPORTED: 'not_supported',
-    PROVIDER_ERROR: 'provider_error',
-    RATE_LIMITED: 'rate_limited',
-    STALE_CACHED: 'stale_cached'
+  OK: "ok",
+  MISSING_IDENTIFIER: "missing_identifier",
+  NOT_SUPPORTED: "not_supported",
+  PROVIDER_ERROR: "provider_error",
+  RATE_LIMITED: "rate_limited",
+  STALE_CACHED: "stale_cached",
 };
 
 /** Enum-like constants for SocialXSource values. */
 export const SOCIALX_SOURCE = {
-    OBSERVED: 'observed',
-    API: 'api',
-    SCRAPE: 'scrape',
-    AGGREGATOR: 'aggregator'
+  OBSERVED: "observed",
+  API: "api",
+  SCRAPE: "scrape",
+  AGGREGATOR: "aggregator",
 };
 
 /** Schema version for context responses. */
-export const SCHEMA_VERSION = '1.0';
+export const SCHEMA_VERSION = "1.0";

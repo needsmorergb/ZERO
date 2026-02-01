@@ -1,21 +1,26 @@
 (() => {
-  var __defProp = Object.defineProperty;
-  var __getOwnPropNames = Object.getOwnPropertyNames;
-  var __esm = (fn, res) => function __init() {
-    return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
-  };
-  var __export = (target, all) => {
-    for (var name in all)
-      __defProp(target, name, { get: all[name], enumerable: true });
+  const __defProp = Object.defineProperty;
+  const __getOwnPropNames = Object.getOwnPropertyNames;
+  const __esm = (fn, res) =>
+    function __init() {
+      return (fn && (res = (0, fn[__getOwnPropNames(fn)[0]])((fn = 0))), res);
+    };
+  const __export = (target, all) => {
+    for (const name in all) __defProp(target, name, { get: all[name], enumerable: true });
   };
 
   // src/modules/store.js
   function deepMerge(base, patch) {
-    if (!patch || typeof patch !== "object")
-      return base;
+    if (!patch || typeof patch !== "object") return base;
     const out = Array.isArray(base) ? [...base] : { ...base };
     for (const [k, v] of Object.entries(patch)) {
-      if (v && typeof v === "object" && !Array.isArray(v) && base[k] && typeof base[k] === "object") {
+      if (
+        v &&
+        typeof v === "object" &&
+        !Array.isArray(v) &&
+        base[k] &&
+        typeof base[k] === "object"
+      ) {
         out[k] = deepMerge(base[k], v);
       } else {
         out[k] = v;
@@ -30,8 +35,8 @@
       return false;
     }
   }
-  var EXT_KEY, DEFAULTS, Store2;
-  var init_store = __esm({
+  let EXT_KEY, DEFAULTS, Store2;
+  const init_store = __esm({
     "src/modules/store.js"() {
       EXT_KEY = "sol_paper_trader_v1";
       DEFAULTS = {
@@ -63,7 +68,7 @@
           // Onboarding State
           onboardingSeen: false,
           onboardingVersion: null,
-          onboardingCompletedAt: null
+          onboardingCompletedAt: null,
         },
         // Session as first-class object
         session: {
@@ -86,7 +91,7 @@
           disciplineScore: 100,
           activeAlerts: [],
           // {type, message, ts}
-          status: "active"
+          status: "active",
           // 'active' | 'completed' | 'abandoned'
         },
         // Session history (archived sessions)
@@ -103,7 +108,7 @@
           // Price in USD or % above entry
           thesis: "",
           // Entry reasoning
-          maxRiskPct: null
+          maxRiskPct: null,
           // Max % of balance to risk
         },
         behavior: {
@@ -114,14 +119,14 @@
           overtradingFrequency: 0,
           profitNeglectFrequency: 0,
           strategyDriftFrequency: 0,
-          profile: "Disciplined"
+          profile: "Disciplined",
         },
         // Persistent Event Log (up to 100 events)
         eventLog: [],
         // { ts, type, category, message, data }
         // Categories: TRADE, ALERT, DISCIPLINE, SYSTEM, MILESTONE
         schemaVersion: 2,
-        version: "1.11.8"
+        version: "1.11.8",
       };
       Store2 = {
         state: null,
@@ -131,14 +136,12 @@
             try {
               if (!isChromeStorageAvailable()) {
                 this.state = JSON.parse(JSON.stringify(DEFAULTS));
-                if (timeoutId)
-                  clearTimeout(timeoutId);
+                if (timeoutId) clearTimeout(timeoutId);
                 resolve(this.state);
                 return;
               }
               chrome.storage.local.get([EXT_KEY], (res) => {
-                if (timeoutId)
-                  clearTimeout(timeoutId);
+                if (timeoutId) clearTimeout(timeoutId);
                 if (chrome.runtime.lastError) {
                   const msg = chrome.runtime.lastError.message;
                   if (msg && !msg.includes("context invalidated")) {
@@ -163,24 +166,21 @@
               });
             } catch (e) {
               console.error("[ZER\xD8] Storage load exception:", e);
-              if (timeoutId)
-                clearTimeout(timeoutId);
+              if (timeoutId) clearTimeout(timeoutId);
               resolve(JSON.parse(JSON.stringify(DEFAULTS)));
             }
           });
           const timeout = new Promise((resolve) => {
             timeoutId = setTimeout(() => {
               console.warn("[ZER\xD8] Storage load timed out, using defaults.");
-              if (!this.state)
-                this.state = JSON.parse(JSON.stringify(DEFAULTS));
+              if (!this.state) this.state = JSON.parse(JSON.stringify(DEFAULTS));
               resolve(this.state);
             }, 1e3);
           });
           return Promise.race([loadLogic, timeout]);
         },
         async save() {
-          if (!isChromeStorageAvailable() || !this.state)
-            return;
+          if (!isChromeStorageAvailable() || !this.state) return;
           return new Promise((resolve) => {
             try {
               chrome.storage.local.set({ [EXT_KEY]: this.state }, () => {
@@ -206,8 +206,7 @@
           return this.save();
         },
         async clear() {
-          if (!isChromeStorageAvailable())
-            return;
+          if (!isChromeStorageAvailable()) return;
           return new Promise((resolve) => {
             chrome.storage.local.remove(EXT_KEY, () => {
               this.state = JSON.parse(JSON.stringify(DEFAULTS));
@@ -261,8 +260,7 @@
           if (currentSession.trades && currentSession.trades.length > 0) {
             currentSession.endTime = Date.now();
             currentSession.status = "completed";
-            if (!this.state.sessionHistory)
-              this.state.sessionHistory = [];
+            if (!this.state.sessionHistory) this.state.sessionHistory = [];
             this.state.sessionHistory.push({ ...currentSession });
             if (this.state.sessionHistory.length > 10) {
               this.state.sessionHistory = this.state.sessionHistory.slice(-10);
@@ -283,7 +281,7 @@
             tradeCount: 0,
             disciplineScore: 100,
             activeAlerts: [],
-            status: "active"
+            status: "active",
           };
           delete this.state._milestone_2x;
           delete this.state._milestone_3x;
@@ -294,21 +292,21 @@
         // Get current session duration in minutes
         getSessionDuration() {
           const session = this.state?.session;
-          if (!session || !session.startTime)
-            return 0;
+          if (!session || !session.startTime) return 0;
           const endTime = session.endTime || Date.now();
           return Math.floor((endTime - session.startTime) / 6e4);
         },
         // Get session summary
         getSessionSummary() {
           const session = this.state?.session;
-          if (!session)
-            return null;
+          if (!session) return null;
           const trades = session.trades || [];
-          const sellTrades = trades.map((id) => this.state.trades[id]).filter((t) => t && t.side === "SELL");
+          const sellTrades = trades
+            .map((id) => this.state.trades[id])
+            .filter((t) => t && t.side === "SELL");
           const wins = sellTrades.filter((t) => (t.realizedPnlSol || 0) > 0).length;
           const losses = sellTrades.filter((t) => (t.realizedPnlSol || 0) < 0).length;
-          const winRate = sellTrades.length > 0 ? (wins / sellTrades.length * 100).toFixed(1) : 0;
+          const winRate = sellTrades.length > 0 ? ((wins / sellTrades.length) * 100).toFixed(1) : 0;
           return {
             id: session.id,
             duration: this.getSessionDuration(),
@@ -318,11 +316,11 @@
             winRate,
             realized: session.realized,
             disciplineScore: session.disciplineScore,
-            status: session.status
+            status: session.status,
           };
-        }
+        },
       };
-    }
+    },
   });
 
   // src/modules/schemas.js
@@ -331,8 +329,8 @@
       return crypto.randomUUID();
     }
     return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-      const r = Math.random() * 16 | 0;
-      return (c === "x" ? r : r & 3 | 8).toString(16);
+      const r = (Math.random() * 16) | 0;
+      return (c === "x" ? r : (r & 3) | 8).toString(16);
     });
   }
   function createEvent(type, payload = {}, overrides = {}) {
@@ -344,19 +342,19 @@
       platform: Platform.UNKNOWN,
       type,
       payload,
-      ...overrides
+      ...overrides,
     };
   }
-  var Platform, SCHEMA_VERSION;
-  var init_schemas = __esm({
+  let Platform, SCHEMA_VERSION;
+  const init_schemas = __esm({
     "src/modules/schemas.js"() {
       Platform = {
         AXIOM: "AXIOM",
         PADRE: "PADRE",
-        UNKNOWN: "UNKNOWN"
+        UNKNOWN: "UNKNOWN",
       };
       SCHEMA_VERSION = 3;
-    }
+    },
   });
 
   // src/modules/diagnostics-store.js
@@ -369,18 +367,18 @@
         privacy: {
           autoSendDiagnostics: false,
           diagnosticsConsentAcceptedAt: null,
-          includeFeatureClicks: true
+          includeFeatureClicks: true,
         },
         diagnostics: {
           endpointUrl: "https://zero-diagnostics.zerodata1.workers.dev/v1/zero/ingest",
-          lastUploadedEventTs: 0
-        }
+          lastUploadedEventTs: 0,
+        },
       },
       upload: {
         queue: [],
         backoffUntilTs: 0,
-        lastError: null
-      }
+        lastError: null,
+      },
     };
   }
   function isStorageAvailable() {
@@ -391,8 +389,7 @@
     }
   }
   async function chromeStorageGet(key) {
-    if (!isStorageAvailable())
-      return null;
+    if (!isStorageAvailable()) return null;
     return new Promise((resolve) => {
       try {
         chrome.storage.local.get([key], (res) => {
@@ -415,8 +412,7 @@
     });
   }
   async function chromeStorageSet(key, value) {
-    if (!isStorageAvailable())
-      return;
+    if (!isStorageAvailable()) return;
     return new Promise((resolve) => {
       try {
         chrome.storage.local.set({ [key]: value }, () => {
@@ -437,8 +433,7 @@
     });
   }
   async function chromeStorageRemove(key) {
-    if (!isStorageAvailable())
-      return;
+    if (!isStorageAvailable()) return;
     return new Promise((resolve) => {
       try {
         chrome.storage.local.remove(key, () => resolve());
@@ -447,8 +442,8 @@
       }
     });
   }
-  var STORAGE_KEY, EVENTS_CAP, UPLOAD_QUEUE_CAP, DEBOUNCE_MS, ERROR_COOLDOWN_MS, DiagnosticsStore;
-  var init_diagnostics_store = __esm({
+  let STORAGE_KEY, EVENTS_CAP, UPLOAD_QUEUE_CAP, DEBOUNCE_MS, ERROR_COOLDOWN_MS, DiagnosticsStore;
+  const init_diagnostics_store = __esm({
     "src/modules/diagnostics-store.js"() {
       init_schemas();
       STORAGE_KEY = "zero_state";
@@ -476,29 +471,27 @@
           const s = { ...defaultState(), ...saved };
           s.settings = { ...defaultState().settings, ...s.settings };
           s.settings.privacy = { ...defaultState().settings.privacy, ...s.settings?.privacy };
-          s.settings.diagnostics = { ...defaultState().settings.diagnostics, ...s.settings?.diagnostics };
+          s.settings.diagnostics = {
+            ...defaultState().settings.diagnostics,
+            ...s.settings?.diagnostics,
+          };
           s.upload = { ...defaultState().upload, ...s.upload };
-          if (!s.clientId)
-            s.clientId = uuid();
-          if (!Array.isArray(s.events))
-            s.events = [];
-          if (!Array.isArray(s.upload.queue))
-            s.upload.queue = [];
+          if (!s.clientId) s.clientId = uuid();
+          if (!Array.isArray(s.events)) s.events = [];
+          if (!Array.isArray(s.upload.queue)) s.upload.queue = [];
           s.schemaVersion = SCHEMA_VERSION;
           return s;
         },
         // ------ Debounced persist ------
         save() {
-          if (this._saveTimer)
-            return;
+          if (this._saveTimer) return;
           this._saveTimer = setTimeout(() => {
             this._saveTimer = null;
             this._persist();
           }, DEBOUNCE_MS);
         },
         async _persist() {
-          if (!this.state)
-            return;
+          if (!this.state) return;
           await chromeStorageSet(STORAGE_KEY, this.state);
         },
         async forceSave() {
@@ -516,18 +509,16 @@
          * @param {{ sessionId?: string, tradeId?: string, platform?: string }} ctx
          */
         logEvent(type, payload = {}, ctx = {}) {
-          if (!this.state)
-            return;
+          if (!this.state) return;
           if (type === "ERROR") {
             const now = Date.now();
-            if (now - this._lastErrorTs < ERROR_COOLDOWN_MS)
-              return;
+            if (now - this._lastErrorTs < ERROR_COOLDOWN_MS) return;
             this._lastErrorTs = now;
           }
           const evt = createEvent(type, payload, {
             sessionId: ctx.sessionId,
             tradeId: ctx.tradeId,
-            platform: ctx.platform || "UNKNOWN"
+            platform: ctx.platform || "UNKNOWN",
           });
           this.state.events.push(evt);
           if (this.state.events.length > EVENTS_CAP) {
@@ -537,13 +528,12 @@
         },
         // ------ Upload queue ------
         enqueuePacket(packet) {
-          if (!this.state)
-            return;
+          if (!this.state) return;
           this.state.upload.queue.push({
             uploadId: packet.uploadId,
             createdAt: packet.createdAt,
             eventCount: (packet.eventsDelta || []).length,
-            payload: packet
+            payload: packet,
           });
           if (this.state.upload.queue.length > UPLOAD_QUEUE_CAP) {
             this.state.upload.queue = this.state.upload.queue.slice(-UPLOAD_QUEUE_CAP);
@@ -552,15 +542,13 @@
           this.save();
         },
         dequeuePacket() {
-          if (!this.state || !this.state.upload.queue.length)
-            return null;
+          if (!this.state || !this.state.upload.queue.length) return null;
           const item = this.state.upload.queue.shift();
           this.save();
           return item;
         },
         peekPacket() {
-          if (!this.state || !this.state.upload.queue.length)
-            return null;
+          if (!this.state || !this.state.upload.queue.length) return null;
           return this.state.upload.queue[0];
         },
         // ------ Privacy settings ------
@@ -568,15 +556,13 @@
           return !!this.state?.settings?.privacy?.autoSendDiagnostics;
         },
         enableAutoSend() {
-          if (!this.state)
-            return;
+          if (!this.state) return;
           this.state.settings.privacy.autoSendDiagnostics = true;
           this.state.settings.privacy.diagnosticsConsentAcceptedAt = Date.now();
           this.save();
         },
         disableAutoSend() {
-          if (!this.state)
-            return;
+          if (!this.state) return;
           this.state.settings.privacy.autoSendDiagnostics = false;
           this.save();
         },
@@ -584,8 +570,7 @@
           return this.state?.settings?.diagnostics?.endpointUrl || "";
         },
         setEndpointUrl(url) {
-          if (!this.state)
-            return;
+          if (!this.state) return;
           this.state.settings.diagnostics.endpointUrl = url;
           this.save();
         },
@@ -593,8 +578,7 @@
           return this.state?.settings?.diagnostics?.lastUploadedEventTs || 0;
         },
         setLastUploadedEventTs(ts) {
-          if (!this.state)
-            return;
+          if (!this.state) return;
           this.state.settings.diagnostics.lastUploadedEventTs = ts;
           this.save();
         },
@@ -603,21 +587,18 @@
           return Date.now() < (this.state?.upload?.backoffUntilTs || 0);
         },
         setBackoff(delayMs) {
-          if (!this.state)
-            return;
+          if (!this.state) return;
           this.state.upload.backoffUntilTs = Date.now() + delayMs;
           this.save();
         },
         clearBackoff() {
-          if (!this.state)
-            return;
+          if (!this.state) return;
           this.state.upload.backoffUntilTs = 0;
           this.state.upload.lastError = null;
           this.save();
         },
         setLastError(msg) {
-          if (!this.state)
-            return;
+          if (!this.state) return;
           this.state.upload.lastError = msg;
           this.save();
         },
@@ -628,8 +609,7 @@
           await this._persist();
         },
         async clearUploadQueue() {
-          if (!this.state)
-            return;
+          if (!this.state) return;
           this.state.upload.queue = [];
           this.state.upload.backoffUntilTs = 0;
           this.state.upload.lastError = null;
@@ -637,23 +617,21 @@
         },
         // ------ Delta query ------
         getEventsDelta() {
-          if (!this.state)
-            return [];
+          if (!this.state) return [];
           const lastTs = this.getLastUploadedEventTs();
           return this.state.events.filter((e) => e.ts > lastTs);
         },
         getClientId() {
           return this.state?.clientId || "";
-        }
+        },
       };
-    }
+    },
   });
 
   // src/modules/upload-packet.js
   function buildUploadPackets() {
     const events = DiagnosticsStore.getEventsDelta();
-    if (events.length === 0)
-      return { packets: [], totalEvents: 0 };
+    if (events.length === 0) return { packets: [], totalEvents: 0 };
     const clientId = DiagnosticsStore.getClientId();
     const version = Store2.state?.version || "0.0.0";
     const chunks = [];
@@ -667,9 +645,9 @@
         createdAt: Date.now(),
         schemaVersion: SCHEMA_VERSION,
         extensionVersion: version,
-        eventsDelta: chunk
+        eventsDelta: chunk,
       };
-      let serialized = JSON.stringify(packet);
+      const serialized = JSON.stringify(packet);
       if (serialized.length > MAX_PAYLOAD_BYTES && chunk.length > 100) {
         const trimmed = chunk.slice(-Math.floor(chunk.length * 0.7));
         packet.eventsDelta = trimmed;
@@ -686,24 +664,24 @@
     }
     return packets.length;
   }
-  var MAX_EVENTS_PER_PACKET, MAX_PAYLOAD_BYTES;
-  var init_upload_packet = __esm({
+  let MAX_EVENTS_PER_PACKET, MAX_PAYLOAD_BYTES;
+  const init_upload_packet = __esm({
     "src/modules/upload-packet.js"() {
       init_diagnostics_store();
       init_schemas();
       init_store();
       MAX_EVENTS_PER_PACKET = 2e3;
       MAX_PAYLOAD_BYTES = 300 * 1024;
-    }
+    },
   });
 
   // src/modules/diagnostics-manager.js
-  var diagnostics_manager_exports = {};
+  const diagnostics_manager_exports = {};
   __export(diagnostics_manager_exports, {
-    DiagnosticsManager: () => DiagnosticsManager
+    DiagnosticsManager: () => DiagnosticsManager,
   });
-  var UPLOAD_INTERVAL_MS, RETRY_DELAY_MS, DiagnosticsManager;
-  var init_diagnostics_manager = __esm({
+  let UPLOAD_INTERVAL_MS, RETRY_DELAY_MS, DiagnosticsManager;
+  const init_diagnostics_manager = __esm({
     "src/modules/diagnostics-manager.js"() {
       init_diagnostics_store();
       init_upload_packet();
@@ -712,14 +690,15 @@
       DiagnosticsManager = {
         _timer: null,
         init() {
-          if (this._timer)
-            return;
-          console.log("[DiagnosticsManager] Initialized. Status:", DiagnosticsStore.isAutoSendEnabled() ? "ENABLED" : "DISABLED");
+          if (this._timer) return;
+          console.log(
+            "[DiagnosticsManager] Initialized. Status:",
+            DiagnosticsStore.isAutoSendEnabled() ? "ENABLED" : "DISABLED"
+          );
           this._scheduleNextTick();
         },
         _scheduleNextTick(delay = UPLOAD_INTERVAL_MS) {
-          if (this._timer)
-            clearTimeout(this._timer);
+          if (this._timer) clearTimeout(this._timer);
           this._timer = setTimeout(() => this._tick(), delay);
         },
         async _tick() {
@@ -748,18 +727,16 @@
         },
         async _processQueue() {
           const endpoint = DiagnosticsStore.getEndpointUrl();
-          if (!endpoint)
-            return;
+          if (!endpoint) return;
           let packet = DiagnosticsStore.peekPacket();
           while (packet) {
-            if (!DiagnosticsStore.isAutoSendEnabled())
-              return;
+            if (!DiagnosticsStore.isAutoSendEnabled()) return;
             try {
               console.log(`[DiagnosticsManager] Uploading packet ${packet.uploadId}...`);
               const response = await fetch(endpoint, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(packet.payload)
+                body: JSON.stringify(packet.payload),
               });
               if (response.ok) {
                 DiagnosticsStore.dequeuePacket();
@@ -778,22 +755,22 @@
             }
             packet = DiagnosticsStore.peekPacket();
           }
-        }
+        },
       };
-    }
+    },
   });
 
   // src/modules/ui/ids.js
-  var IDS = {
+  const IDS = {
     banner: "paper-mode-banner",
     pnlHud: "paper-pnl-hud",
     buyHud: "paper-buyhud-root",
     style: "paper-overlay-style",
-    positionsPanel: "paper-positions-panel"
+    positionsPanel: "paper-positions-panel",
   };
 
   // src/modules/ui/common-styles.js
-  var COMMON_CSS = `
+  const COMMON_CSS = `
 .zero-inline-icon {
   height: 14px;
   width: 14px;
@@ -856,7 +833,7 @@
 `;
 
   // src/modules/ui/banner-styles.js
-  var BANNER_CSS = `
+  const BANNER_CSS = `
 #${IDS.banner} {
   position: fixed;
   top: 12px;
@@ -923,7 +900,7 @@
 `;
 
   // src/modules/ui/pnl-hud-styles.js
-  var PNL_HUD_CSS = `
+  const PNL_HUD_CSS = `
 #${IDS.pnlHud} {
   position: fixed;
   z-index: 2147483645;
@@ -1327,7 +1304,7 @@
 `;
 
   // src/modules/ui/buy-hud-styles.js
-  var BUY_HUD_CSS = `
+  const BUY_HUD_CSS = `
 #${IDS.buyHud} {
   z-index: 2147483644;
   pointer-events: auto;
@@ -1618,7 +1595,7 @@
 `;
 
   // src/modules/ui/modals-styles.js
-  var MODALS_CSS = `
+  const MODALS_CSS = `
 /* Confirm Modal */
 .confirm-modal-overlay {
   position: fixed;
@@ -2155,7 +2132,7 @@ input:checked + .slider:before {
 `;
 
   // src/modules/ui/professor-styles.js
-  var PROFESSOR_CSS = `
+  const PROFESSOR_CSS = `
 /* Professor Trade Critique Popup */
 .professor-overlay {
   position: fixed;
@@ -2273,7 +2250,7 @@ input:checked + .slider:before {
 `;
 
   // src/modules/ui/theme-overrides.js
-  var THEME_OVERRIDES_CSS = `
+  const THEME_OVERRIDES_CSS = `
 /* Shadow Mode Overrides (Gold/Orange Theme) */
 .zero-shadow-mode .slider {
   background-color: #451a03;
@@ -2322,7 +2299,7 @@ input:checked + .slider:before {
 `;
 
   // src/modules/ui/elite-styles.js
-  var ELITE_CSS = `
+  const ELITE_CSS = `
 .elite-alert-overlay {
     position: fixed;
     bottom: 40px;
@@ -2425,7 +2402,7 @@ input:checked + .slider:before {
 `;
 
   // src/modules/ui/settings-panel-styles.js
-  var SETTINGS_PANEL_CSS = `
+  const SETTINGS_PANEL_CSS = `
 /* Section titles */
 .settings-section-title {
   display: flex; align-items: center; gap: 8px;
@@ -2463,18 +2440,28 @@ input:checked + .slider:before {
 `;
 
   // src/modules/ui/styles.js
-  var CSS = COMMON_CSS + BANNER_CSS + PNL_HUD_CSS + BUY_HUD_CSS + MODALS_CSS + PROFESSOR_CSS + THEME_OVERRIDES_CSS + ELITE_CSS + SETTINGS_PANEL_CSS;
+  const CSS =
+    COMMON_CSS +
+    BANNER_CSS +
+    PNL_HUD_CSS +
+    BUY_HUD_CSS +
+    MODALS_CSS +
+    PROFESSOR_CSS +
+    THEME_OVERRIDES_CSS +
+    ELITE_CSS +
+    SETTINGS_PANEL_CSS;
 
   // src/modules/ui/overlay.js
-  var OverlayManager = {
+  const OverlayManager = {
     shadowHost: null,
     shadowRoot: null,
     initialized: false,
     init(platformName) {
-      if (this.initialized)
-        return;
+      if (this.initialized) return;
       if (!document.documentElement && !document.body) {
-        document.addEventListener("DOMContentLoaded", () => this.init(platformName), { once: true });
+        document.addEventListener("DOMContentLoaded", () => this.init(platformName), {
+          once: true,
+        });
         return;
       }
       this.initialized = true;
@@ -2520,12 +2507,14 @@ input:checked + .slider:before {
         throw new Error("No documentElement/body available for overlay mount");
       }
       this.shadowHost = document.createElement("paper-trader-host");
-      this.shadowHost.style.cssText = "position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 2147483647; pointer-events: none;";
+      this.shadowHost.style.cssText =
+        "position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 2147483647; pointer-events: none;";
       try {
         this.shadowRoot = this.shadowHost.attachShadow({ mode: "open" });
         const container = document.createElement("div");
         container.id = "paper-shadow-container";
-        container.style.cssText = "position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 2147483647;";
+        container.style.cssText =
+          "position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 2147483647;";
         this.shadowRoot.appendChild(container);
         mountTarget.appendChild(this.shadowHost);
         return this.shadowRoot;
@@ -2533,7 +2522,8 @@ input:checked + .slider:before {
         console.warn("[ZER\xD8] Shadow DOM unavailable, using DOM fallback", e);
         const container = document.createElement("div");
         container.id = "paper-shadow-container";
-        container.style.cssText = "position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 2147483647;";
+        container.style.cssText =
+          "position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 2147483647;";
         mountTarget.appendChild(container);
         this.shadowHost = container;
         this.shadowRoot = document;
@@ -2542,8 +2532,7 @@ input:checked + .slider:before {
     },
     injectStyles() {
       const root = this.getShadowRoot();
-      if (root.getElementById(IDS.style))
-        return;
+      if (root.getElementById(IDS.style)) return;
       const s = document.createElement("style");
       s.id = IDS.style;
       s.textContent = CSS;
@@ -2551,8 +2540,7 @@ input:checked + .slider:before {
     },
     injectPadreOffset() {
       const styleId = "paper-padre-offset-style";
-      if (document.getElementById(styleId))
-        return;
+      if (document.getElementById(styleId)) return;
       const style = document.createElement("style");
       style.id = styleId;
       style.textContent = `
@@ -2573,11 +2561,11 @@ input:checked + .slider:before {
           }
         `;
       document.head.appendChild(style);
-    }
+    },
   };
 
   // src/modules/ui/icons.js
-  var ICONS = {
+  const ICONS = {
     // Brand & Status
     ZERO: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m16 8-8 8"/><path d="m8 8 8 8"/></svg>`,
     // Trading
@@ -2594,21 +2582,18 @@ input:checked + .slider:before {
     LOCK: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`,
     BRAIN: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.97-3.06 2.5 2.5 0 0 1-1.95-4.36 2.5 2.5 0 0 1 2-4.11 2.5 2.5 0 0 1 5.38-2.45Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.97-3.06 2.5 2.5 0 0 0 1.95-4.36 2.5 2.5 0 0 0-2-4.11 2.5 2.5 0 0 0-5.38-2.45Z"/></svg>`,
     SHARE: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12V4a2 2 0 0 1 2-2h10l4 4v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2"/><path d="M14 2v4h4"/><path d="m8 18 3 3 6-6"/></svg>`,
-    X: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`
+    X: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`,
   };
 
   // src/modules/ui/professor.js
-  var Professor = {
-    init() {
-    },
+  const Professor = {
+    init() {},
     showCritique(trigger, value, analysisState) {
       return;
       const container = OverlayManager.getContainer();
-      if (!container)
-        return;
+      if (!container) return;
       const existing = container.querySelector(".professor-overlay");
-      if (existing)
-        existing.remove();
+      if (existing) existing.remove();
       const { title, message } = this.generateMessage(trigger, value, analysisState);
       const overlay = document.createElement("div");
       overlay.className = "professor-overlay";
@@ -2652,8 +2637,7 @@ input:checked + .slider:before {
       };
       dismissBtn.onclick = close;
       setTimeout(() => {
-        if (overlay.isConnected)
-          close();
+        if (overlay.isConnected) close();
       }, 15e3);
     },
     generateMessage(trigger, value, analysis) {
@@ -2689,50 +2673,57 @@ input:checked + .slider:before {
         title = `\u{1F389} ${value}X PORTFOLIO!`;
         message = `You've turned your starting balance into ${value}x! Incredible work.`;
       }
-      return { title, message: message + '<br><br><span style="color:#94a3b8;font-size:12px">\u{1F4A1} ' + randomTip + "</span>" };
+      return {
+        title,
+        message:
+          message +
+          '<br><br><span style="color:#94a3b8;font-size:12px">\u{1F4A1} ' +
+          randomTip +
+          "</span>",
+      };
     },
     getTips(style) {
       const tips = {
         scalper: [
           "Scalping works best in high-volume markets. Watch those fees!",
           "Consider setting a 5-trade limit per hour to avoid overtrading.",
-          "Quick flips need quick reflexes. Always have an exit plan!"
+          "Quick flips need quick reflexes. Always have an exit plan!",
         ],
         swing: [
           "Setting a trailing stop can protect your swing trade profits.",
           "Patient hands make the most gains. Trust your analysis!",
-          "Consider scaling out in 25% chunks to lock in profits."
+          "Consider scaling out in 25% chunks to lock in profits.",
         ],
         degen: [
           "Micro-caps are fun but size down! Never risk more than 5% on a single play.",
           "In degen territory, the first green candle is often the exit signal.",
-          "Set a hard stop at -50%. Live to degen another day!"
+          "Set a hard stop at -50%. Live to degen another day!",
         ],
         conservative: [
           "Your conservative style keeps you in the game. Consider a small moon bag!",
           "Larger caps mean smaller moves. Patience is your superpower.",
-          "Consider allocating 10% to higher-risk plays for balance."
+          "Consider allocating 10% to higher-risk plays for balance.",
         ],
         balanced: [
           "Your balanced approach is sustainable. Keep mixing risk levels!",
           "Track your best-performing market cap range and lean into it.",
-          "Journal your winners - patterns emerge over time!"
-        ]
+          "Journal your winners - patterns emerge over time!",
+        ],
       };
       return tips[style] || tips.balanced;
-    }
+    },
   };
 
   // src/content.boot.js
   init_store();
 
   // src/modules/featureManager.js
-  var TIERS = {
+  const TIERS = {
     FREE: "free",
     PRO: "pro",
-    ELITE: "elite"
+    ELITE: "elite",
   };
-  var FEATURES = {
+  const FEATURES = {
     // Phase 1-2: Core
     BASIC_TRADING: "free",
     REAL_TIME_PNL: "free",
@@ -2767,25 +2758,65 @@ input:checked + .slider:before {
     ELITE_RISK_METRICS: "elite",
     ELITE_SESSION_REPLAY: "elite",
     ELITE_TRADER_PROFILE: "elite",
-    ELITE_MARKET_CONTEXT: "elite"
+    ELITE_MARKET_CONTEXT: "elite",
   };
-  var TEASED_FEATURES = {
+  const TEASED_FEATURES = {
     PRO: [
-      { id: "PRO_TRADE_PLAN", name: "Trade Planning", desc: "Set stop losses, targets, and capture your thesis before every trade." },
-      { id: "PRO_DISCIPLINE", name: "Discipline Scoring", desc: "Track how well you stick to your trading rules with an objective score." },
-      { id: "PRO_STRATEGY_ANALYTICS", name: "Strategy Analytics", desc: "See which strategies perform best and refine your edge." },
-      { id: "PRO_EMOTION_ANALYTICS", name: "Emotion Analytics", desc: "Understand how your emotional state affects your trading outcomes." },
-      { id: "PRO_AI_DEBRIEF", name: "AI Trade Debrief", desc: "Get AI-powered post-trade analysis to accelerate your learning." }
+      {
+        id: "PRO_TRADE_PLAN",
+        name: "Trade Planning",
+        desc: "Set stop losses, targets, and capture your thesis before every trade.",
+      },
+      {
+        id: "PRO_DISCIPLINE",
+        name: "Discipline Scoring",
+        desc: "Track how well you stick to your trading rules with an objective score.",
+      },
+      {
+        id: "PRO_STRATEGY_ANALYTICS",
+        name: "Strategy Analytics",
+        desc: "See which strategies perform best and refine your edge.",
+      },
+      {
+        id: "PRO_EMOTION_ANALYTICS",
+        name: "Emotion Analytics",
+        desc: "Understand how your emotional state affects your trading outcomes.",
+      },
+      {
+        id: "PRO_AI_DEBRIEF",
+        name: "AI Trade Debrief",
+        desc: "Get AI-powered post-trade analysis to accelerate your learning.",
+      },
     ],
     ELITE: [
-      { id: "ELITE_TILT_DETECTION", name: "Tilt Detection", desc: "Real-time alerts when your behavior signals emotional trading." },
-      { id: "ELITE_RISK_METRICS", name: "Risk Metrics", desc: "Advanced risk-adjusted performance metrics for serious traders." },
-      { id: "ELITE_SESSION_REPLAY", name: "Session Replay", desc: "Replay your sessions to review decisions and improve execution." },
-      { id: "ELITE_TRADER_PROFILE", name: "Trader Profile", desc: "Your personal trading identity \u2014 strengths, weaknesses, and growth." },
-      { id: "ELITE_MARKET_CONTEXT", name: "Market Context", desc: "Overlay market conditions to see how context affected your trades." }
-    ]
+      {
+        id: "ELITE_TILT_DETECTION",
+        name: "Tilt Detection",
+        desc: "Real-time alerts when your behavior signals emotional trading.",
+      },
+      {
+        id: "ELITE_RISK_METRICS",
+        name: "Risk Metrics",
+        desc: "Advanced risk-adjusted performance metrics for serious traders.",
+      },
+      {
+        id: "ELITE_SESSION_REPLAY",
+        name: "Session Replay",
+        desc: "Replay your sessions to review decisions and improve execution.",
+      },
+      {
+        id: "ELITE_TRADER_PROFILE",
+        name: "Trader Profile",
+        desc: "Your personal trading identity \u2014 strengths, weaknesses, and growth.",
+      },
+      {
+        id: "ELITE_MARKET_CONTEXT",
+        name: "Market Context",
+        desc: "Overlay market conditions to see how context affected your trades.",
+      },
+    ],
   };
-  var FeatureManager = {
+  const FeatureManager = {
     TIERS,
     FEATURES,
     resolveFlags(state, featureName) {
@@ -2795,10 +2826,9 @@ input:checked + .slider:before {
         enabled: false,
         visible: false,
         interactive: false,
-        gated: false
+        gated: false,
       };
-      if (!requiredTier)
-        return flags;
+      if (!requiredTier) return flags;
       const hasEntitlement = this.hasTierAccess(userTier, requiredTier);
       const phase = state.settings?.rolloutPhase || "full";
       if (requiredTier === TIERS.FREE) {
@@ -2826,22 +2856,19 @@ input:checked + .slider:before {
       return flags;
     },
     hasTierAccess(userTier, requiredTier) {
-      if (requiredTier === TIERS.FREE)
-        return true;
-      if (requiredTier === TIERS.PRO)
-        return [TIERS.PRO, TIERS.ELITE].includes(userTier);
-      if (requiredTier === TIERS.ELITE)
-        return userTier === TIERS.ELITE;
+      if (requiredTier === TIERS.FREE) return true;
+      if (requiredTier === TIERS.PRO) return [TIERS.PRO, TIERS.ELITE].includes(userTier);
+      if (requiredTier === TIERS.ELITE) return userTier === TIERS.ELITE;
       return false;
-    }
+    },
   };
 
   // src/modules/core/token-context.js
-  var TokenContextResolver = {
+  const TokenContextResolver = {
     _cache: {
       lastUrl: null,
       lastResult: { activeMint: null, activeSymbol: null, sourceSite: "unknown" },
-      lastDomScanAt: 0
+      lastDomScanAt: 0,
     },
     // Resolve the current context
     resolve() {
@@ -2867,32 +2894,35 @@ input:checked + .slider:before {
         const title = document.title || "";
         const cleaned = title.replace(/\s*[↓↑]\s*\$[\d,.]+[KMB]?\s*$/i, "").trim();
         const m = cleaned.match(/([A-Z0-9]+)\s*\//i);
-        if (m)
-          activeSymbol = m[1].toUpperCase();
+        if (m) activeSymbol = m[1].toUpperCase();
         if (!activeSymbol && cleaned) {
           const parts = cleaned.split("|")[0]?.trim();
-          if (parts && parts.length <= 12)
-            activeSymbol = parts.toUpperCase();
+          if (parts && parts.length <= 12) activeSymbol = parts.toUpperCase();
         }
       }
       if (sourceSite !== "padre") {
-        const mintMatch = url.match(/\/trade\/(?:solana\/)?([a-zA-Z0-9]{32,44})/) || url.match(/\/token\/(?:solana\/)?([a-zA-Z0-9]{32,44})/) || url.match(/\/terminal\/(?:solana\/)?([a-zA-Z0-9]{32,44})/) || url.match(/\/meme\/([a-zA-Z0-9]{32,44})/);
+        const mintMatch =
+          url.match(/\/trade\/(?:solana\/)?([a-zA-Z0-9]{32,44})/) ||
+          url.match(/\/token\/(?:solana\/)?([a-zA-Z0-9]{32,44})/) ||
+          url.match(/\/terminal\/(?:solana\/)?([a-zA-Z0-9]{32,44})/) ||
+          url.match(/\/meme\/([a-zA-Z0-9]{32,44})/);
         if (mintMatch && mintMatch[1]) {
           activeMint = mintMatch[1];
         }
         if (!activeMint) {
-          const urlParamMatch = url.match(/[?&](?:mint|token|address)=([1-9A-HJ-NP-Za-km-z]{32,44})/i);
-          if (urlParamMatch)
-            activeMint = urlParamMatch[1];
+          const urlParamMatch = url.match(
+            /[?&](?:mint|token|address)=([1-9A-HJ-NP-Za-km-z]{32,44})/i
+          );
+          if (urlParamMatch) activeMint = urlParamMatch[1];
         }
         if (!activeMint) {
           const allMints = url.match(/[1-9A-HJ-NP-Za-km-z]{32,44}/g);
-          if (allMints)
-            activeMint = allMints.find((m) => m.length >= 32 && m.length <= 44);
+          if (allMints) activeMint = allMints.find((m) => m.length >= 32 && m.length <= 44);
         }
       }
       const domScanThrottle = sourceSite === "padre" ? 500 : 1500;
-      const shouldScanDom = urlChanged || !activeMint && now - this._cache.lastDomScanAt > domScanThrottle;
+      const shouldScanDom =
+        urlChanged || (!activeMint && now - this._cache.lastDomScanAt > domScanThrottle);
       if (!activeMint && shouldScanDom) {
         this._cache.lastDomScanAt = now;
         const attrSelectors = [
@@ -2900,12 +2930,18 @@ input:checked + .slider:before {
           "[data-token]",
           "[data-token-address]",
           "[data-address]",
-          "[data-ca]"
+          "[data-ca]",
         ];
         try {
           const attrNodes = document.querySelectorAll(attrSelectors.join(","));
           for (const node of attrNodes) {
-            for (const attr of ["data-mint", "data-token", "data-token-address", "data-address", "data-ca"]) {
+            for (const attr of [
+              "data-mint",
+              "data-token",
+              "data-token-address",
+              "data-address",
+              "data-ca",
+            ]) {
               const val = node.getAttribute(attr);
               if (val && /[1-9A-HJ-NP-Za-km-z]{32,44}/.test(val)) {
                 const match = val.match(/[1-9A-HJ-NP-Za-km-z]{32,44}/);
@@ -2915,14 +2951,14 @@ input:checked + .slider:before {
                 }
               }
             }
-            if (activeMint)
-              break;
+            if (activeMint) break;
           }
-        } catch (e) {
-        }
+        } catch (e) {}
         if (!activeMint) {
           try {
-            const links = document.querySelectorAll('a[href*="solscan"], a[href*="solana.fm"], a[href*="birdeye"], a[href*="bullx"], a[href*="pump.fun"]');
+            const links = document.querySelectorAll(
+              'a[href*="solscan"], a[href*="solana.fm"], a[href*="birdeye"], a[href*="bullx"], a[href*="pump.fun"]'
+            );
             for (const link of links) {
               const match = link.href.match(/([a-zA-Z0-9]{32,44})/);
               if (match && match[1] && !link.href.includes("/account/")) {
@@ -2930,12 +2966,14 @@ input:checked + .slider:before {
                 break;
               }
             }
-          } catch (e) {
-          }
+          } catch (e) {}
         }
         if (!activeMint) {
           try {
-            const walker = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT);
+            const walker = document.createTreeWalker(
+              document.body || document.documentElement,
+              NodeFilter.SHOW_TEXT
+            );
             let seen = 0;
             while (walker.nextNode() && seen < 50) {
               const text = walker.currentNode?.nodeValue || "";
@@ -2950,8 +2988,7 @@ input:checked + .slider:before {
               }
               seen += 1;
             }
-          } catch (e) {
-          }
+          } catch (e) {}
         }
       }
       if (!activeMint && !urlChanged) {
@@ -2964,11 +3001,11 @@ input:checked + .slider:before {
       this._cache.lastUrl = url;
       this._cache.lastResult = result;
       return result;
-    }
+    },
   };
 
   // src/modules/core/token-market-data.js
-  var TokenMarketDataService = {
+  const TokenMarketDataService = {
     currentMint: null,
     pollInterval: null,
     lastUpdateTs: 0,
@@ -2981,25 +3018,25 @@ input:checked + .slider:before {
       marketCapUsd: 0,
       liquidityUsd: 0,
       symbol: null,
-      name: null
+      name: null,
     },
     listeners: [],
-    init() {
-    },
+    init() {},
     subscribe(callback) {
       this.listeners.push(callback);
     },
     notify() {
-      this.listeners.forEach((cb) => cb({
-        mint: this.currentMint,
-        ...this.data,
-        isStale: this.isStale,
-        ts: this.lastUpdateTs
-      }));
+      this.listeners.forEach((cb) =>
+        cb({
+          mint: this.currentMint,
+          ...this.data,
+          isStale: this.isStale,
+          ts: this.lastUpdateTs,
+        })
+      );
     },
     setMint(mint) {
-      if (this.currentMint === mint)
-        return;
+      if (this.currentMint === mint) return;
       this.currentMint = mint;
       this.stopPolling();
       this.data = { priceUsd: 0, marketCapUsd: 0, liquidityUsd: 0, symbol: null, name: null };
@@ -3013,8 +3050,7 @@ input:checked + .slider:before {
       }
     },
     startPolling() {
-      if (this.pollInterval)
-        return;
+      if (this.pollInterval) return;
       this.fetchData();
       this.pollInterval = setInterval(() => {
         if (this.currentMint) {
@@ -3039,27 +3075,28 @@ input:checked + .slider:before {
       }
     },
     async fetchData() {
-      if (!this.currentMint)
-        return;
+      if (!this.currentMint) return;
       try {
         if (this.dexHasData) {
           const url = `https://api.dexscreener.com/latest/dex/tokens/${this.currentMint}`;
           const response = await chrome.runtime.sendMessage({
             type: "PROXY_FETCH",
             url,
-            options: { method: "GET" }
+            options: { method: "GET" },
           });
           if (response.ok && response.data?.pairs?.length > 0) {
-            const bestPair = response.data.pairs.sort((a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0))[0];
+            const bestPair = response.data.pairs.sort(
+              (a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0)
+            )[0];
             if (bestPair) {
               const price = parseFloat(bestPair.priceUsd) || 0;
-              let mc = bestPair.marketCap || bestPair.fdv || 0;
+              const mc = bestPair.marketCap || bestPair.fdv || 0;
               this.data = {
                 priceUsd: price,
                 marketCapUsd: mc,
                 liquidityUsd: bestPair.liquidity?.usd || 0,
                 symbol: bestPair.baseToken?.symbol,
-                name: bestPair.baseToken?.name
+                name: bestPair.baseToken?.name,
               };
               this.lastUpdateTs = Date.now();
               this.isStale = false;
@@ -3076,14 +3113,13 @@ input:checked + .slider:before {
       }
     },
     async fetchJupiterFallback() {
-      if (!this.currentMint)
-        return;
+      if (!this.currentMint) return;
       try {
         const jupUrl = `https://lite-api.jup.ag/price/v3?ids=${this.currentMint}`;
         const jupResponse = await chrome.runtime.sendMessage({
           type: "PROXY_FETCH",
           url: jupUrl,
-          options: { method: "GET" }
+          options: { method: "GET" },
         });
         if (jupResponse.ok && jupResponse.data?.[this.currentMint]) {
           const jupData = jupResponse.data[this.currentMint];
@@ -3095,7 +3131,7 @@ input:checked + .slider:before {
               marketCapUsd: this.data.marketCapUsd || 0,
               liquidityUsd: this.data.liquidityUsd || 0,
               symbol: this.data.symbol,
-              name: this.data.name
+              name: this.data.name,
             };
             this.lastUpdateTs = Date.now();
             this.isStale = false;
@@ -3114,13 +3150,13 @@ input:checked + .slider:before {
         mint: this.currentMint,
         ...this.data,
         isStale: this.isStale,
-        ts: this.lastUpdateTs
+        ts: this.lastUpdateTs,
       };
-    }
+    },
   };
 
   // src/modules/core/market.js
-  var Market2 = {
+  const Market2 = {
     price: 0,
     marketCap: 0,
     liquidity: 0,
@@ -3147,15 +3183,20 @@ input:checked + .slider:before {
         this.priceIsFresh = !data.isStale;
         this.lastSource = "api";
         if (data.priceUsd > 0 && data.marketCapUsd > 0) {
-          const priceDelta = this._lastRefPrice ? Math.abs(data.priceUsd - this._lastRefPrice) / this._lastRefPrice : 1;
+          const priceDelta = this._lastRefPrice
+            ? Math.abs(data.priceUsd - this._lastRefPrice) / this._lastRefPrice
+            : 1;
           if (priceDelta > 5e-3 || !this._lastRefPrice) {
             this._lastRefPrice = data.priceUsd;
-            window.postMessage({
-              __paper: true,
-              type: "PAPER_PRICE_REFERENCE",
-              priceUsd: data.priceUsd,
-              marketCapUsd: data.marketCapUsd
-            }, "*");
+            window.postMessage(
+              {
+                __paper: true,
+                type: "PAPER_PRICE_REFERENCE",
+                priceUsd: data.priceUsd,
+                marketCapUsd: data.marketCapUsd,
+              },
+              "*"
+            );
           }
         }
         this.notify();
@@ -3163,13 +3204,16 @@ input:checked + .slider:before {
       this.pollContext();
       setInterval(() => this.pollContext(), 250);
       window.addEventListener("message", (e) => {
-        if (e.source !== window || !e.data?.__paper)
-          return;
+        if (e.source !== window || !e.data?.__paper) return;
         const d = e.data;
         if (d.type === "PRICE_TICK") {
           if (d.price > 0 && d.confidence >= 1) {
             const now = Date.now();
-            if (this.price > 0 && Math.abs(d.price - this.price) / this.price > 0.8 && d.confidence < 3)
+            if (
+              this.price > 0 &&
+              Math.abs(d.price - this.price) / this.price > 0.8 &&
+              d.confidence < 3
+            )
               return;
             console.log(`[Market] Real-time Price Integration (${d.source}): $${d.price}`);
             this.price = d.price;
@@ -3187,16 +3231,21 @@ input:checked + .slider:before {
     pollContext() {
       const { activeMint, activeSymbol, sourceSite } = TokenContextResolver.resolve();
       if (activeMint !== this.currentMint) {
-        console.log(`[Market] Context Changed: ${this.currentMint} -> ${activeMint} (${sourceSite})`);
+        console.log(
+          `[Market] Context Changed: ${this.currentMint} -> ${activeMint} (${sourceSite})`
+        );
         this.currentMint = activeMint;
         this.sourceSite = sourceSite;
         this.currentSymbol = activeSymbol;
-        window.postMessage({
-          __paper: true,
-          type: "PAPER_SET_CONTEXT",
-          mint: activeMint,
-          symbol: activeSymbol
-        }, "*");
+        window.postMessage(
+          {
+            __paper: true,
+            type: "PAPER_SET_CONTEXT",
+            mint: activeMint,
+            symbol: activeSymbol,
+          },
+          "*"
+        );
         TokenMarketDataService.setMint(activeMint);
         this.notify();
       }
@@ -3205,23 +3254,25 @@ input:checked + .slider:before {
       this.listeners.push(callback);
     },
     notify() {
-      this.listeners.forEach((cb) => cb({
-        price: this.price,
-        marketCap: this.marketCap,
-        mint: this.currentMint,
-        symbol: this.currentSymbol,
-        context: {
-          // Legacy shape adaptation for 'context' if needed by HUD
-          liquidity: this.liquidity,
-          fdv: this.marketCap,
-          symbol: this.currentSymbol
-        }
-      }));
+      this.listeners.forEach((cb) =>
+        cb({
+          price: this.price,
+          marketCap: this.marketCap,
+          mint: this.currentMint,
+          symbol: this.currentSymbol,
+          context: {
+            // Legacy shape adaptation for 'context' if needed by HUD
+            liquidity: this.liquidity,
+            fdv: this.marketCap,
+            symbol: this.currentSymbol,
+          },
+        })
+      );
     },
     // Explicit getter if needed
     getSnapshot() {
       return TokenMarketDataService.getSnapshot();
-    }
+    },
   };
 
   // src/modules/ui/hud.js
@@ -3229,21 +3280,22 @@ input:checked + .slider:before {
 
   // src/modules/ui/banner.js
   init_store();
-  var Banner = {
+  const Banner = {
     ensurePageOffset() {
       const body = document.body;
-      if (!body)
-        return;
+      if (!body) return;
       const isPadre = window.location.hostname.includes("padre.gg");
-      if (isPadre)
-        return;
+      if (isPadre) return;
       const offset = 44;
       const html = document.documentElement;
       const bodyStyle = getComputedStyle(body);
       const htmlStyle = getComputedStyle(html);
-      const isOverflowLocked = ["hidden", "clip"].includes(bodyStyle.overflowY) || ["hidden", "clip"].includes(bodyStyle.overflow) || ["hidden", "clip"].includes(htmlStyle.overflowY) || ["hidden", "clip"].includes(htmlStyle.overflow);
-      if (isOverflowLocked)
-        return;
+      const isOverflowLocked =
+        ["hidden", "clip"].includes(bodyStyle.overflowY) ||
+        ["hidden", "clip"].includes(bodyStyle.overflow) ||
+        ["hidden", "clip"].includes(htmlStyle.overflowY) ||
+        ["hidden", "clip"].includes(htmlStyle.overflow);
+      if (isOverflowLocked) return;
       const prev = body.getAttribute("data-paper-prev-padding-top");
       if (!prev) {
         body.setAttribute("data-paper-prev-padding-top", bodyStyle.paddingTop || "0px");
@@ -3255,11 +3307,9 @@ input:checked + .slider:before {
     },
     mountBanner() {
       const root = OverlayManager.getShadowRoot();
-      if (!root)
-        return;
+      if (!root) return;
       let bar = root.getElementById(IDS.banner);
-      if (bar)
-        return;
+      if (bar) return;
       bar = document.createElement("div");
       bar.id = IDS.banner;
       bar.innerHTML = `
@@ -3272,8 +3322,7 @@ input:checked + .slider:before {
             <div style="position:absolute; right:20px; font-size:10px; color:#334155; pointer-events:none;">v${Store2.state?.version || "0.9.1"}</div>
         `;
       bar.addEventListener("click", async () => {
-        if (!Store2.state)
-          return;
+        if (!Store2.state) return;
         Store2.state.settings.enabled = !Store2.state.settings.enabled;
         await Store2.save();
         if (window.ZeroHUD && window.ZeroHUD.updateAll) {
@@ -3286,24 +3335,20 @@ input:checked + .slider:before {
     updateBanner() {
       const root = OverlayManager.getShadowRoot();
       const bar = root?.getElementById(IDS.banner);
-      if (!bar || !Store2.state)
-        return;
+      if (!bar || !Store2.state) return;
       const enabled = Store2.state.settings.enabled;
       const stateEl = bar.querySelector(".state");
-      if (stateEl)
-        stateEl.textContent = enabled ? "ENABLED" : "DISABLED";
+      if (stateEl) stateEl.textContent = enabled ? "ENABLED" : "DISABLED";
       bar.classList.toggle("disabled", !enabled);
       this.updateAlerts();
     },
     updateAlerts() {
       const root = OverlayManager.getShadowRoot();
-      if (!root || !Store2.state)
-        return;
+      if (!root || !Store2.state) return;
       const flags = FeatureManager.resolveFlags(Store2.state, "TILT_DETECTION");
       if (!flags.visible || !Store2.state.settings.behavioralAlerts) {
         const existing = root.getElementById("elite-alert-container");
-        if (existing)
-          existing.remove();
+        if (existing) existing.remove();
         return;
       }
       let container = root.getElementById("elite-alert-container");
@@ -3340,7 +3385,7 @@ input:checked + .slider:before {
           }, 5e3);
         }
       });
-    }
+    },
   };
 
   // src/modules/ui/pnl-hud.js
@@ -3352,27 +3397,26 @@ input:checked + .slider:before {
 
   // src/modules/core/analytics.js
   init_store();
-  var EVENT_CATEGORIES = {
+  const EVENT_CATEGORIES = {
     TRADE: "TRADE",
     ALERT: "ALERT",
     DISCIPLINE: "DISCIPLINE",
     SYSTEM: "SYSTEM",
-    MILESTONE: "MILESTONE"
+    MILESTONE: "MILESTONE",
   };
-  var Analytics = {
+  const Analytics = {
     // ==========================================
     // PERSISTENT EVENT LOGGING
     // ==========================================
     logEvent(state, type, category, message, data = {}) {
-      if (!state.eventLog)
-        state.eventLog = [];
+      if (!state.eventLog) state.eventLog = [];
       const event = {
         id: `evt_${Date.now()}_${Math.floor(Math.random() * 1e3)}`,
         ts: Date.now(),
         type,
         category,
         message,
-        data
+        data,
       };
       state.eventLog.push(event);
       if (state.eventLog.length > 100) {
@@ -3382,7 +3426,9 @@ input:checked + .slider:before {
       return event;
     },
     logTradeEvent(state, trade) {
-      const pnlText = trade.realizedPnlSol ? `P&L: ${trade.realizedPnlSol > 0 ? "+" : ""}${trade.realizedPnlSol.toFixed(4)} SOL` : `Size: ${trade.solAmount.toFixed(4)} SOL`;
+      const pnlText = trade.realizedPnlSol
+        ? `P&L: ${trade.realizedPnlSol > 0 ? "+" : ""}${trade.realizedPnlSol.toFixed(4)} SOL`
+        : `Size: ${trade.solAmount.toFixed(4)} SOL`;
       const message = `${trade.side} ${trade.symbol} @ $${trade.priceUsd?.toFixed(6) || "N/A"} | ${pnlText}`;
       this.logEvent(state, trade.side, EVENT_CATEGORIES.TRADE, message, {
         tradeId: trade.id,
@@ -3391,17 +3437,16 @@ input:checked + .slider:before {
         solAmount: trade.solAmount,
         realizedPnlSol: trade.realizedPnlSol,
         strategy: trade.strategy,
-        riskDefined: trade.riskDefined
+        riskDefined: trade.riskDefined,
       });
     },
     logDisciplineEvent(state, score, penalty, reasons) {
-      if (penalty <= 0)
-        return;
+      if (penalty <= 0) return;
       const message = `Discipline -${penalty} pts: ${reasons.join(", ")}`;
       this.logEvent(state, "PENALTY", EVENT_CATEGORIES.DISCIPLINE, message, {
         score,
         penalty,
-        reasons
+        reasons,
       });
     },
     logAlertEvent(state, alertType, message) {
@@ -3426,46 +3471,56 @@ input:checked + .slider:before {
         trades: events.filter((e) => e.category === EVENT_CATEGORIES.TRADE).length,
         alerts: events.filter((e) => e.category === EVENT_CATEGORIES.ALERT).length,
         disciplineEvents: events.filter((e) => e.category === EVENT_CATEGORIES.DISCIPLINE).length,
-        milestones: events.filter((e) => e.category === EVENT_CATEGORIES.MILESTONE).length
+        milestones: events.filter((e) => e.category === EVENT_CATEGORIES.MILESTONE).length,
       };
       return stats;
     },
     analyzeRecentTrades(state) {
       const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
-      if (trades.length === 0)
-        return null;
+      if (trades.length === 0) return null;
       const recentTrades = trades.slice(-10);
-      let wins = 0, losses = 0;
-      let totalHoldTimeMs = 0;
+      let wins = 0,
+        losses = 0;
+      const totalHoldTimeMs = 0;
       let totalPnlSol = 0;
-      let avgEntryMc = 0, avgExitMc = 0;
-      let entryMcCount = 0, exitMcCount = 0;
-      let quickFlips = 0;
-      let longHolds = 0;
+      let avgEntryMc = 0,
+        avgExitMc = 0;
+      let entryMcCount = 0,
+        exitMcCount = 0;
+      const quickFlips = 0;
+      const longHolds = 0;
       for (const trade of recentTrades) {
         const pnl = trade.realizedPnlSol || 0;
-        if (pnl > 0)
-          wins++;
-        else if (pnl < 0)
-          losses++;
+        if (pnl > 0) wins++;
+        else if (pnl < 0) losses++;
         totalPnlSol += pnl;
         if (trade.marketCap) {
           avgExitMc += trade.marketCap;
           exitMcCount++;
         }
       }
-      const winRate = recentTrades.length > 0 ? wins / recentTrades.length * 100 : 0;
-      const grossProfits = recentTrades.reduce((sum, t) => sum + Math.max(0, t.realizedPnlSol || 0), 0);
-      const grossLosses = Math.abs(recentTrades.reduce((sum, t) => sum + Math.min(0, t.realizedPnlSol || 0), 0));
-      const profitFactor = grossLosses > 0 ? (grossProfits / grossLosses).toFixed(2) : grossProfits > 0 ? "MAX" : "0.00";
-      let peak = 0, maxDd = 0, currentBal = 0;
+      const winRate = recentTrades.length > 0 ? (wins / recentTrades.length) * 100 : 0;
+      const grossProfits = recentTrades.reduce(
+        (sum, t) => sum + Math.max(0, t.realizedPnlSol || 0),
+        0
+      );
+      const grossLosses = Math.abs(
+        recentTrades.reduce((sum, t) => sum + Math.min(0, t.realizedPnlSol || 0), 0)
+      );
+      const profitFactor =
+        grossLosses > 0
+          ? (grossProfits / grossLosses).toFixed(2)
+          : grossProfits > 0
+            ? "MAX"
+            : "0.00";
+      let peak = 0,
+        maxDd = 0,
+        currentBal = 0;
       recentTrades.forEach((t) => {
         currentBal += t.realizedPnlSol || 0;
-        if (currentBal > peak)
-          peak = currentBal;
+        if (currentBal > peak) peak = currentBal;
         const dd = peak - currentBal;
-        if (dd > maxDd)
-          maxDd = dd;
+        if (dd > maxDd) maxDd = dd;
       });
       return {
         totalTrades: recentTrades.length,
@@ -3474,7 +3529,7 @@ input:checked + .slider:before {
         winRate: winRate.toFixed(1),
         profitFactor,
         maxDrawdown: maxDd.toFixed(4),
-        totalPnlSol
+        totalPnlSol,
       };
     },
     calculateDiscipline(trade, state) {
@@ -3484,7 +3539,7 @@ input:checked + .slider:before {
       const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
       const prevTrade = trades.length > 1 ? trades[trades.length - 2] : null;
       let penalty = 0;
-      let reasons = [];
+      const reasons = [];
       if (prevTrade && trade.ts - prevTrade.ts < 6e4) {
         penalty += 10;
         reasons.push("FOMO (Rapid logic)");
@@ -3529,19 +3584,18 @@ input:checked + .slider:before {
       const buyTrade = trades.find(
         (t) => t.side === "BUY" && t.mint === sellTrade.mint && t.ts < sellTrade.ts && t.riskDefined
       );
-      if (!buyTrade || !buyTrade.plannedStop)
-        return { penalty: 0, reasons: [] };
+      if (!buyTrade || !buyTrade.plannedStop) return { penalty: 0, reasons: [] };
       const exitPrice = sellTrade.priceUsd;
       const plannedStop = buyTrade.plannedStop;
       const plannedTarget = buyTrade.plannedTarget;
       const entryPrice = buyTrade.priceUsd;
       if (exitPrice < plannedStop && sellTrade.realizedPnlSol < 0) {
-        const violationPct = ((plannedStop - exitPrice) / plannedStop * 100).toFixed(1);
+        const violationPct = (((plannedStop - exitPrice) / plannedStop) * 100).toFixed(1);
         penalty += 15;
         reasons.push(`Stop Violated (-${violationPct}% below stop)`);
       }
       if (plannedTarget && exitPrice < plannedTarget && sellTrade.realizedPnlSol > 0) {
-        const targetDistance = (plannedTarget - exitPrice) / plannedTarget * 100;
+        const targetDistance = ((plannedTarget - exitPrice) / plannedTarget) * 100;
         if (targetDistance > 30) {
           penalty += 5;
           reasons.push("Early Exit (Left >30% gains)");
@@ -3554,7 +3608,7 @@ input:checked + .slider:before {
         entryPrice,
         exitPrice,
         stopViolated: exitPrice < plannedStop && sellTrade.realizedPnlSol < 0,
-        hitTarget: plannedTarget && exitPrice >= plannedTarget
+        hitTarget: plannedTarget && exitPrice >= plannedTarget,
       };
       return { penalty, reasons };
     },
@@ -3564,14 +3618,12 @@ input:checked + .slider:before {
       const buyTrade = trades.find(
         (t) => t.side === "BUY" && t.mint === sellTrade.mint && t.ts < sellTrade.ts && t.riskDefined
       );
-      if (!buyTrade || !buyTrade.plannedStop)
-        return null;
+      if (!buyTrade || !buyTrade.plannedStop) return null;
       const entryPrice = buyTrade.priceUsd;
       const exitPrice = sellTrade.priceUsd;
       const stopPrice = buyTrade.plannedStop;
       const riskPerUnit = entryPrice - stopPrice;
-      if (riskPerUnit <= 0)
-        return null;
+      if (riskPerUnit <= 0) return null;
       const pnlPerUnit = exitPrice - entryPrice;
       const rMultiple = pnlPerUnit / riskPerUnit;
       return {
@@ -3580,30 +3632,31 @@ input:checked + .slider:before {
         exitPrice,
         stopPrice,
         riskPerUnit,
-        pnlPerUnit
+        pnlPerUnit,
       };
     },
     updateStreaks(trade, state) {
-      if (trade.side !== "SELL")
-        return;
+      if (trade.side !== "SELL") return;
       const pnl = trade.realizedPnlSol || 0;
       if (pnl > 0) {
         state.session.winStreak = (state.session.winStreak || 0) + 1;
         state.session.lossStreak = 0;
-        console.log(`[ZER\xD8] Win! +${pnl.toFixed(4)} SOL. Win streak: ${state.session.winStreak}`);
+        console.log(
+          `[ZER\xD8] Win! +${pnl.toFixed(4)} SOL. Win streak: ${state.session.winStreak}`
+        );
       } else if (pnl < 0) {
         state.session.lossStreak = (state.session.lossStreak || 0) + 1;
         state.session.winStreak = 0;
-        console.log(`[ZER\xD8] Loss. ${pnl.toFixed(4)} SOL. Loss streak: ${state.session.lossStreak}`);
+        console.log(
+          `[ZER\xD8] Loss. ${pnl.toFixed(4)} SOL. Loss streak: ${state.session.lossStreak}`
+        );
       }
-      if (!state.session.equityHistory)
-        state.session.equityHistory = [];
+      if (!state.session.equityHistory) state.session.equityHistory = [];
       state.session.equityHistory.push({
         ts: Date.now(),
-        equity: state.session.balance + (state.session.realized || 0)
+        equity: state.session.balance + (state.session.realized || 0),
       });
-      if (state.session.equityHistory.length > 50)
-        state.session.equityHistory.shift();
+      if (state.session.equityHistory.length > 50) state.session.equityHistory.shift();
       this.detectTilt(trade, state);
       this.detectFomo(trade, state);
       this.detectPanicSell(trade, state);
@@ -3614,145 +3667,172 @@ input:checked + .slider:before {
     },
     monitorMarketRegime(state) {
       const flags = FeatureManager.resolveFlags(state, "ADVANCED_COACHING");
-      if (!flags.enabled)
-        return;
+      if (!flags.enabled) return;
       const ctx = Market2.context;
-      if (!ctx)
-        return;
+      if (!ctx) return;
       const vol = ctx.vol24h;
       const chg = Math.abs(ctx.priceChange24h);
       if (vol < 5e5 && Date.now() - (state.lastRegimeAlert || 0) > 36e5) {
-        this.addAlert(state, "MARKET_REGIME", "\u{1F4C9} LOW VOLUME: Liquidity is thin ($<500k). Slippage may be high.");
+        this.addAlert(
+          state,
+          "MARKET_REGIME",
+          "\u{1F4C9} LOW VOLUME: Liquidity is thin ($<500k). Slippage may be high."
+        );
         state.lastRegimeAlert = Date.now();
       }
       if (chg > 50 && Date.now() - (state.lastRegimeAlert || 0) > 36e5) {
-        this.addAlert(state, "MARKET_REGIME", "\u26A0\uFE0F HIGH VOLATILITY: 24h change is >50%. Expect rapid swings.");
+        this.addAlert(
+          state,
+          "MARKET_REGIME",
+          "\u26A0\uFE0F HIGH VOLATILITY: 24h change is >50%. Expect rapid swings."
+        );
         state.lastRegimeAlert = Date.now();
       }
     },
     detectTilt(trade, state) {
       const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
-      if (!flags.enabled)
-        return;
+      if (!flags.enabled) return;
       const lossStreak = state.session.lossStreak || 0;
       if (lossStreak >= 3) {
-        this.addAlert(state, "TILT", `\u26A0\uFE0F TILT DETECTED: ${lossStreak} Losses in a row. Take a break.`);
+        this.addAlert(
+          state,
+          "TILT",
+          `\u26A0\uFE0F TILT DETECTED: ${lossStreak} Losses in a row. Take a break.`
+        );
         state.behavior.tiltFrequency = (state.behavior.tiltFrequency || 0) + 1;
       }
     },
     detectSunkCost(trade, state) {
-      if (trade.side !== "BUY")
-        return;
+      if (trade.side !== "BUY") return;
       const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
-      if (!flags.enabled)
-        return;
+      if (!flags.enabled) return;
       const pos = state.positions[trade.mint];
       if (pos && (pos.pnlSol || 0) < 0) {
-        this.addAlert(state, "SUNK_COST", "\u{1F4C9} SUNK COST: Averaging down into a losing position increases risk.");
+        this.addAlert(
+          state,
+          "SUNK_COST",
+          "\u{1F4C9} SUNK COST: Averaging down into a losing position increases risk."
+        );
         state.behavior.sunkCostFrequency = (state.behavior.sunkCostFrequency || 0) + 1;
       }
     },
     detectOvertrading(state) {
       const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
-      if (!flags.enabled)
-        return;
+      if (!flags.enabled) return;
       if (state.session?.activeAlerts) {
-        const lastAlert = state.session.activeAlerts.slice().reverse().find((a) => a.type === "VELOCITY");
+        const lastAlert = state.session.activeAlerts
+          .slice()
+          .reverse()
+          .find((a) => a.type === "VELOCITY");
         if (lastAlert && Date.now() - lastAlert.ts < 6e4) {
           return;
         }
       }
-      const trades = Object.values(state.trades || {}).filter((t) => t.mode === (state.settings.tradingMode || "paper")).sort((a, b) => a.ts - b.ts);
-      if (trades.length < 5)
-        return;
+      const trades = Object.values(state.trades || {})
+        .filter((t) => t.mode === (state.settings.tradingMode || "paper"))
+        .sort((a, b) => a.ts - b.ts);
+      if (trades.length < 5) return;
       const last5 = trades.slice(-5);
       const timeSpan = last5[4].ts - last5[0].ts;
       const timeSinceLast = Date.now() - last5[4].ts;
       if (timeSpan < 3e5 && timeSinceLast < 3e5) {
-        console.log(`[ZER\xD8 ALERT] Overtrading Detected: 5 trades in ${(timeSpan / 1e3).toFixed(1)}s`, last5.map((t) => t.id));
-        this.addAlert(state, "VELOCITY", "\u26A0\uFE0F OVERTRADING: You're trading too fast. Stop and evaluate setups.");
+        console.log(
+          `[ZER\xD8 ALERT] Overtrading Detected: 5 trades in ${(timeSpan / 1e3).toFixed(1)}s`,
+          last5.map((t) => t.id)
+        );
+        this.addAlert(
+          state,
+          "VELOCITY",
+          "\u26A0\uFE0F OVERTRADING: You're trading too fast. Stop and evaluate setups."
+        );
         state.behavior.overtradingFrequency = (state.behavior.overtradingFrequency || 0) + 1;
         state.lastOvertradingAlert = Date.now();
       }
     },
     monitorProfitOverstay(state) {
       const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
-      if (!flags.enabled)
-        return;
+      if (!flags.enabled) return;
       Object.values(state.positions).forEach((pos) => {
         const pnlPct = pos.pnlPct || 0;
         const peakPct = pos.peakPnlPct !== void 0 ? pos.peakPnlPct : 0;
         if (peakPct > 10 && pnlPct < 0) {
           if (!pos.alertedGreenToRed) {
-            this.addAlert(state, "PROFIT_NEGLECT", `\u{1F34F} GREEN-TO-RED: ${pos.symbol} was up 10%+. Don't let winners die.`);
+            this.addAlert(
+              state,
+              "PROFIT_NEGLECT",
+              `\u{1F34F} GREEN-TO-RED: ${pos.symbol} was up 10%+. Don't let winners die.`
+            );
             pos.alertedGreenToRed = true;
-            state.behavior.profitNeglectFrequency = (state.behavior.profitNeglectFrequency || 0) + 1;
+            state.behavior.profitNeglectFrequency =
+              (state.behavior.profitNeglectFrequency || 0) + 1;
           }
         }
       });
     },
     detectStrategyDrift(trade, state) {
-      if (trade.side !== "BUY")
-        return;
+      if (trade.side !== "BUY") return;
       const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
-      if (!flags.enabled)
-        return;
+      if (!flags.enabled) return;
       if (trade.strategy === "Unknown" || trade.strategy === "Other") {
         const trades = Object.values(state.trades || {});
-        const profitableStrategies = trades.filter((t) => (t.realizedPnlSol || 0) > 0 && t.strategy !== "Unknown").map((t) => t.strategy);
+        const profitableStrategies = trades
+          .filter((t) => (t.realizedPnlSol || 0) > 0 && t.strategy !== "Unknown")
+          .map((t) => t.strategy);
         if (profitableStrategies.length >= 3) {
-          this.addAlert(state, "DRIFT", "\u{1F575}\uFE0F STRATEGY DRIFT: Playing 'Unknown' instead of your winning setups.");
+          this.addAlert(
+            state,
+            "DRIFT",
+            "\u{1F575}\uFE0F STRATEGY DRIFT: Playing 'Unknown' instead of your winning setups."
+          );
           state.behavior.strategyDriftFrequency = (state.behavior.strategyDriftFrequency || 0) + 1;
         }
       }
     },
     detectFomo(trade, state) {
-      if (trade.side !== "BUY")
-        return;
+      if (trade.side !== "BUY") return;
       const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
-      if (!flags.enabled)
-        return;
+      if (!flags.enabled) return;
       const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
       const prevTrade = trades.length > 1 ? trades[trades.length - 2] : null;
-      if (prevTrade && trade.ts - prevTrade.ts < 3e4 && prevTrade.side === "SELL" && (prevTrade.realizedPnlSol || 0) < 0) {
+      if (
+        prevTrade &&
+        trade.ts - prevTrade.ts < 3e4 &&
+        prevTrade.side === "SELL" &&
+        (prevTrade.realizedPnlSol || 0) < 0
+      ) {
         this.addAlert(state, "FOMO", "\u{1F6A8} FOMO ALERT: Revenge trading detected.");
         state.behavior.fomoTrades = (state.behavior.fomoTrades || 0) + 1;
       }
     },
     detectPanicSell(trade, state) {
-      if (trade.side !== "SELL")
-        return;
+      if (trade.side !== "SELL") return;
       const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
-      if (!flags.enabled)
-        return;
+      if (!flags.enabled) return;
       if (trade.entryTs && trade.ts - trade.entryTs < 45e3 && (trade.realizedPnlSol || 0) < 0) {
-        this.addAlert(state, "PANIC", "\u{1F631} PANIC SELL: You're cutting too early. Trust your stops.");
+        this.addAlert(
+          state,
+          "PANIC",
+          "\u{1F631} PANIC SELL: You're cutting too early. Trust your stops."
+        );
         state.behavior.panicSells = (state.behavior.panicSells || 0) + 1;
       }
     },
     addAlert(state, type, message) {
-      if (!state.session.activeAlerts)
-        state.session.activeAlerts = [];
+      if (!state.session.activeAlerts) state.session.activeAlerts = [];
       const alert = { type, message, ts: Date.now() };
       state.session.activeAlerts.push(alert);
-      if (state.session.activeAlerts.length > 3)
-        state.session.activeAlerts.shift();
+      if (state.session.activeAlerts.length > 3) state.session.activeAlerts.shift();
       this.logAlertEvent(state, type, message);
       console.log(`[ELITE ALERT] ${type}: ${message}`);
     },
     updateProfile(state) {
       const b = state.behavior;
       const totalMistakes = (b.tiltFrequency || 0) + (b.fomoTrades || 0) + (b.panicSells || 0);
-      if (totalMistakes === 0)
-        b.profile = "Disciplined";
-      else if (b.tiltFrequency > 2)
-        b.profile = "Emotional";
-      else if (b.fomoTrades > 2)
-        b.profile = "Impulsive";
-      else if (b.panicSells > 2)
-        b.profile = "Hesitant";
-      else
-        b.profile = "Improving";
+      if (totalMistakes === 0) b.profile = "Disciplined";
+      else if (b.tiltFrequency > 2) b.profile = "Emotional";
+      else if (b.fomoTrades > 2) b.profile = "Impulsive";
+      else if (b.panicSells > 2) b.profile = "Hesitant";
+      else b.profile = "Improving";
     },
     getProfessorDebrief(state) {
       const score = state.session.disciplineScore !== void 0 ? state.session.disciplineScore : 100;
@@ -3775,11 +3855,12 @@ input:checked + .slider:before {
       const wins = sellTrades.filter((t) => (t.realizedPnlSol || 0) > 0).length;
       const losses = sellTrades.filter((t) => (t.realizedPnlSol || 0) < 0).length;
       const totalPnl = state.session.realized || 0;
-      const winRate = sellTrades.length > 0 ? (wins / sellTrades.length * 100).toFixed(0) : 0;
+      const winRate = sellTrades.length > 0 ? ((wins / sellTrades.length) * 100).toFixed(0) : 0;
       const disciplineScore = state.session.disciplineScore || 100;
       const winStreak = state.session.winStreak || 0;
       const lossStreak = state.session.lossStreak || 0;
-      const currentStreak = winStreak > 0 ? `${winStreak}W` : lossStreak > 0 ? `${lossStreak}L` : "0";
+      const currentStreak =
+        winStreak > 0 ? `${winStreak}W` : lossStreak > 0 ? `${lossStreak}L` : "0";
       const pnlFormatted = totalPnl >= 0 ? `+${totalPnl.toFixed(3)}` : totalPnl.toFixed(3);
       const pnlTag = totalPnl >= 0 ? "[PROFIT]" : "[DRAWDOWN]";
       let text = `ZER\xD8 Trading Session Complete
@@ -3819,8 +3900,7 @@ input:checked + .slider:before {
     // ==========================================
     exportToCSV(state) {
       const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
-      if (trades.length === 0)
-        return null;
+      if (trades.length === 0) return null;
       const headers = [
         "Trade ID",
         "Timestamp",
@@ -3838,7 +3918,7 @@ input:checked + .slider:before {
         "Planned Stop",
         "Planned Target",
         "Risk Defined",
-        "Entry Thesis"
+        "Entry Thesis",
       ];
       const rows = trades.map((t) => [
         t.id,
@@ -3857,12 +3937,9 @@ input:checked + .slider:before {
         t.plannedStop?.toFixed(8) || "",
         t.plannedTarget?.toFixed(8) || "",
         t.riskDefined ? "Yes" : "No",
-        `"${(t.entryThesis || "").replace(/"/g, '""')}"`
+        `"${(t.entryThesis || "").replace(/"/g, '""')}"`,
       ]);
-      const csvContent = [
-        headers.join(","),
-        ...rows.map((r) => r.join(","))
-      ].join("\n");
+      const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
       return csvContent;
     },
     exportToJSON(state) {
@@ -3870,7 +3947,7 @@ input:checked + .slider:before {
       const session = state.session || {};
       const behavior = state.behavior || {};
       const exportData = {
-        exportedAt: (/* @__PURE__ */ new Date()).toISOString(),
+        exportedAt: /* @__PURE__ */ new Date().toISOString(),
         version: state.version || "1.0.0",
         session: {
           balance: session.balance,
@@ -3879,7 +3956,7 @@ input:checked + .slider:before {
           winStreak: session.winStreak,
           lossStreak: session.lossStreak,
           disciplineScore: session.disciplineScore,
-          tradeCount: trades.length
+          tradeCount: trades.length,
         },
         behavior: {
           profile: behavior.profile,
@@ -3888,7 +3965,7 @@ input:checked + .slider:before {
           panicSells: behavior.panicSells,
           sunkCostFrequency: behavior.sunkCostFrequency,
           overtradingFrequency: behavior.overtradingFrequency,
-          profitNeglectFrequency: behavior.profitNeglectFrequency
+          profitNeglectFrequency: behavior.profitNeglectFrequency,
         },
         analytics: this.analyzeRecentTrades(state),
         trades: trades.map((t) => ({
@@ -3909,10 +3986,10 @@ input:checked + .slider:before {
             plannedStop: t.plannedStop,
             plannedTarget: t.plannedTarget,
             entryThesis: t.entryThesis,
-            riskDefined: t.riskDefined
+            riskDefined: t.riskDefined,
           },
-          planAdherence: t.planAdherence || null
-        }))
+          planAdherence: t.planAdherence || null,
+        })),
       };
       return JSON.stringify(exportData, null, 2);
     },
@@ -3933,13 +4010,13 @@ input:checked + .slider:before {
         console.warn("[Export] No trades to export");
         return false;
       }
-      const filename = `zero_trades_${(/* @__PURE__ */ new Date()).toISOString().split("T")[0]}.csv`;
+      const filename = `zero_trades_${/* @__PURE__ */ new Date().toISOString().split("T")[0]}.csv`;
       this.downloadExport(csv, filename, "text/csv;charset=utf-8;");
       return true;
     },
     exportSessionAsJSON(state) {
       const json = this.exportToJSON(state);
-      const filename = `zero_session_${(/* @__PURE__ */ new Date()).toISOString().split("T")[0]}.json`;
+      const filename = `zero_session_${/* @__PURE__ */ new Date().toISOString().split("T")[0]}.json`;
       this.downloadExport(json, filename, "application/json");
       return true;
     },
@@ -3967,7 +4044,7 @@ input:checked + .slider:before {
         return {
           ready: false,
           message: "Need 10+ trades to generate your profile",
-          tradesNeeded: 10 - trades.length
+          tradesNeeded: 10 - trades.length,
         };
       }
       const sellTrades = trades.filter((t) => t.side === "SELL");
@@ -3982,7 +4059,7 @@ input:checked + .slider:before {
         bestTimeOfDay: this._analyzeBestTimeOfDay(sellTrades),
         tradingStyle: this._determineTradingStyle(trades),
         riskProfile: this._analyzeRiskProfile(buyTrades, state),
-        emotionalPatterns: this._analyzeEmotionalPatterns(trades, state)
+        emotionalPatterns: this._analyzeEmotionalPatterns(trades, state),
       };
     },
     _analyzeBestStrategies(buyTrades, sellTrades, allTrades) {
@@ -4004,30 +4081,36 @@ input:checked + .slider:before {
           if (strategyStats[strat]) {
             const pnl = sell.realizedPnlSol || 0;
             strategyStats[strat].totalPnl += pnl;
-            if (pnl > 0)
-              strategyStats[strat].wins++;
+            if (pnl > 0) strategyStats[strat].wins++;
             strategyStats[strat].avgHoldTime += sell.ts - matchingBuy.ts;
           }
         }
       });
-      const results = Object.entries(strategyStats).filter(([_, s]) => s.count >= 2).map(([name, s]) => ({
-        name,
-        count: s.count,
-        winRate: s.count > 0 ? (s.wins / s.count * 100).toFixed(1) : 0,
-        totalPnl: s.totalPnl,
-        avgPnl: s.count > 0 ? s.totalPnl / s.count : 0,
-        avgHoldTime: s.wins > 0 ? Math.round(s.avgHoldTime / s.wins / 6e4) : 0
-        // in minutes
-      })).sort((a, b) => b.totalPnl - a.totalPnl);
+      const results = Object.entries(strategyStats)
+        .filter(([_, s]) => s.count >= 2)
+        .map(([name, s]) => ({
+          name,
+          count: s.count,
+          winRate: s.count > 0 ? ((s.wins / s.count) * 100).toFixed(1) : 0,
+          totalPnl: s.totalPnl,
+          avgPnl: s.count > 0 ? s.totalPnl / s.count : 0,
+          avgHoldTime: s.wins > 0 ? Math.round(s.avgHoldTime / s.wins / 6e4) : 0,
+          // in minutes
+        }))
+        .sort((a, b) => b.totalPnl - a.totalPnl);
       return {
         top: results.slice(0, 3),
-        worst: results.filter((s) => s.totalPnl < 0).sort((a, b) => a.totalPnl - b.totalPnl).slice(0, 2),
-        mostUsed: results.sort((a, b) => b.count - a.count)[0] || null
+        worst: results
+          .filter((s) => s.totalPnl < 0)
+          .sort((a, b) => a.totalPnl - b.totalPnl)
+          .slice(0, 2),
+        mostUsed: results.sort((a, b) => b.count - a.count)[0] || null,
       };
     },
     _analyzeWorstConditions(trades, state) {
       const conditions = [];
-      let afterLossWins = 0, afterLossTotal = 0;
+      let afterLossWins = 0,
+        afterLossTotal = 0;
       for (let i = 1; i < trades.length; i++) {
         if (trades[i - 1].side === "SELL" && (trades[i - 1].realizedPnlSol || 0) < 0) {
           afterLossTotal++;
@@ -4037,18 +4120,19 @@ input:checked + .slider:before {
         }
       }
       if (afterLossTotal >= 3) {
-        const afterLossWinRate = (afterLossWins / afterLossTotal * 100).toFixed(0);
+        const afterLossWinRate = ((afterLossWins / afterLossTotal) * 100).toFixed(0);
         if (afterLossWinRate < 40) {
           conditions.push({
             type: "AFTER_LOSS",
             label: "After Losing Trades",
             severity: "high",
             stat: `${afterLossWinRate}% win rate`,
-            advice: "Take a 5-minute break after losses before your next trade."
+            advice: "Take a 5-minute break after losses before your next trade.",
           });
         }
       }
-      let rapidWins = 0, rapidTotal = 0;
+      let rapidWins = 0,
+        rapidTotal = 0;
       for (let i = 1; i < trades.length; i++) {
         if (trades[i].ts - trades[i - 1].ts < 12e4) {
           rapidTotal++;
@@ -4058,65 +4142,74 @@ input:checked + .slider:before {
         }
       }
       if (rapidTotal >= 3) {
-        const rapidWinRate = (rapidWins / rapidTotal * 100).toFixed(0);
+        const rapidWinRate = ((rapidWins / rapidTotal) * 100).toFixed(0);
         if (rapidWinRate < 35) {
           conditions.push({
             type: "RAPID_TRADING",
             label: "Rapid-Fire Trading",
             severity: "high",
             stat: `${rapidWinRate}% win rate`,
-            advice: "Slow down. Wait at least 2 minutes between trades."
+            advice: "Slow down. Wait at least 2 minutes between trades.",
           });
         }
       }
-      const avgSize = trades.filter((t) => t.side === "BUY").reduce((sum, t) => sum + (t.solAmount || 0), 0) / trades.filter((t) => t.side === "BUY").length;
-      let largeWins = 0, largeTotal = 0;
-      trades.filter((t) => t.side === "SELL").forEach((t) => {
-        const matchingBuy = trades.find((b) => b.side === "BUY" && b.mint === t.mint && b.ts < t.ts);
-        if (matchingBuy && matchingBuy.solAmount > avgSize * 1.5) {
-          largeTotal++;
-          if ((t.realizedPnlSol || 0) > 0)
-            largeWins++;
-        }
-      });
+      const avgSize =
+        trades.filter((t) => t.side === "BUY").reduce((sum, t) => sum + (t.solAmount || 0), 0) /
+        trades.filter((t) => t.side === "BUY").length;
+      let largeWins = 0,
+        largeTotal = 0;
+      trades
+        .filter((t) => t.side === "SELL")
+        .forEach((t) => {
+          const matchingBuy = trades.find(
+            (b) => b.side === "BUY" && b.mint === t.mint && b.ts < t.ts
+          );
+          if (matchingBuy && matchingBuy.solAmount > avgSize * 1.5) {
+            largeTotal++;
+            if ((t.realizedPnlSol || 0) > 0) largeWins++;
+          }
+        });
       if (largeTotal >= 2) {
-        const largeWinRate = (largeWins / largeTotal * 100).toFixed(0);
+        const largeWinRate = ((largeWins / largeTotal) * 100).toFixed(0);
         if (largeWinRate < 40) {
           conditions.push({
             type: "LARGE_POSITIONS",
             label: "Oversized Positions",
             severity: "medium",
             stat: `${largeWinRate}% win rate`,
-            advice: "Your large trades underperform. Stick to consistent sizing."
+            advice: "Your large trades underperform. Stick to consistent sizing.",
           });
         }
       }
       const sessionTrades = this._groupBySession(trades, state);
-      let lateWins = 0, lateTotal = 0;
+      let lateWins = 0,
+        lateTotal = 0;
       sessionTrades.forEach((session) => {
-        if (session.length < 5)
-          return;
+        if (session.length < 5) return;
         const sessionStart = session[0].ts;
         const lateThreshold = sessionStart + 60 * 60 * 1e3;
-        session.filter((t) => t.ts > lateThreshold && t.side === "SELL").forEach((t) => {
-          lateTotal++;
-          if ((t.realizedPnlSol || 0) > 0)
-            lateWins++;
-        });
+        session
+          .filter((t) => t.ts > lateThreshold && t.side === "SELL")
+          .forEach((t) => {
+            lateTotal++;
+            if ((t.realizedPnlSol || 0) > 0) lateWins++;
+          });
       });
       if (lateTotal >= 3) {
-        const lateWinRate = (lateWins / lateTotal * 100).toFixed(0);
+        const lateWinRate = ((lateWins / lateTotal) * 100).toFixed(0);
         if (lateWinRate < 35) {
           conditions.push({
             type: "LATE_SESSION",
             label: "Extended Sessions",
             severity: "medium",
             stat: `${lateWinRate}% win rate`,
-            advice: "Your performance drops after 1 hour. Consider shorter sessions."
+            advice: "Your performance drops after 1 hour. Consider shorter sessions.",
           });
         }
       }
-      return conditions.sort((a, b) => (b.severity === "high" ? 1 : 0) - (a.severity === "high" ? 1 : 0));
+      return conditions.sort(
+        (a, b) => (b.severity === "high" ? 1 : 0) - (a.severity === "high" ? 1 : 0)
+      );
     },
     _analyzeOptimalSessionLength(trades, state) {
       const sessionTrades = this._groupBySession(trades, state);
@@ -4124,28 +4217,25 @@ input:checked + .slider:before {
         return { optimal: null, message: "Need more session data" };
       }
       const sessionPerformance = sessionTrades.map((session) => {
-        const duration = session.length > 0 ? (session[session.length - 1].ts - session[0].ts) / 6e4 : 0;
+        const duration =
+          session.length > 0 ? (session[session.length - 1].ts - session[0].ts) / 6e4 : 0;
         const sells = session.filter((t) => t.side === "SELL");
         const pnl = sells.reduce((sum, t) => sum + (t.realizedPnlSol || 0), 0);
         const wins = sells.filter((t) => (t.realizedPnlSol || 0) > 0).length;
-        const winRate = sells.length > 0 ? wins / sells.length * 100 : 0;
+        const winRate = sells.length > 0 ? (wins / sells.length) * 100 : 0;
         return { duration, pnl, winRate, tradeCount: session.length };
       });
       const buckets = {
         short: { range: "< 30 min", sessions: [], avgPnl: 0, avgWinRate: 0 },
         medium: { range: "30-60 min", sessions: [], avgPnl: 0, avgWinRate: 0 },
         long: { range: "60-120 min", sessions: [], avgPnl: 0, avgWinRate: 0 },
-        extended: { range: "> 120 min", sessions: [], avgPnl: 0, avgWinRate: 0 }
+        extended: { range: "> 120 min", sessions: [], avgPnl: 0, avgWinRate: 0 },
       };
       sessionPerformance.forEach((s) => {
-        if (s.duration < 30)
-          buckets.short.sessions.push(s);
-        else if (s.duration < 60)
-          buckets.medium.sessions.push(s);
-        else if (s.duration < 120)
-          buckets.long.sessions.push(s);
-        else
-          buckets.extended.sessions.push(s);
+        if (s.duration < 30) buckets.short.sessions.push(s);
+        else if (s.duration < 60) buckets.medium.sessions.push(s);
+        else if (s.duration < 120) buckets.long.sessions.push(s);
+        else buckets.extended.sessions.push(s);
       });
       Object.values(buckets).forEach((b) => {
         if (b.sessions.length > 0) {
@@ -4153,19 +4243,24 @@ input:checked + .slider:before {
           b.avgWinRate = b.sessions.reduce((sum, s) => sum + s.winRate, 0) / b.sessions.length;
         }
       });
-      const best = Object.entries(buckets).filter(([_, b]) => b.sessions.length >= 1).sort((a, b) => b[1].avgPnl - a[1].avgPnl)[0];
+      const best = Object.entries(buckets)
+        .filter(([_, b]) => b.sessions.length >= 1)
+        .sort((a, b) => b[1].avgPnl - a[1].avgPnl)[0];
       return {
         optimal: best ? best[1].range : null,
         bestPnl: best ? best[1].avgPnl.toFixed(4) : 0,
         bestWinRate: best ? best[1].avgWinRate.toFixed(1) : 0,
         buckets: Object.fromEntries(
-          Object.entries(buckets).map(([k, v]) => [k, {
-            range: v.range,
-            count: v.sessions.length,
-            avgPnl: v.avgPnl.toFixed(4),
-            avgWinRate: v.avgWinRate.toFixed(1)
-          }])
-        )
+          Object.entries(buckets).map(([k, v]) => [
+            k,
+            {
+              range: v.range,
+              count: v.sessions.length,
+              avgPnl: v.avgPnl.toFixed(4),
+              avgWinRate: v.avgWinRate.toFixed(1),
+            },
+          ])
+        ),
       };
     },
     _analyzeBestTimeOfDay(sellTrades) {
@@ -4176,42 +4271,40 @@ input:checked + .slider:before {
         morning: { range: "6AM-12PM", wins: 0, total: 0, pnl: 0 },
         afternoon: { range: "12PM-6PM", wins: 0, total: 0, pnl: 0 },
         evening: { range: "6PM-12AM", wins: 0, total: 0, pnl: 0 },
-        night: { range: "12AM-6AM", wins: 0, total: 0, pnl: 0 }
+        night: { range: "12AM-6AM", wins: 0, total: 0, pnl: 0 },
       };
       sellTrades.forEach((t) => {
         const hour = new Date(t.ts).getHours();
         let slot;
-        if (hour >= 6 && hour < 12)
-          slot = "morning";
-        else if (hour >= 12 && hour < 18)
-          slot = "afternoon";
-        else if (hour >= 18 && hour < 24)
-          slot = "evening";
-        else
-          slot = "night";
+        if (hour >= 6 && hour < 12) slot = "morning";
+        else if (hour >= 12 && hour < 18) slot = "afternoon";
+        else if (hour >= 18 && hour < 24) slot = "evening";
+        else slot = "night";
         timeSlots[slot].total++;
         timeSlots[slot].pnl += t.realizedPnlSol || 0;
-        if ((t.realizedPnlSol || 0) > 0)
-          timeSlots[slot].wins++;
+        if ((t.realizedPnlSol || 0) > 0) timeSlots[slot].wins++;
       });
-      const results = Object.entries(timeSlots).filter(([_, s]) => s.total >= 2).map(([name, s]) => ({
-        name,
-        range: s.range,
-        winRate: s.total > 0 ? (s.wins / s.total * 100).toFixed(1) : 0,
-        pnl: s.pnl,
-        count: s.total
-      })).sort((a, b) => b.pnl - a.pnl);
+      const results = Object.entries(timeSlots)
+        .filter(([_, s]) => s.total >= 2)
+        .map(([name, s]) => ({
+          name,
+          range: s.range,
+          winRate: s.total > 0 ? ((s.wins / s.total) * 100).toFixed(1) : 0,
+          pnl: s.pnl,
+          count: s.total,
+        }))
+        .sort((a, b) => b.pnl - a.pnl);
       return {
         best: results[0] || null,
         worst: results[results.length - 1] || null,
-        breakdown: results
+        breakdown: results,
       };
     },
     _determineTradingStyle(trades) {
       const sellTrades = trades.filter((t) => t.side === "SELL");
-      if (sellTrades.length < 5)
-        return { style: "Unknown", description: "Need more data" };
-      let totalHoldTime = 0, holdCount = 0;
+      if (sellTrades.length < 5) return { style: "Unknown", description: "Need more data" };
+      let totalHoldTime = 0,
+        holdCount = 0;
       sellTrades.forEach((sell) => {
         const buy = trades.find((t) => t.side === "BUY" && t.mint === sell.mint && t.ts < sell.ts);
         if (buy) {
@@ -4221,55 +4314,82 @@ input:checked + .slider:before {
       });
       const avgHoldMinutes = holdCount > 0 ? totalHoldTime / holdCount / 6e4 : 0;
       if (avgHoldMinutes < 5) {
-        return { style: "Scalper", description: "Quick in-and-out trades, high frequency", avgHold: avgHoldMinutes.toFixed(1) };
+        return {
+          style: "Scalper",
+          description: "Quick in-and-out trades, high frequency",
+          avgHold: avgHoldMinutes.toFixed(1),
+        };
       } else if (avgHoldMinutes < 30) {
-        return { style: "Day Trader", description: "Short-term positions, momentum focused", avgHold: avgHoldMinutes.toFixed(1) };
+        return {
+          style: "Day Trader",
+          description: "Short-term positions, momentum focused",
+          avgHold: avgHoldMinutes.toFixed(1),
+        };
       } else if (avgHoldMinutes < 120) {
-        return { style: "Swing Trader", description: "Medium holds, trend following", avgHold: avgHoldMinutes.toFixed(1) };
+        return {
+          style: "Swing Trader",
+          description: "Medium holds, trend following",
+          avgHold: avgHoldMinutes.toFixed(1),
+        };
       } else {
-        return { style: "Position Trader", description: "Long holds, conviction plays", avgHold: avgHoldMinutes.toFixed(1) };
+        return {
+          style: "Position Trader",
+          description: "Long holds, conviction plays",
+          avgHold: avgHoldMinutes.toFixed(1),
+        };
       }
     },
     _analyzeRiskProfile(buyTrades, state) {
-      if (buyTrades.length < 3)
-        return { profile: "Unknown", avgRisk: 0 };
+      if (buyTrades.length < 3) return { profile: "Unknown", avgRisk: 0 };
       const startSol = state.settings?.startSol || 10;
-      const riskPcts = buyTrades.map((t) => t.solAmount / startSol * 100);
+      const riskPcts = buyTrades.map((t) => (t.solAmount / startSol) * 100);
       const avgRisk = riskPcts.reduce((a, b) => a + b, 0) / riskPcts.length;
       const maxRisk = Math.max(...riskPcts);
       const plansUsed = buyTrades.filter((t) => t.riskDefined).length;
-      const planRate = (plansUsed / buyTrades.length * 100).toFixed(0);
+      const planRate = ((plansUsed / buyTrades.length) * 100).toFixed(0);
       let profile;
-      if (avgRisk < 5)
-        profile = "Conservative";
-      else if (avgRisk < 15)
-        profile = "Moderate";
-      else if (avgRisk < 30)
-        profile = "Aggressive";
-      else
-        profile = "High Risk";
+      if (avgRisk < 5) profile = "Conservative";
+      else if (avgRisk < 15) profile = "Moderate";
+      else if (avgRisk < 30) profile = "Aggressive";
+      else profile = "High Risk";
       return {
         profile,
         avgRisk: avgRisk.toFixed(1),
         maxRisk: maxRisk.toFixed(1),
         planUsageRate: planRate,
-        plansUsed
+        plansUsed,
       };
     },
     _analyzeEmotionalPatterns(trades, state) {
       const behavior = state.behavior || {};
       const patterns = [];
       if ((behavior.fomoTrades || 0) > 2) {
-        patterns.push({ type: "FOMO", frequency: behavior.fomoTrades, advice: "Wait 60 seconds before entering after seeing green candles." });
+        patterns.push({
+          type: "FOMO",
+          frequency: behavior.fomoTrades,
+          advice: "Wait 60 seconds before entering after seeing green candles.",
+        });
       }
       if ((behavior.panicSells || 0) > 2) {
-        patterns.push({ type: "Panic Selling", frequency: behavior.panicSells, advice: "Set stop losses in advance and trust them." });
+        patterns.push({
+          type: "Panic Selling",
+          frequency: behavior.panicSells,
+          advice: "Set stop losses in advance and trust them.",
+        });
       }
       if ((behavior.tiltFrequency || 0) > 1) {
-        patterns.push({ type: "Tilt Trading", frequency: behavior.tiltFrequency, advice: "Take a mandatory break after 3 consecutive losses." });
+        patterns.push({
+          type: "Tilt Trading",
+          frequency: behavior.tiltFrequency,
+          advice: "Take a mandatory break after 3 consecutive losses.",
+        });
       }
       if ((behavior.sunkCostFrequency || 0) > 1) {
-        patterns.push({ type: "Sunk Cost Bias", frequency: behavior.sunkCostFrequency, advice: "Never average down more than once per position." });
+        patterns.push({
+          type: "Sunk Cost Bias",
+          frequency: behavior.sunkCostFrequency,
+          advice: "Never average down more than once per position.",
+        });
       }
       return patterns;
     },
@@ -4281,15 +4401,13 @@ input:checked + .slider:before {
         if (i === 0) {
           currentSession.push(trade);
         } else if (trade.ts - trades[i - 1].ts > SESSION_GAP) {
-          if (currentSession.length > 0)
-            sessions.push(currentSession);
+          if (currentSession.length > 0) sessions.push(currentSession);
           currentSession = [trade];
         } else {
           currentSession.push(trade);
         }
       });
-      if (currentSession.length > 0)
-        sessions.push(currentSession);
+      if (currentSession.length > 0) sessions.push(currentSession);
       return sessions;
     },
     calculateConsistencyScore(state) {
@@ -4301,7 +4419,7 @@ input:checked + .slider:before {
         winRateStability: 0,
         sizingConsistency: 0,
         frequencyStability: 0,
-        strategyFocus: 0
+        strategyFocus: 0,
       };
       const sellTrades = trades.filter((t) => t.side === "SELL");
       if (sellTrades.length >= 5) {
@@ -4314,7 +4432,9 @@ input:checked + .slider:before {
         }
         if (rollingWinRates.length > 1) {
           const avg = rollingWinRates.reduce((a, b) => a + b, 0) / rollingWinRates.length;
-          const variance = rollingWinRates.reduce((sum, r) => sum + Math.pow(r - avg, 2), 0) / rollingWinRates.length;
+          const variance =
+            rollingWinRates.reduce((sum, r) => sum + Math.pow(r - avg, 2), 0) /
+            rollingWinRates.length;
           const stdDev = Math.sqrt(variance);
           breakdown.winRateStability = Math.max(0, 25 - stdDev * 100);
         } else {
@@ -4339,7 +4459,8 @@ input:checked + .slider:before {
           intervals.push(trades[i].ts - trades[i - 1].ts);
         }
         const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
-        const variance = intervals.reduce((sum, i) => sum + Math.pow(i - avgInterval, 2), 0) / intervals.length;
+        const variance =
+          intervals.reduce((sum, i) => sum + Math.pow(i - avgInterval, 2), 0) / intervals.length;
         const cv = Math.sqrt(variance) / avgInterval;
         breakdown.frequencyStability = Math.max(0, 25 - cv * 12.5);
       } else {
@@ -4355,17 +4476,16 @@ input:checked + .slider:before {
       const focusRatio = buyTrades.length > 0 ? top2Count / buyTrades.length : 0;
       breakdown.strategyFocus = focusRatio * 25;
       const score = Math.round(
-        breakdown.winRateStability + breakdown.sizingConsistency + breakdown.frequencyStability + breakdown.strategyFocus
+        breakdown.winRateStability +
+          breakdown.sizingConsistency +
+          breakdown.frequencyStability +
+          breakdown.strategyFocus
       );
       let message = "";
-      if (score >= 80)
-        message = "Highly consistent trading patterns";
-      else if (score >= 60)
-        message = "Good consistency, minor variations";
-      else if (score >= 40)
-        message = "Moderate consistency, room for improvement";
-      else
-        message = "Inconsistent patterns detected";
+      if (score >= 80) message = "Highly consistent trading patterns";
+      else if (score >= 60) message = "Good consistency, minor variations";
+      else if (score >= 40) message = "Moderate consistency, room for improvement";
+      else message = "Inconsistent patterns detected";
       return {
         score,
         message,
@@ -4373,14 +4493,14 @@ input:checked + .slider:before {
           winRateStability: Math.round(breakdown.winRateStability),
           sizingConsistency: Math.round(breakdown.sizingConsistency),
           frequencyStability: Math.round(breakdown.frequencyStability),
-          strategyFocus: Math.round(breakdown.strategyFocus)
-        }
+          strategyFocus: Math.round(breakdown.strategyFocus),
+        },
       };
-    }
+    },
   };
 
   // src/modules/core/pnl-calculator.js
-  var PnlCalculator = {
+  const PnlCalculator = {
     cachedSolPrice: 200,
     // Default fallback
     lastValidSolPrice: null,
@@ -4406,7 +4526,7 @@ input:checked + .slider:before {
           const res = await chrome.runtime.sendMessage({
             type: "PROXY_FETCH",
             url: "https://api.kraken.com/0/public/Ticker?pair=SOLUSD",
-            options: { method: "GET" }
+            options: { method: "GET" },
           });
           if (res.ok && res.data?.result?.SOLUSD?.c?.[0]) {
             return parseFloat(res.data.result.SOLUSD.c[0]);
@@ -4421,7 +4541,7 @@ input:checked + .slider:before {
           const res = await chrome.runtime.sendMessage({
             type: "PROXY_FETCH",
             url: "https://api.coinbase.com/v2/prices/SOL-USD/spot",
-            options: { method: "GET" }
+            options: { method: "GET" },
           });
           if (res.ok && res.data?.data?.amount) {
             return parseFloat(res.data.data.amount);
@@ -4432,32 +4552,29 @@ input:checked + .slider:before {
         return null;
       };
       const [kPrice, cPrice] = await Promise.all([fetchKraken(), fetchCoinbase()]);
-      let validPrices = [];
-      if (kPrice)
-        validPrices.push(kPrice);
-      if (cPrice)
-        validPrices.push(cPrice);
+      const validPrices = [];
+      if (kPrice) validPrices.push(kPrice);
+      if (cPrice) validPrices.push(cPrice);
       if (validPrices.length > 0) {
         const sum = validPrices.reduce((a, b) => a + b, 0);
         const median = sum / validPrices.length;
         this.cachedSolPrice = median;
         this.lastValidSolPrice = median;
         this.lastSolPriceFetch = Date.now();
-        console.log(`[PNL] SOL/USD Updated: $${median.toFixed(2)} (Sources: ${validPrices.length})`);
+        console.log(
+          `[PNL] SOL/USD Updated: $${median.toFixed(2)} (Sources: ${validPrices.length})`
+        );
       } else {
         console.error("[PNL] All SOL price sources failed. Using fallback.");
-        if (this.lastValidSolPrice)
-          this.cachedSolPrice = this.lastValidSolPrice;
+        if (this.lastValidSolPrice) this.cachedSolPrice = this.lastValidSolPrice;
       }
     },
     getSolPrice() {
       return this.cachedSolPrice;
     },
     fmtSol(n) {
-      if (!Number.isFinite(n))
-        return "0.0000";
-      if (Math.abs(n) < 1 && n !== 0)
-        return n.toFixed(9);
+      if (!Number.isFinite(n)) return "0.0000";
+      if (Math.abs(n) < 1 && n !== 0) return n.toFixed(9);
       return n.toFixed(4);
     },
     /**
@@ -4472,7 +4589,11 @@ input:checked + .slider:before {
       const currentSymbol = (Market2.currentSymbol || "").toUpperCase();
       positions.forEach((pos) => {
         const mintMatches = currentTokenMint && pos.mint === currentTokenMint;
-        const symbolMatches = !currentTokenMint && currentSymbol && pos.symbol && pos.symbol.toUpperCase() === currentSymbol;
+        const symbolMatches =
+          !currentTokenMint &&
+          currentSymbol &&
+          pos.symbol &&
+          pos.symbol.toUpperCase() === currentSymbol;
         if ((mintMatches || symbolMatches) && Market2.price > 0) {
           pos.lastMarkPriceUsd = Market2.price;
           pos.lastMarketCapUsd = Market2.marketCap;
@@ -4485,10 +4606,9 @@ input:checked + .slider:before {
         const currentValueUsd = pos.qtyTokens * markPriceUsd;
         const unrealizedPnlUsd = currentValueUsd - pos.costBasisUsd;
         const unrealizedPnlSol = unrealizedPnlUsd / solUsd;
-        const pnlPct = pos.costBasisUsd > 0 ? unrealizedPnlUsd / pos.costBasisUsd * 100 : 0;
+        const pnlPct = pos.costBasisUsd > 0 ? (unrealizedPnlUsd / pos.costBasisUsd) * 100 : 0;
         pos.pnlPct = pnlPct;
-        if (pos.peakPnlPct === void 0 || pnlPct > pos.peakPnlPct)
-          pos.peakPnlPct = pnlPct;
+        if (pos.peakPnlPct === void 0 || pnlPct > pos.peakPnlPct) pos.peakPnlPct = pnlPct;
         totalUnrealizedUsd += unrealizedPnlUsd;
         totalUnrealizedSol += unrealizedPnlSol;
       });
@@ -4500,12 +4620,12 @@ input:checked + .slider:before {
         Store2.save();
       }
       return totalUnrealizedSol;
-    }
+    },
   };
 
   // src/modules/core/order-execution.js
   init_store();
-  var OrderExecution = {
+  const OrderExecution = {
     // ENTRY Action
     // tokenInfo arg matches existing UI signature but we rely on Market.currentMint for truth
     async buy(solAmount, strategy = "MANUAL", tokenInfo = null, tradePlan = null) {
@@ -4513,14 +4633,14 @@ input:checked + .slider:before {
       const mint = Market2.currentMint;
       const priceUsd = Market2.price;
       const symbol = Market2.currentSymbol || "UNKNOWN";
-      if (!mint)
-        return { success: false, error: "No active token context" };
-      if (solAmount <= 0)
-        return { success: false, error: "Invalid SOL amount" };
+      if (!mint) return { success: false, error: "No active token context" };
+      if (solAmount <= 0) return { success: false, error: "Invalid SOL amount" };
       if (priceUsd <= 0)
         return { success: false, error: `Market Data Unavailable (Price: ${priceUsd})` };
       const tickAge = Date.now() - Market2.lastTickTs;
-      console.log(`[EXEC] BUY DIAG: price=$${priceUsd}, mcap=$${Market2.marketCap}, source=${Market2.lastSource}, tickAge=${tickAge}ms`);
+      console.log(
+        `[EXEC] BUY DIAG: price=$${priceUsd}, mcap=$${Market2.marketCap}, source=${Market2.lastSource}, tickAge=${tickAge}ms`
+      );
       const solUsd = PnlCalculator.getSolPrice();
       const buyUsd = solAmount * solUsd;
       const qtyDelta = buyUsd / priceUsd;
@@ -4536,7 +4656,7 @@ input:checked + .slider:before {
           // Legacy tracking
           entryMarketCapUsdReference: null,
           lastMarkPriceUsd: priceUsd,
-          ts: Date.now()
+          ts: Date.now(),
         };
       }
       const pos = state.positions[mint];
@@ -4547,7 +4667,9 @@ input:checked + .slider:before {
       if (pos.entryMarketCapUsdReference === null && Market2.marketCap > 0) {
         pos.entryMarketCapUsdReference = Market2.marketCap;
       }
-      console.log(`[EXEC] BUY ${symbol}: +${qtyDelta.toFixed(2)} ($${buyUsd.toFixed(2)}) @ $${priceUsd}`);
+      console.log(
+        `[EXEC] BUY ${symbol}: +${qtyDelta.toFixed(2)} ($${buyUsd.toFixed(2)}) @ $${priceUsd}`
+      );
       const fillData = {
         side: "ENTRY",
         mint,
@@ -4559,7 +4681,7 @@ input:checked + .slider:before {
         marketCapUsdAtFill: Market2.marketCap,
         priceSource: Market2.lastSource || "unknown",
         strategy,
-        tradePlan
+        tradePlan,
         // Store if provided
       };
       const fillId = this.recordFill(state, fillData);
@@ -4573,19 +4695,22 @@ input:checked + .slider:before {
       const mint = Market2.currentMint;
       const priceUsd = Market2.price;
       const symbol = Market2.currentSymbol || "UNKNOWN";
-      if (!mint)
-        return { success: false, error: "No active token context" };
+      if (!mint) return { success: false, error: "No active token context" };
       if (!state.positions[mint] || state.positions[mint].qtyTokens <= 0)
         return { success: false, error: "No open position" };
       const pos = state.positions[mint];
       const tickAge = Date.now() - Market2.lastTickTs;
-      console.log(`[EXEC] SELL DIAG: price=$${priceUsd}, mcap=$${Market2.marketCap}, source=${Market2.lastSource}, tickAge=${tickAge}ms`);
-      console.log(`[EXEC] SELL DIAG: avgCost=$${pos.avgCostUsdPerToken}, qty=${pos.qtyTokens}, costBasis=$${pos.costBasisUsd}`);
-      const pct = percent === void 0 || percent === null ? 100 : Math.min(Math.max(percent, 0), 100);
+      console.log(
+        `[EXEC] SELL DIAG: price=$${priceUsd}, mcap=$${Market2.marketCap}, source=${Market2.lastSource}, tickAge=${tickAge}ms`
+      );
+      console.log(
+        `[EXEC] SELL DIAG: avgCost=$${pos.avgCostUsdPerToken}, qty=${pos.qtyTokens}, costBasis=$${pos.costBasisUsd}`
+      );
+      const pct =
+        percent === void 0 || percent === null ? 100 : Math.min(Math.max(percent, 0), 100);
       const rawDelta = pos.qtyTokens * (pct / 100);
       const qtyDelta = Math.min(rawDelta, pos.qtyTokens);
-      if (qtyDelta <= 0)
-        return { success: false, error: "Zero quantity exit" };
+      if (qtyDelta <= 0) return { success: false, error: "Zero quantity exit" };
       const proceedsUsd = qtyDelta * priceUsd;
       const costRemovedUsd = qtyDelta * pos.avgCostUsdPerToken;
       const pnlEventUsd = proceedsUsd - costRemovedUsd;
@@ -4600,7 +4725,9 @@ input:checked + .slider:before {
         pos.avgCostUsdPerToken = 0;
         pos.entryMarketCapUsdReference = null;
       }
-      console.log(`[EXEC] SELL ${symbol}: -${qtyDelta.toFixed(2)} ($${proceedsUsd.toFixed(2)}) PnL: $${pnlEventUsd.toFixed(2)}`);
+      console.log(
+        `[EXEC] SELL ${symbol}: -${qtyDelta.toFixed(2)} ($${proceedsUsd.toFixed(2)}) PnL: $${pnlEventUsd.toFixed(2)}`
+      );
       const proceedsSol = proceedsUsd / solUsd;
       const pnlEventSol = pnlEventUsd / solUsd;
       const fillData = {
@@ -4614,15 +4741,14 @@ input:checked + .slider:before {
         marketCapUsdAtFill: Market2.marketCap,
         priceSource: Market2.lastSource || "unknown",
         strategy,
-        realizedPnlSol: pnlEventSol
+        realizedPnlSol: pnlEventSol,
       };
       const fillId = this.recordFill(state, fillData);
       state.session.balance += proceedsSol;
       state.session.realized = (state.session.realized || 0) + pnlEventSol;
       try {
         Analytics.updateStreaks({ side: "SELL", realizedPnlSol: pnlEventSol }, state);
-      } catch (e) {
-      }
+      } catch (e) {}
       await Store2.save();
       return { success: true, message: `Sold ${pct}% ${symbol}`, trade: { id: fillId } };
     },
@@ -4638,64 +4764,61 @@ input:checked + .slider:before {
       return false;
     },
     recordFill(state, fillData) {
-      if (!state.fills)
-        state.fills = [];
-      if (!state.trades)
-        state.trades = {};
+      if (!state.fills) state.fills = [];
+      if (!state.trades) state.trades = {};
       const id = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
       const fill = {
         id,
         ts: Date.now(),
-        ...fillData
+        ...fillData,
       };
       state.fills.unshift(fill);
       state.trades[id] = fill;
       if (state.session) {
-        if (!state.session.trades)
-          state.session.trades = [];
+        if (!state.session.trades) state.session.trades = [];
         state.session.trades.push(id);
         state.session.tradeCount = (state.session.tradeCount || 0) + 1;
       }
-      if (state.fills.length > 500)
-        state.fills.pop();
+      if (state.fills.length > 500) state.fills.pop();
       return id;
-    }
+    },
   };
 
   // src/modules/core/trading.js
-  var Trading = {
+  const Trading = {
     // PnL Calculator methods
     getSolPrice: () => PnlCalculator.getSolPrice(),
     fmtSol: (n) => PnlCalculator.fmtSol(n),
-    getUnrealizedPnl: (state, currentTokenMint) => PnlCalculator.getUnrealizedPnl(state, currentTokenMint),
+    getUnrealizedPnl: (state, currentTokenMint) =>
+      PnlCalculator.getUnrealizedPnl(state, currentTokenMint),
     // Analytics methods
     analyzeRecentTrades: (state) => Analytics.analyzeRecentTrades(state),
     calculateDiscipline: (trade, state) => Analytics.calculateDiscipline(trade, state),
     updateStreaks: (trade, state) => Analytics.updateStreaks(trade, state),
     // Order Execution methods
-    buy: async (amountSol, strategy, tokenInfo, tradePlan) => await OrderExecution.buy(amountSol, strategy, tokenInfo, tradePlan),
+    buy: async (amountSol, strategy, tokenInfo, tradePlan) =>
+      await OrderExecution.buy(amountSol, strategy, tokenInfo, tradePlan),
     sell: async (pct, strategy, tokenInfo) => await OrderExecution.sell(pct, strategy, tokenInfo),
-    tagTrade: async (tradeId, updates) => await OrderExecution.tagTrade(tradeId, updates)
+    tagTrade: async (tradeId, updates) => await OrderExecution.tagTrade(tradeId, updates),
   };
 
   // src/modules/ui/token-detector.js
-  var TokenDetector = {
+  const TokenDetector = {
     getCurrentToken() {
       return {
         symbol: Market2.currentSymbol || "SOL",
-        mint: Market2.currentMint || "So11111111111111111111111111111111111111112"
+        mint: Market2.currentMint || "So11111111111111111111111111111111111111112",
       };
-    }
+    },
   };
 
   // src/modules/ui/paywall.js
   init_store();
-  var Paywall = {
+  const Paywall = {
     showUpgradeModal(lockedFeature = null) {
       const root = OverlayManager.getShadowRoot();
       const existing = root.getElementById("paywall-modal-overlay");
-      if (existing)
-        existing.remove();
+      if (existing) existing.remove();
       const overlay = document.createElement("div");
       overlay.id = "paywall-modal-overlay";
       overlay.className = "paywall-modal-overlay";
@@ -4819,7 +4942,8 @@ input:checked + .slider:before {
       root.appendChild(overlay);
     },
     handleUpgrade(tier = "pro") {
-      const url = tier === "elite" ? "https://zero-trading.com/elite" : "https://zero-trading.com/pro";
+      const url =
+        tier === "elite" ? "https://zero-trading.com/elite" : "https://zero-trading.com/pro";
       window.open(url, "_blank");
       console.log(`[Paywall] Redirecting to ${tier.toUpperCase()} upgrade page`);
     },
@@ -4850,18 +4974,17 @@ input:checked + .slider:before {
       setTimeout(() => toast.remove(), 2e3);
     },
     isFeatureLocked(featureName) {
-      if (!FeatureManager)
-        return false;
+      if (!FeatureManager) return false;
       const flags = FeatureManager.resolveFlags(Store2.state, featureName);
       return flags.gated;
-    }
+    },
   };
 
   // src/modules/ui/dashboard.js
   init_store();
 
   // src/modules/ui/dashboard-styles.js
-  var DASHBOARD_CSS = `
+  const DASHBOARD_CSS = `
 .paper-dashboard-overlay {
     position: fixed;
     top: 0; left: 0; right: 0; bottom: 0;
@@ -5012,13 +5135,11 @@ canvas#equity-canvas {
 `;
 
   // src/modules/ui/dashboard.js
-  var Dashboard = {
+  const Dashboard = {
     isOpen: false,
     toggle() {
-      if (this.isOpen)
-        this.close();
-      else
-        this.open();
+      if (this.isOpen) this.close();
+      else this.open();
     },
     open() {
       this.isOpen = true;
@@ -5027,8 +5148,7 @@ canvas#equity-canvas {
     close() {
       this.isOpen = false;
       const overlay = OverlayManager.getShadowRoot().querySelector(".paper-dashboard-overlay");
-      if (overlay)
-        overlay.remove();
+      if (overlay) overlay.remove();
     },
     render() {
       const root = OverlayManager.getShadowRoot();
@@ -5045,7 +5165,13 @@ canvas#equity-canvas {
         root.appendChild(overlay);
       }
       const state = Store2.state;
-      const stats = Analytics.analyzeRecentTrades(state) || { winRate: "0.0", totalTrades: 0, wins: 0, losses: 0, totalPnlSol: 0 };
+      const stats = Analytics.analyzeRecentTrades(state) || {
+        winRate: "0.0",
+        totalTrades: 0,
+        wins: 0,
+        losses: 0,
+        totalPnlSol: 0,
+      };
       const debrief = Analytics.getProfessorDebrief(state);
       const chartFlags = FeatureManager.resolveFlags(state, "EQUITY_CHARTS");
       const logFlags = FeatureManager.resolveFlags(state, "DETAILED_LOGS");
@@ -5174,39 +5300,38 @@ canvas#equity-canvas {
       };
       if (chartFlags.visible) {
         const chartEl = overlay.querySelector("#dashboard-equity-chart");
-        if (chartFlags.gated)
-          this.lockSection(chartEl, "EQUITY_CHARTS");
+        if (chartFlags.gated) this.lockSection(chartEl, "EQUITY_CHARTS");
       } else {
         overlay.querySelector("#dashboard-equity-chart").style.display = "none";
       }
       if (logFlags.visible) {
         const logEl = overlay.querySelector("#dashboard-recent-logs");
-        if (logFlags.gated)
-          this.lockSection(logEl, "DETAILED_LOGS");
+        if (logFlags.gated) this.lockSection(logEl, "DETAILED_LOGS");
       } else {
         overlay.querySelector("#dashboard-recent-logs").style.display = "none";
       }
       const behaviorEl = overlay.querySelector("#dashboard-behavior-profile");
-      if (behaviorEl)
-        behaviorEl.style.display = "none";
+      if (behaviorEl) behaviorEl.style.display = "none";
       const professorEl = overlay.querySelector("#dashboard-professor-box");
-      if (professorEl)
-        professorEl.style.display = "none";
+      if (professorEl) professorEl.style.display = "none";
       if (chartFlags.interactive) {
         setTimeout(() => this.drawEquityCurve(overlay, state), 100);
       }
     },
     drawEquityCurve(root, state) {
       const canvas = root.querySelector("#equity-canvas");
-      if (!canvas)
-        return;
+      if (!canvas) return;
       const ctx = canvas.getContext("2d");
       const history = state.session.equityHistory || [];
       if (history.length < 2) {
         ctx.fillStyle = "#475569";
         ctx.font = "10px Inter";
         ctx.textAlign = "center";
-        ctx.fillText("Need more trades to visualize equity...", canvas.width / 4, canvas.height / 4);
+        ctx.fillText(
+          "Need more trades to visualize equity...",
+          canvas.width / 4,
+          canvas.height / 4
+        );
         return;
       }
       const dpr = window.devicePixelRatio || 1;
@@ -5226,12 +5351,10 @@ canvas#equity-canvas {
       ctx.lineWidth = 2;
       ctx.lineJoin = "round";
       history.forEach((entry, i) => {
-        const x = padding + i / (history.length - 1) * (w - padding * 2);
-        const y = h - padding - (entry.equity - min) / range * (h - padding * 2);
-        if (i === 0)
-          ctx.moveTo(x, y);
-        else
-          ctx.lineTo(x, y);
+        const x = padding + (i / (history.length - 1)) * (w - padding * 2);
+        const y = h - padding - ((entry.equity - min) / range) * (h - padding * 2);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
       });
       ctx.stroke();
       const grad = ctx.createLinearGradient(0, 0, 0, h);
@@ -5243,8 +5366,7 @@ canvas#equity-canvas {
       ctx.fill();
     },
     lockSection(el, featureName) {
-      if (!el)
-        return;
+      if (!el) return;
       el.style.position = "relative";
       el.style.overflow = "hidden";
       const overlay = document.createElement("div");
@@ -5260,10 +5382,14 @@ canvas#equity-canvas {
       el.appendChild(overlay);
     },
     renderRecentMiniRows(state) {
-      const trades = Object.values(state.trades || {}).sort((a, b) => b.ts - a.ts).slice(0, 5);
+      const trades = Object.values(state.trades || {})
+        .sort((a, b) => b.ts - a.ts)
+        .slice(0, 5);
       if (trades.length === 0)
         return '<div style="color:#475569; font-size:12px;">No trade history.</div>';
-      return trades.map((t) => `
+      return trades
+        .map(
+          (t) => `
             <div class="mini-row">
                 <span style="color:#64748b;">${new Date(t.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
                 <span style="font-weight:700; color:${t.side === "BUY" ? "#14b8a6" : "#ef4444"}">${t.side}</span>
@@ -5272,22 +5398,23 @@ canvas#equity-canvas {
                     ${t.realizedPnlSol ? (t.realizedPnlSol > 0 ? "+" : "") + t.realizedPnlSol.toFixed(4) : t.solAmount.toFixed(2)}
                 </span>
             </div>
-        `).join("");
-    }
+        `
+        )
+        .join("");
+    },
   };
 
   // src/modules/ui/settings-panel.js
   init_store();
   init_diagnostics_store();
-  var SettingsPanel = {
+  const SettingsPanel = {
     /**
      * Show the full settings modal (replaces old mini-settings).
      */
     show() {
       const container = OverlayManager.getContainer();
       const existing = container.querySelector(".zero-settings-overlay");
-      if (existing)
-        existing.remove();
+      if (existing) existing.remove();
       const overlay = document.createElement("div");
       overlay.className = "confirm-modal-overlay zero-settings-overlay";
       const isShadow = Store2.state.settings.tradingMode === "shadow";
@@ -5363,21 +5490,33 @@ canvas#equity-canvas {
                         <span class="diag-label">Uploads</span>
                         <span class="diag-value ${isAutoSend ? "enabled" : "disabled"}">${isAutoSend ? "Enabled" : "Disabled"}</span>
                     </div>
-                    ${lastUpload > 0 ? `
+                    ${
+                      lastUpload > 0
+                        ? `
                     <div class="diag-status-row">
                         <span class="diag-label">Last upload</span>
                         <span class="diag-value">${new Date(lastUpload).toLocaleString()}</span>
-                    </div>` : ""}
-                    ${lastError ? `
+                    </div>`
+                        : ""
+                    }
+                    ${
+                      lastError
+                        ? `
                     <div class="diag-status-row">
                         <span class="diag-label">Last error</span>
                         <span class="diag-value error">${lastError}</span>
-                    </div>` : ""}
-                    ${queueLen > 0 ? `
+                    </div>`
+                        : ""
+                    }
+                    ${
+                      queueLen > 0
+                        ? `
                     <div class="diag-status-row">
                         <span class="diag-label">Queued packets</span>
                         <span class="diag-value">${queueLen}</span>
-                    </div>` : ""}
+                    </div>`
+                        : ""
+                    }
                 </div>
 
                 <div class="settings-btn-row">
@@ -5400,13 +5539,11 @@ canvas#equity-canvas {
     _bind(overlay) {
       const close = () => {
         overlay.remove();
-        if (window.ZeroHUD && window.ZeroHUD.updateAll)
-          window.ZeroHUD.updateAll();
+        if (window.ZeroHUD && window.ZeroHUD.updateAll) window.ZeroHUD.updateAll();
       };
       overlay.querySelector(".settings-close").onclick = close;
       overlay.addEventListener("click", (e) => {
-        if (e.target === overlay)
-          close();
+        if (e.target === overlay) close();
       });
       const shadowToggle = overlay.querySelector('[data-setting="shadow"]');
       if (shadowToggle) {
@@ -5421,12 +5558,16 @@ canvas#equity-canvas {
       if (autoSendToggle) {
         autoSendToggle.onchange = (e) => {
           if (e.target.checked) {
-            this._showConsentModal(overlay, () => {
-              DiagnosticsStore.enableAutoSend();
-              this._refreshDiagStatus(overlay, true);
-            }, () => {
-              e.target.checked = false;
-            });
+            this._showConsentModal(
+              overlay,
+              () => {
+                DiagnosticsStore.enableAutoSend();
+                this._refreshDiagStatus(overlay, true);
+              },
+              () => {
+                e.target.checked = false;
+              }
+            );
           } else {
             DiagnosticsStore.disableAutoSend();
             this._refreshDiagStatus(overlay, false);
@@ -5462,8 +5603,7 @@ canvas#equity-canvas {
     },
     _refreshDiagStatus(overlay, isEnabled) {
       const statusEl = overlay.querySelector(".diag-status");
-      if (!statusEl)
-        return;
+      if (!statusEl) return;
       const diagState = DiagnosticsStore.state || {};
       const lastUpload = diagState.settings?.diagnostics?.lastUploadedEventTs || 0;
       const lastError = diagState.upload?.lastError || null;
@@ -5538,21 +5678,24 @@ canvas#equity-canvas {
       parent.appendChild(modal);
       modal.querySelector(".cancel").onclick = () => modal.remove();
       modal.querySelector('[data-act="waitlist"]').onclick = () => {
-        const subject = encodeURIComponent(`ZER\xD8 ${tier} Waitlist - ${feat ? feat.name : featureId}`);
-        const body = encodeURIComponent(`I'm interested in ${feat ? feat.name : featureId} for ZER\xD8 ${tier}.
+        const subject = encodeURIComponent(
+          `ZER\xD8 ${tier} Waitlist - ${feat ? feat.name : featureId}`
+        );
+        const body =
+          encodeURIComponent(`I'm interested in ${feat ? feat.name : featureId} for ZER\xD8 ${tier}.
 
 Please add me to the waitlist.`);
         const mailTo = `mailto:?subject=${subject}&body=${body}`;
         try {
-          navigator.clipboard.writeText(`I'm interested in ZER\xD8 ${tier}: ${feat ? feat.name : featureId}. Please add me to the waitlist.`);
-        } catch {
-        }
+          navigator.clipboard.writeText(
+            `I'm interested in ZER\xD8 ${tier}: ${feat ? feat.name : featureId}. Please add me to the waitlist.`
+          );
+        } catch {}
         window.open(mailTo);
         modal.remove();
       };
       modal.addEventListener("click", (e) => {
-        if (e.target === modal)
-          modal.remove();
+        if (e.target === modal) modal.remove();
       });
     },
     _showSamplePayload(parent) {
@@ -5563,10 +5706,28 @@ Please add me to the waitlist.`);
         schemaVersion: 3,
         extensionVersion: Store2.state.version || "1.11.6",
         eventsDelta: [
-          { eventId: "evt_sample1", ts: Date.now() - 6e4, type: "SESSION_STARTED", platform: "AXIOM", payload: {} },
-          { eventId: "evt_sample2", ts: Date.now() - 3e4, type: "TRADE_OPENED", platform: "AXIOM", payload: { side: "BUY", symbol: "TOKEN" } },
-          { eventId: "evt_sample3", ts: Date.now(), type: "TRADE_CLOSED", platform: "AXIOM", payload: { side: "SELL", pnl: 0.05 } }
-        ]
+          {
+            eventId: "evt_sample1",
+            ts: Date.now() - 6e4,
+            type: "SESSION_STARTED",
+            platform: "AXIOM",
+            payload: {},
+          },
+          {
+            eventId: "evt_sample2",
+            ts: Date.now() - 3e4,
+            type: "TRADE_OPENED",
+            platform: "AXIOM",
+            payload: { side: "BUY", symbol: "TOKEN" },
+          },
+          {
+            eventId: "evt_sample3",
+            ts: Date.now(),
+            type: "TRADE_CLOSED",
+            platform: "AXIOM",
+            payload: { side: "SELL", pnl: 0.05 },
+          },
+        ],
       };
       const modal = document.createElement("div");
       modal.className = "confirm-modal-overlay";
@@ -5586,8 +5747,7 @@ Please add me to the waitlist.`);
       parent.appendChild(modal);
       modal.querySelector(".cancel").onclick = () => modal.remove();
       modal.addEventListener("click", (e) => {
-        if (e.target === modal)
-          modal.remove();
+        if (e.target === modal) modal.remove();
       });
     },
     _showDeleteConfirm(parent) {
@@ -5611,13 +5771,12 @@ Please add me to the waitlist.`);
         modal.remove();
       };
       modal.addEventListener("click", (e) => {
-        if (e.target === modal)
-          modal.remove();
+        if (e.target === modal) modal.remove();
       });
     },
     _logFeatureClick(featureId) {
       DiagnosticsStore.logEvent("UI_LOCKED_FEATURE_CLICKED", { featureId });
-    }
+    },
   };
 
   // src/modules/ui/pnl-hud.js
@@ -5627,19 +5786,17 @@ Please add me to the waitlist.`);
   function clamp(v, min, max) {
     return Math.max(min, Math.min(max, v));
   }
-  var positionsExpanded = false;
-  var PnlHud = {
+  let positionsExpanded = false;
+  const PnlHud = {
     mountPnlHud(makeDraggable) {
       const container = OverlayManager.getContainer();
       const rootId = IDS.pnlHud;
       let root = container.querySelector("#" + rootId);
       if (!Store2.state.settings.enabled) {
-        if (root)
-          root.style.display = "none";
+        if (root) root.style.display = "none";
         return;
       }
-      if (root)
-        root.style.display = "";
+      if (root) root.style.display = "";
       let isNew = false;
       if (!root) {
         isNew = true;
@@ -5733,29 +5890,28 @@ Please add me to the waitlist.`);
     },
     bindPnlDrag(root, makeDraggable) {
       const header = root.querySelector(".header");
-      if (!header || !makeDraggable)
-        return;
-      makeDraggable(header, (dx, dy) => {
-        if (Store2.state.settings.pnlDocked)
-          return;
-        const s = Store2.state.settings;
-        s.pnlPos.x = clamp(s.pnlPos.x + dx, 0, window.innerWidth - 40);
-        s.pnlPos.y = clamp(s.pnlPos.y + dy, 34, window.innerHeight - 40);
-        root.style.left = px(s.pnlPos.x);
-        root.style.top = px(s.pnlPos.y);
-      }, async () => {
-        if (!Store2.state.settings.pnlDocked)
-          await Store2.save();
-      });
+      if (!header || !makeDraggable) return;
+      makeDraggable(
+        header,
+        (dx, dy) => {
+          if (Store2.state.settings.pnlDocked) return;
+          const s = Store2.state.settings;
+          s.pnlPos.x = clamp(s.pnlPos.x + dx, 0, window.innerWidth - 40);
+          s.pnlPos.y = clamp(s.pnlPos.y + dy, 34, window.innerHeight - 40);
+          root.style.left = px(s.pnlPos.x);
+          root.style.top = px(s.pnlPos.y);
+        },
+        async () => {
+          if (!Store2.state.settings.pnlDocked) await Store2.save();
+        }
+      );
     },
     bindPnlEvents(root) {
       root.addEventListener("click", async (e) => {
         const t = e.target;
-        if (t.matches("input, label"))
-          return;
+        if (t.matches("input, label")) return;
         const actEl = t.closest("[data-act]");
-        if (!actEl)
-          return;
+        if (!actEl) return;
         const act = actEl.getAttribute("data-act");
         e.preventDefault();
         e.stopPropagation();
@@ -5815,16 +5971,13 @@ Please add me to the waitlist.`);
     },
     async updatePnlHud() {
       const root = OverlayManager.getContainer().querySelector("#" + IDS.pnlHud);
-      if (!root || !Store2.state)
-        return;
+      if (!root || !Store2.state) return;
       const s = Store2.state;
       const shareFlags = FeatureManager.resolveFlags(s, "SHARE_TO_X");
       const proFlags = FeatureManager.resolveFlags(s, "SHARE_TO_X");
       const shareBtn = root.querySelector("#pnl-share-btn");
-      if (shareBtn)
-        shareBtn.style.display = shareFlags.visible && !shareFlags.gated ? "" : "none";
-      if (shareBtn)
-        shareBtn.style.display = shareFlags.visible && !shareFlags.gated ? "" : "none";
+      if (shareBtn) shareBtn.style.display = shareFlags.visible && !shareFlags.gated ? "" : "none";
+      if (shareBtn) shareBtn.style.display = shareFlags.visible && !shareFlags.gated ? "" : "none";
       if (!Store2.state.settings.enabled) {
         root.style.display = "none";
         return;
@@ -5843,22 +5996,26 @@ Please add me to the waitlist.`);
       const currentToken = TokenDetector.getCurrentToken();
       const unrealized = Trading.getUnrealizedPnl(s, currentToken.mint);
       const inp = root.querySelector(".startSolInput");
-      if (document.activeElement !== inp)
-        inp.value = s.settings.startSol;
-      root.querySelector('[data-k="balance"]').textContent = `${Trading.fmtSol(s.session.balance)} SOL`;
+      if (document.activeElement !== inp) inp.value = s.settings.startSol;
+      root.querySelector('[data-k="balance"]').textContent =
+        `${Trading.fmtSol(s.session.balance)} SOL`;
       const positions = Object.values(s.positions || {});
       const totalInvested = positions.reduce((sum, pos) => sum + (pos.totalSolSpent || 0), 0);
-      const unrealizedPct = totalInvested > 0 ? unrealized / totalInvested * 100 : 0;
+      const unrealizedPct = totalInvested > 0 ? (unrealized / totalInvested) * 100 : 0;
       const tokenValueEl = root.querySelector('[data-k="tokenValue"]');
       const tokenUnitEl = root.querySelector('[data-k="tokenUnit"]');
       if (tokenValueEl && tokenUnitEl) {
         const showUsd = s.settings.tokenDisplayUsd;
         if (showUsd) {
           const unrealizedUsd = unrealized * solUsd;
-          tokenValueEl.textContent = (unrealizedUsd >= 0 ? "+" : "") + "$" + Trading.fmtSol(Math.abs(unrealizedUsd));
+          tokenValueEl.textContent =
+            (unrealizedUsd >= 0 ? "+" : "") + "$" + Trading.fmtSol(Math.abs(unrealizedUsd));
           tokenUnitEl.textContent = "USD";
         } else {
-          tokenValueEl.textContent = (unrealized >= 0 ? "+" : "") + Trading.fmtSol(unrealized) + ` (${unrealizedPct >= 0 ? "+" : ""}${unrealizedPct.toFixed(1)}%)`;
+          tokenValueEl.textContent =
+            (unrealized >= 0 ? "+" : "") +
+            Trading.fmtSol(unrealized) +
+            ` (${unrealizedPct >= 0 ? "+" : ""}${unrealizedPct.toFixed(1)}%)`;
           tokenUnitEl.textContent = "SOL";
         }
         tokenValueEl.style.color = unrealized >= 0 ? "#10b981" : "#ef4444";
@@ -5866,17 +6023,21 @@ Please add me to the waitlist.`);
       const realized = s.session.realized || 0;
       const totalPnl = realized + unrealized;
       const startBalance = s.settings.startSol || 10;
-      const sessionPct = totalPnl / startBalance * 100;
+      const sessionPct = (totalPnl / startBalance) * 100;
       const pnlEl = root.querySelector('[data-k="pnl"]');
       const pnlUnitEl = root.querySelector('[data-k="pnlUnit"]');
       if (pnlEl && pnlUnitEl) {
         const showUsd = s.settings.sessionDisplayUsd;
         if (showUsd) {
           const totalPnlUsd = totalPnl * solUsd;
-          pnlEl.textContent = (totalPnlUsd >= 0 ? "+" : "") + "$" + Trading.fmtSol(Math.abs(totalPnlUsd));
+          pnlEl.textContent =
+            (totalPnlUsd >= 0 ? "+" : "") + "$" + Trading.fmtSol(Math.abs(totalPnlUsd));
           pnlUnitEl.textContent = "USD";
         } else {
-          pnlEl.textContent = (totalPnl >= 0 ? "+" : "") + Trading.fmtSol(totalPnl) + ` (${sessionPct >= 0 ? "+" : ""}${sessionPct.toFixed(1)}%)`;
+          pnlEl.textContent =
+            (totalPnl >= 0 ? "+" : "") +
+            Trading.fmtSol(totalPnl) +
+            ` (${sessionPct >= 0 ? "+" : ""}${sessionPct.toFixed(1)}%)`;
           pnlUnitEl.textContent = "SOL";
         }
         pnlEl.style.color = totalPnl >= 0 ? "#10b981" : "#ef4444";
@@ -5913,7 +6074,9 @@ Please add me to the waitlist.`);
             <div class="confirm-modal">
                 <h3>Reset current session?</h3>
                 <p>This will clear current session stats and start a fresh run.<br>Your trade history and past sessions will not be deleted.</p>
-                ${summary && summary.tradeCount > 0 ? `
+                ${
+                  summary && summary.tradeCount > 0
+                    ? `
                     <div style="background:rgba(20,184,166,0.1); border:1px solid rgba(20,184,166,0.2); border-radius:8px; padding:10px; margin:12px 0; font-size:11px;">
                         <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
                             <span style="color:#64748b;">Duration</span>
@@ -5932,7 +6095,9 @@ Please add me to the waitlist.`);
                             <span style="color:${summary.realized >= 0 ? "#10b981" : "#ef4444"}; font-weight:600;">${summary.realized >= 0 ? "+" : ""}${summary.realized.toFixed(4)} SOL</span>
                         </div>
                     </div>
-                ` : ""}
+                `
+                    : ""
+                }
                 <div class="confirm-modal-buttons">
                     <button class="confirm-modal-btn cancel">Cancel</button>
                     <button class="confirm-modal-btn confirm">Reset session</button>
@@ -5971,8 +6136,7 @@ Please add me to the waitlist.`);
       OverlayManager.getContainer().appendChild(overlay);
       overlay.querySelector(".cancel").onclick = () => overlay.remove();
       overlay.addEventListener("click", (e) => {
-        if (e.target === overlay)
-          overlay.remove();
+        if (e.target === overlay) overlay.remove();
       });
     },
     showSettingsModal() {
@@ -5980,7 +6144,10 @@ Please add me to the waitlist.`);
     },
     updateTradeList(container) {
       const trades = Store2.state.session.trades || [];
-      const tradeObjs = trades.map((id) => Store2.state.trades[id]).filter((t) => t).reverse();
+      const tradeObjs = trades
+        .map((id) => Store2.state.trades[id])
+        .filter((t) => t)
+        .reverse();
       let html = "";
       tradeObjs.forEach((t) => {
         const side = t.side === "ENTRY" ? "BUY" : t.side === "EXIT" ? "SELL" : t.side;
@@ -5992,7 +6159,10 @@ Please add me to the waitlist.`);
         } else {
           const isWin = (t.realizedPnlSol || 0) > 0;
           pnlClass = isWin ? "buy" : t.realizedPnlSol < 0 ? "sell" : "muted";
-          valStr = (t.realizedPnlSol ? (t.realizedPnlSol > 0 ? "+" : "") + t.realizedPnlSol.toFixed(4) : "0.00") + " SOL";
+          valStr =
+            (t.realizedPnlSol
+              ? (t.realizedPnlSol > 0 ? "+" : "") + t.realizedPnlSol.toFixed(4)
+              : "0.00") + " SOL";
         }
         const mc = t.marketCapUsdAtFill || t.marketCap || 0;
         let mcStr = "";
@@ -6020,7 +6190,8 @@ Please add me to the waitlist.`);
                 </div>
             `;
       });
-      container.innerHTML = html || '<div style="padding:10px;color:#64748b;text-align:center;">No trades yet</div>';
+      container.innerHTML =
+        html || '<div style="padding:10px;color:#64748b;text-align:center;">No trades yet</div>';
     },
     updatePositionsPanel(root) {
       const s = Store2.state;
@@ -6048,14 +6219,15 @@ Please add me to the waitlist.`);
       }
       const solUsd = Trading.getSolPrice();
       const currentToken = TokenDetector.getCurrentToken();
-      return positions.map((pos) => {
-        let currentPrice = pos.lastMarkPriceUsd || pos.avgCostUsdPerToken || 0;
-        const currentValueUsd = pos.qtyTokens * currentPrice;
-        const unrealizedPnlUsd = currentValueUsd - (pos.costBasisUsd || 0);
-        const pnl = unrealizedPnlUsd / solUsd;
-        const pnlPct = pos.costBasisUsd > 0 ? unrealizedPnlUsd / pos.costBasisUsd * 100 : 0;
-        const isPositive = pnl >= 0;
-        return `
+      return positions
+        .map((pos) => {
+          const currentPrice = pos.lastMarkPriceUsd || pos.avgCostUsdPerToken || 0;
+          const currentValueUsd = pos.qtyTokens * currentPrice;
+          const unrealizedPnlUsd = currentValueUsd - (pos.costBasisUsd || 0);
+          const pnl = unrealizedPnlUsd / solUsd;
+          const pnlPct = pos.costBasisUsd > 0 ? (unrealizedPnlUsd / pos.costBasisUsd) * 100 : 0;
+          const isPositive = pnl >= 0;
+          return `
                 <div class="positionRow">
                     <div class="positionInfo">
                         <div class="positionSymbol">${pos.symbol || "UNKNOWN"}</div>
@@ -6075,28 +6247,21 @@ Please add me to the waitlist.`);
                     </div>
                 </div>
             `;
-      }).join("");
+        })
+        .join("");
     },
     formatQty(n) {
-      if (!n || n <= 0)
-        return "0";
-      if (n >= 1e9)
-        return (n / 1e9).toFixed(2) + "B";
-      if (n >= 1e6)
-        return (n / 1e6).toFixed(2) + "M";
-      if (n >= 1e3)
-        return (n / 1e3).toFixed(2) + "K";
-      if (n >= 1)
-        return n.toFixed(2);
+      if (!n || n <= 0) return "0";
+      if (n >= 1e9) return (n / 1e9).toFixed(2) + "B";
+      if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
+      if (n >= 1e3) return (n / 1e3).toFixed(2) + "K";
+      if (n >= 1) return n.toFixed(2);
       return n.toFixed(6);
     },
     formatPrice(p) {
-      if (!p || p <= 0)
-        return "0.00";
-      if (p >= 1)
-        return p.toFixed(4);
-      if (p >= 1e-4)
-        return p.toFixed(6);
+      if (!p || p <= 0) return "0.00";
+      if (p >= 1) return p.toFixed(4);
+      if (p >= 1e-4) return p.toFixed(6);
       const leadingZeros = Math.floor(-Math.log10(p));
       return p.toFixed(leadingZeros + 3);
     },
@@ -6111,15 +6276,28 @@ Please add me to the waitlist.`);
       if (result.success) {
         console.log(`[PnlHud] Quick sell ${pct}% of ${pos.symbol} successful`);
         if (result.trade && result.trade.id) {
-          const fullTrade = Store2.state.trades && Store2.state.trades[result.trade.id] ? Store2.state.trades[result.trade.id] : Store2.state.fills ? Store2.state.fills.find((f) => f.id === result.trade.id) : null;
+          const fullTrade =
+            Store2.state.trades && Store2.state.trades[result.trade.id]
+              ? Store2.state.trades[result.trade.id]
+              : Store2.state.fills
+                ? Store2.state.fills.find((f) => f.id === result.trade.id)
+                : null;
           if (fullTrade) {
             const bridgeTrade = {
               ...fullTrade,
-              side: fullTrade.side === "ENTRY" ? "BUY" : fullTrade.side === "EXIT" ? "SELL" : fullTrade.side,
+              side:
+                fullTrade.side === "ENTRY"
+                  ? "BUY"
+                  : fullTrade.side === "EXIT"
+                    ? "SELL"
+                    : fullTrade.side,
               priceUsd: fullTrade.fillPriceUsd || fullTrade.priceUsd,
-              marketCap: fullTrade.marketCapUsdAtFill || fullTrade.marketCap
+              marketCap: fullTrade.marketCapUsdAtFill || fullTrade.marketCap,
             };
-            window.postMessage({ __paper: true, type: "PAPER_DRAW_MARKER", trade: bridgeTrade }, "*");
+            window.postMessage(
+              { __paper: true, type: "PAPER_DRAW_MARKER", trade: bridgeTrade },
+              "*"
+            );
           }
         }
         if (window.ZeroHUD && window.ZeroHUD.updateAll) {
@@ -6128,7 +6306,7 @@ Please add me to the waitlist.`);
       } else {
         console.error("[PnlHud] Quick sell failed:", result.error);
       }
-    }
+    },
   };
 
   // src/modules/ui/buy-hud.js
@@ -6139,7 +6317,7 @@ Please add me to the waitlist.`);
   function clamp2(v, min, max) {
     return Math.max(min, Math.min(max, v));
   }
-  var BuyHud = {
+  const BuyHud = {
     // UI State
     buyHudTab: "buy",
     buyHudEdit: false,
@@ -6147,19 +6325,16 @@ Please add me to the waitlist.`);
     // State for reuse
     makeDraggableRef: null,
     mountBuyHud(makeDraggable, force = false) {
-      if (makeDraggable)
-        this.makeDraggableRef = makeDraggable;
+      if (makeDraggable) this.makeDraggableRef = makeDraggable;
       const dragger = makeDraggable || this.makeDraggableRef;
       const container = OverlayManager.getContainer();
       const rootId = IDS.buyHud;
       let root = container.querySelector("#" + rootId);
       if (!Store2.state.settings.enabled) {
-        if (root)
-          root.style.display = "none";
+        if (root) root.style.display = "none";
         return;
       }
-      if (root)
-        root.style.display = "";
+      if (root) root.style.display = "";
       if (!root) {
         root = document.createElement("div");
         root.id = rootId;
@@ -6182,7 +6357,9 @@ Please add me to the waitlist.`);
     refreshMarketContext(root) {
       const container = root.querySelector(".market-context-container");
       if (container) {
-        container.innerHTML = this.renderMarketContext().replace('<div class="market-context-container" style="margin-bottom:12px;">', "").replace(/<\/div>\s*$/, "");
+        container.innerHTML = this.renderMarketContext()
+          .replace('<div class="market-context-container" style="margin-bottom:12px;">', "")
+          .replace(/<\/div>\s*$/, "");
       }
     },
     renderBuyHudContent(root, makeDraggable) {
@@ -6214,7 +6391,9 @@ Please add me to the waitlist.`);
                         ${this.renderQuickButtons(isBuy)}
                     </div>
 
-                    ${isBuy ? `
+                    ${
+                      isBuy
+                        ? `
                     <div class="strategyRow">
                          <div class="fieldLabel">Context / Strategy</div>
                          <select class="strategySelect" data-k="strategy">
@@ -6222,7 +6401,9 @@ Please add me to the waitlist.`);
                          </select>
                     </div>
                     ${this.renderTradePlanFields()}
-                    ` : ""}
+                    `
+                        : ""
+                    }
 
                     <button class="${actionClass}" data-act="action">${actionText}</button>
                     <div class="status" data-k="status">Ready to trade</div>
@@ -6232,41 +6413,46 @@ Please add me to the waitlist.`);
       this.bindHeaderDrag(root, makeDraggable);
     },
     renderQuickButtons(isBuy) {
-      const values = isBuy ? Store2.state.settings.quickBuySols : Store2.state.settings.quickSellPcts;
-      return values.map((v) => `
+      const values = isBuy
+        ? Store2.state.settings.quickBuySols
+        : Store2.state.settings.quickSellPcts;
+      return values
+        .map(
+          (v) => `
             <button class="qbtn" data-act="quick" data-val="${v}">${v}${isBuy ? " SOL" : "%"}</button>
-        `).join("");
+        `
+        )
+        .join("");
     },
     bindHeaderDrag(root, makeDraggable) {
       const header = root.querySelector(".panelHeader");
-      if (!header || !makeDraggable)
-        return;
-      makeDraggable(header, (dx, dy) => {
-        if (Store2.state.settings.buyHudDocked)
-          return;
-        const s = Store2.state.settings;
-        if (!s.buyHudPos) {
-          const rect = root.getBoundingClientRect();
-          s.buyHudPos = { x: rect.left, y: rect.top };
+      if (!header || !makeDraggable) return;
+      makeDraggable(
+        header,
+        (dx, dy) => {
+          if (Store2.state.settings.buyHudDocked) return;
+          const s = Store2.state.settings;
+          if (!s.buyHudPos) {
+            const rect = root.getBoundingClientRect();
+            s.buyHudPos = { x: rect.left, y: rect.top };
+          }
+          s.buyHudPos.x = clamp2(s.buyHudPos.x + dx, 0, window.innerWidth - 300);
+          s.buyHudPos.y = clamp2(s.buyHudPos.y + dy, 34, window.innerHeight - 300);
+          root.style.setProperty("left", px2(s.buyHudPos.x), "important");
+          root.style.setProperty("top", px2(s.buyHudPos.y), "important");
+          root.style.setProperty("right", "auto", "important");
+        },
+        async () => {
+          if (!Store2.state.settings.buyHudDocked) await Store2.save();
         }
-        s.buyHudPos.x = clamp2(s.buyHudPos.x + dx, 0, window.innerWidth - 300);
-        s.buyHudPos.y = clamp2(s.buyHudPos.y + dy, 34, window.innerHeight - 300);
-        root.style.setProperty("left", px2(s.buyHudPos.x), "important");
-        root.style.setProperty("top", px2(s.buyHudPos.y), "important");
-        root.style.setProperty("right", "auto", "important");
-      }, async () => {
-        if (!Store2.state.settings.buyHudDocked)
-          await Store2.save();
-      });
+      );
     },
     setupBuyHudInteractions(root) {
       root.addEventListener("click", async (e) => {
         const t = e.target;
-        if (t.matches("input") || t.matches("select"))
-          return;
+        if (t.matches("input") || t.matches("select")) return;
         const actEl = t.closest("[data-act]");
-        if (!actEl)
-          return;
+        if (!actEl) return;
         const act = actEl.getAttribute("data-act");
         e.preventDefault();
         if (act === "dock") {
@@ -6308,12 +6494,10 @@ Please add me to the waitlist.`);
     },
     showEmotionSelector(tradeId) {
       const emoFlags = FeatureManager.resolveFlags(Store2.state, "EMOTION_TRACKING");
-      if (!emoFlags.enabled || Store2.state.settings.showJournal === false)
-        return;
+      if (!emoFlags.enabled || Store2.state.settings.showJournal === false) return;
       const container = OverlayManager.getContainer();
       const existing = container.querySelector(".emotion-modal-overlay");
-      if (existing)
-        existing.remove();
+      if (existing) existing.remove();
       const overlay = document.createElement("div");
       overlay.className = "emotion-modal-overlay";
       overlay.style.position = "fixed";
@@ -6324,25 +6508,30 @@ Please add me to the waitlist.`);
       overlay.style.pointerEvents = "none";
       overlay.style.display = "flex";
       overlay.style.flexDirection = "column";
-      overlay.style.fontFamily = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+      overlay.style.fontFamily =
+        "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
       const emotions = [
         { id: "calm", label: "Calm", icon: "\u{1F60C}" },
         { id: "anxious", label: "Anxious", icon: "\u{1F628}" },
         { id: "excited", label: "Excited", icon: "\u{1F929}" },
         { id: "angry", label: "Angry/Rev", icon: "\u{1F621}" },
         { id: "bored", label: "Bored", icon: "\u{1F971}" },
-        { id: "confident", label: "Confident", icon: "\u{1F60E}" }
+        { id: "confident", label: "Confident", icon: "\u{1F60E}" },
       ];
       overlay.innerHTML = `
             <div class="emotion-modal" style="position:absolute; pointer-events:auto; box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 1px solid rgba(20,184,166,0.2); width:320px;">
                 <div class="emotion-title">TRADE EXECUTED</div>
                 <div class="emotion-subtitle">How are you feeling right now?</div>
                 <div class="emotion-grid">
-                    ${emotions.map((e) => `
+                    ${emotions
+                      .map(
+                        (e) => `
                         <button class="emotion-btn" data-emo="${e.id}">
                             <span>${e.icon}</span> ${e.label}
                         </button>
-                    `).join("")}
+                    `
+                      )
+                      .join("")}
                 </div>
                 <div style="margin-top:12px; display:flex; align-items:center; justify-content:space-between; gap:10px; border-top:1px solid rgba(255,255,255,0.05); padding-top:8px;">
                      <label style="display:flex; align-items:center; gap:6px; font-size:10px; color:#64748b; cursor:pointer;">
@@ -6383,7 +6572,8 @@ Please add me to the waitlist.`);
         const modalInner = overlay.querySelector(".emotion-modal");
         modalInner.style.filter = "grayscale(1) opacity(0.8)";
         const lock = document.createElement("div");
-        lock.innerHTML = '<div style="background:rgba(13,17,23,0.8); color:#14b8a6; padding:10px; border-radius:8px; font-weight:800; cursor:pointer;">PRO FEATURE: EMOTION TRACKING</div>';
+        lock.innerHTML =
+          '<div style="background:rgba(13,17,23,0.8); color:#14b8a6; padding:10px; border-radius:8px; font-weight:800; cursor:pointer;">PRO FEATURE: EMOTION TRACKING</div>';
         lock.style.position = "absolute";
         lock.style.top = "50%";
         lock.style.left = "50%";
@@ -6398,8 +6588,7 @@ Please add me to the waitlist.`);
     },
     updateBuyHud() {
       const root = OverlayManager.getContainer().querySelector("#" + IDS.buyHud);
-      if (!root || !Store2.state)
-        return;
+      if (!root || !Store2.state) return;
       if (!Store2.state.settings.enabled) {
         root.style.display = "none";
         return;
@@ -6427,11 +6616,9 @@ Please add me to the waitlist.`);
       }
     },
     renderMarketContext() {
-      if (!Store2.state)
-        return "";
+      if (!Store2.state) return "";
       const flags = FeatureManager.resolveFlags(Store2.state, "MARKET_CONTEXT");
-      if (!flags.visible)
-        return "";
+      if (!flags.visible) return "";
       const ctx = Market2.context;
       const isGated = flags.gated;
       let content = "";
@@ -6463,11 +6650,9 @@ Please add me to the waitlist.`);
         `;
     },
     renderTradePlanFields() {
-      if (!Store2.state)
-        return "";
+      if (!Store2.state) return "";
       const flags = FeatureManager.resolveFlags(Store2.state, "TRADE_PLAN");
-      if (!flags.visible)
-        return "";
+      if (!flags.visible) return "";
       const isGated = flags.gated;
       const isExpanded = this.tradePlanExpanded;
       const plan = Store2.state.pendingPlan || {};
@@ -6558,7 +6743,7 @@ Please add me to the waitlist.`);
         plannedStop: plan.stopLoss || null,
         plannedTarget: plan.target || null,
         entryThesis: plan.thesis || "",
-        riskDefined: !!(plan.stopLoss && plan.stopLoss > 0)
+        riskDefined: !!(plan.stopLoss && plan.stopLoss > 0),
       };
     },
     // Clear plan input fields in the UI
@@ -6566,12 +6751,9 @@ Please add me to the waitlist.`);
       const stopEl = root.querySelector('[data-k="stopLoss"]');
       const targetEl = root.querySelector('[data-k="target"]');
       const thesisEl = root.querySelector('[data-k="thesis"]');
-      if (stopEl)
-        stopEl.value = "";
-      if (targetEl)
-        targetEl.value = "";
-      if (thesisEl)
-        thesisEl.value = "";
+      if (stopEl) stopEl.value = "";
+      if (targetEl) targetEl.value = "";
+      if (thesisEl) thesisEl.value = "";
     },
     async executeTrade(root) {
       const field = root.querySelector('input[data-k="field"]');
@@ -6581,8 +6763,7 @@ Please add me to the waitlist.`);
       const strategyFlags = FeatureManager.resolveFlags(Store2.state, "STRATEGY_TAGGING");
       const strategy = strategyEl && strategyFlags.interactive ? strategyEl.value : "Trend";
       if (val <= 0) {
-        if (status)
-          status.textContent = "Invalid amount";
+        if (status) status.textContent = "Invalid amount";
         return;
       }
       status.textContent = "Executing...";
@@ -6607,15 +6788,28 @@ Please add me to the waitlist.`);
         status.textContent = "Trade executed!";
         field.value = "";
         if (res.trade && res.trade.id) {
-          const fullTrade = Store2.state.trades && Store2.state.trades[res.trade.id] ? Store2.state.trades[res.trade.id] : Store2.state.fills ? Store2.state.fills.find((f) => f.id === res.trade.id) : null;
+          const fullTrade =
+            Store2.state.trades && Store2.state.trades[res.trade.id]
+              ? Store2.state.trades[res.trade.id]
+              : Store2.state.fills
+                ? Store2.state.fills.find((f) => f.id === res.trade.id)
+                : null;
           if (fullTrade) {
             const bridgeTrade = {
               ...fullTrade,
-              side: fullTrade.side === "ENTRY" ? "BUY" : fullTrade.side === "EXIT" ? "SELL" : fullTrade.side,
+              side:
+                fullTrade.side === "ENTRY"
+                  ? "BUY"
+                  : fullTrade.side === "EXIT"
+                    ? "SELL"
+                    : fullTrade.side,
               priceUsd: fullTrade.fillPriceUsd || fullTrade.priceUsd,
-              marketCap: fullTrade.marketCapUsdAtFill || fullTrade.marketCap
+              marketCap: fullTrade.marketCapUsdAtFill || fullTrade.marketCap,
             };
-            window.postMessage({ __paper: true, type: "PAPER_DRAW_MARKER", trade: bridgeTrade }, "*");
+            window.postMessage(
+              { __paper: true, type: "PAPER_DRAW_MARKER", trade: bridgeTrade },
+              "*"
+            );
           }
         }
         this.clearPlanFields(root);
@@ -6629,11 +6823,11 @@ Please add me to the waitlist.`);
         status.textContent = res.error || "Error executing trade";
         status.style.color = "#ef4444";
       }
-    }
+    },
   };
 
   // src/modules/ui/hud.js
-  var HUD = {
+  const HUD = {
     renderScheduled: false,
     lastRenderAt: 0,
     async init() {
@@ -6645,7 +6839,7 @@ Please add me to the waitlist.`);
           ...t,
           side: t.side === "ENTRY" ? "BUY" : t.side === "EXIT" ? "SELL" : t.side,
           priceUsd: t.fillPriceUsd || t.priceUsd,
-          marketCap: t.marketCapUsdAtFill || t.marketCap
+          marketCap: t.marketCapUsdAtFill || t.marketCap,
         }));
         setTimeout(() => {
           window.postMessage({ __paper: true, type: "PAPER_DRAW_ALL", trades }, "*");
@@ -6656,8 +6850,7 @@ Please add me to the waitlist.`);
       });
     },
     scheduleRender() {
-      if (this.renderScheduled)
-        return;
+      if (this.renderScheduled) return;
       this.renderScheduled = true;
       requestAnimationFrame(() => {
         this.renderAll();
@@ -6666,8 +6859,7 @@ Please add me to the waitlist.`);
       });
     },
     renderAll() {
-      if (!Store2.state)
-        return;
+      if (!Store2.state) return;
       Banner.mountBanner();
       PnlHud.mountPnlHud(this.makeDraggable.bind(this));
       BuyHud.mountBuyHud(this.makeDraggable.bind(this));
@@ -6688,13 +6880,12 @@ Please add me to the waitlist.`);
     },
     // Shared utility for making elements draggable
     makeDraggable(handle, onMove, onStop) {
-      if (!handle)
-        return;
+      if (!handle) return;
       let dragging = false;
-      let startX = 0, startY = 0;
+      let startX = 0,
+        startY = 0;
       const down = (e) => {
-        if (e.button !== 0)
-          return;
+        if (e.button !== 0) return;
         dragging = true;
         startX = e.clientX;
         startY = e.clientY;
@@ -6703,8 +6894,7 @@ Please add me to the waitlist.`);
         window.addEventListener("mouseup", up);
       };
       const move = (e) => {
-        if (!dragging)
-          return;
+        if (!dragging) return;
         const dx = e.clientX - startX;
         const dy = e.clientY - startY;
         startX = e.clientX;
@@ -6716,23 +6906,21 @@ Please add me to the waitlist.`);
         dragging = false;
         window.removeEventListener("mousemove", move);
         window.removeEventListener("mouseup", up);
-        if (onStop)
-          onStop();
+        if (onStop) onStop();
       };
       handle.addEventListener("mousedown", down);
-    }
+    },
   };
 
   // src/content.boot.js
   init_diagnostics_store();
 
   // src/modules/logger.js
-  var Logger = {
+  const Logger = {
     isProduction: false,
     // Set to true in prod builds
     info(msg, ...args) {
-      if (this.isProduction)
-        return;
+      if (this.isProduction) return;
       console.log(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
     },
     warn(msg, ...args) {
@@ -6752,14 +6940,13 @@ Please add me to the waitlist.`);
         if (typeof arg === "object" && arg !== null) {
           const clean = { ...arg };
           ["key", "secret", "token", "auth", "password"].forEach((k) => {
-            if (k in clean)
-              clean[k] = "***REDACTED***";
+            if (k in clean) clean[k] = "***REDACTED***";
           });
           return clean;
         }
         return arg;
       });
-    }
+    },
   };
 
   // src/content.boot.js
@@ -6769,13 +6956,12 @@ Please add me to the waitlist.`);
     const PLATFORM = {
       isAxiom: window.location.hostname.includes("axiom.trade"),
       isPadre: window.location.hostname.includes("padre.gg"),
-      name: window.location.hostname.includes("axiom.trade") ? "Axiom" : "Padre"
+      name: window.location.hostname.includes("axiom.trade") ? "Axiom" : "Padre",
     };
     try {
       Logger.info("Loading Store...");
       const state = await Store2.load();
-      if (!state)
-        throw new Error("Store state is null");
+      if (!state) throw new Error("Store state is null");
       if (!state.settings.enabled) {
         Logger.info("Force-enabling for Beta test...");
         state.settings.enabled = true;
@@ -6788,14 +6974,20 @@ Please add me to the waitlist.`);
     try {
       Logger.info("Loading DiagnosticsStore...");
       await DiagnosticsStore.load();
-      DiagnosticsStore.logEvent("SESSION_STARTED", {
-        platform: PLATFORM.isAxiom ? "AXIOM" : PLATFORM.isPadre ? "PADRE" : "UNKNOWN"
-      }, { platform: PLATFORM.isAxiom ? "AXIOM" : PLATFORM.isPadre ? "PADRE" : "UNKNOWN" });
+      DiagnosticsStore.logEvent(
+        "SESSION_STARTED",
+        {
+          platform: PLATFORM.isAxiom ? "AXIOM" : PLATFORM.isPadre ? "PADRE" : "UNKNOWN",
+        },
+        { platform: PLATFORM.isAxiom ? "AXIOM" : PLATFORM.isPadre ? "PADRE" : "UNKNOWN" }
+      );
     } catch (e) {
       Logger.error("DiagnosticsStore Init Failed:", e);
     }
     try {
-      const { DiagnosticsManager: DiagnosticsManager2 } = await Promise.resolve().then(() => (init_diagnostics_manager(), diagnostics_manager_exports));
+      const { DiagnosticsManager: DiagnosticsManager2 } = await Promise.resolve().then(
+        () => (init_diagnostics_manager(), diagnostics_manager_exports)
+      );
       DiagnosticsManager2.init();
     } catch (e) {
       Logger.error("DiagnosticsManager Init Failed:", e);
@@ -6826,8 +7018,7 @@ Please add me to the waitlist.`);
       Logger.error("HUD Init Failed:", e);
     }
     window.addEventListener("message", async (e) => {
-      if (e.source !== window || !e.data?.__paper_cmd)
-        return;
+      if (e.source !== window || !e.data?.__paper_cmd) return;
       const { type, val } = e.data;
       if (type === "SET_TIER") {
         const state = Store2.state;

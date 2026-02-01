@@ -1,4 +1,4 @@
-import { IDS } from './ids.js';
+import { IDS } from "./ids.js";
 
 export const BANNER_CSS = `
 #${IDS.banner} {

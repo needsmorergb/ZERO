@@ -1,0 +1,9 @@
+# Generated bundle files (built by esbuild)
+src/*.bundle.*.js
+src/*.bundle.js
+src/content.bundle.*.js
+src/content.bundle.js
+src/bridge.bundle.*.js
+
+# Legacy entry point (unused, has top-level return)
+src/content.js

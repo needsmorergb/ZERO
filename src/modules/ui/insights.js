@@ -1,8 +1,8 @@
-import { Store } from '../store.js';
-import { OverlayManager } from './overlay.js';
-import { FeatureManager, TEASED_FEATURES } from '../featureManager.js';
-import { renderEliteLockedCard } from './elite-helpers.js';
-import { ICONS } from './icons.js';
+import { Store } from "../store.js";
+import { OverlayManager } from "./overlay.js";
+import { FeatureManager, TEASED_FEATURES } from "../featureManager.js";
+import { renderEliteLockedCard } from "./elite-helpers.js";
+import { ICONS } from "./icons.js";
 
 const INSIGHTS_CSS = `
 .insights-overlay {
@@ -156,54 +156,54 @@ const INSIGHTS_CSS = `
 `;
 
 export const Insights = {
-    isOpen: false,
+  isOpen: false,
 
-    toggle() {
-        if (this.isOpen) this.close();
-        else this.open();
-    },
+  toggle() {
+    if (this.isOpen) this.close();
+    else this.open();
+  },
 
-    open() {
-        this.isOpen = true;
-        this.render();
-    },
+  open() {
+    this.isOpen = true;
+    this.render();
+  },
 
-    close() {
-        this.isOpen = false;
-        const root = OverlayManager.getShadowRoot();
-        const overlay = root.querySelector('.insights-overlay');
-        if (overlay) overlay.remove();
-    },
+  close() {
+    this.isOpen = false;
+    const root = OverlayManager.getShadowRoot();
+    const overlay = root.querySelector(".insights-overlay");
+    if (overlay) overlay.remove();
+  },
 
-    render() {
-        const root = OverlayManager.getShadowRoot();
-        let overlay = root.querySelector('.insights-overlay');
+  render() {
+    const root = OverlayManager.getShadowRoot();
+    let overlay = root.querySelector(".insights-overlay");
 
-        if (!overlay) {
-            overlay = document.createElement('div');
-            overlay.className = 'insights-overlay';
+    if (!overlay) {
+      overlay = document.createElement("div");
+      overlay.className = "insights-overlay";
 
-            if (!root.getElementById('insights-styles')) {
-                const style = document.createElement('style');
-                style.id = 'insights-styles';
-                style.textContent = INSIGHTS_CSS;
-                root.appendChild(style);
-            }
+      if (!root.getElementById("insights-styles")) {
+        const style = document.createElement("style");
+        style.id = "insights-styles";
+        style.textContent = INSIGHTS_CSS;
+        root.appendChild(style);
+      }
 
-            root.appendChild(overlay);
-        }
+      root.appendChild(overlay);
+    }
 
-        const state = Store.state;
-        const isElite = FeatureManager.isElite(state);
+    const state = Store.state;
+    const isElite = FeatureManager.isElite(state);
 
-        overlay.innerHTML = `
+    overlay.innerHTML = `
             <div class="insights-modal">
                 <div class="insights-header">
                     <div class="insights-header-left">
                         <div class="insights-header-icon">${ICONS.BRAIN}</div>
                         <div>
                             <div class="insights-title">Advanced Insights</div>
-                            <div class="insights-subtitle">${isElite ? 'Behavioral analytics & patterns' : 'Available in Elite'}</div>
+                            <div class="insights-subtitle">${isElite ? "Behavioral analytics & patterns" : "Available in Elite"}</div>
                         </div>
                     </div>
                     <button class="insights-close" id="insights-close-btn">\u2715</button>
@@ -214,33 +214,49 @@ export const Insights = {
             </div>
         `;
 
-        // Event bindings
-        const self = this;
-        const closeBtn = overlay.querySelector('#insights-close-btn');
-        if (closeBtn) {
-            closeBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                self.close();
-            });
-        }
+    // Event bindings
+    const self = this;
+    const closeBtn = overlay.querySelector("#insights-close-btn");
+    if (closeBtn) {
+      closeBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        self.close();
+      });
+    }
 
-        overlay.onclick = (e) => {
-            if (e.target === overlay) self.close();
-        };
-    },
+    overlay.onclick = (e) => {
+      if (e.target === overlay) self.close();
+    };
+  },
 
-    renderFreeContent() {
-        const categories = [
-            { label: 'BEHAVIORAL ANALYSIS', features: ['ELITE_TILT_DETECTION', 'ELITE_EMOTION_ANALYTICS', 'ELITE_TRADER_PROFILE'] },
-            { label: 'TRADE INTELLIGENCE', features: ['ELITE_DISCIPLINE', 'ELITE_STRATEGY_ANALYTICS', 'ELITE_RISK_METRICS'] },
-            { label: 'SESSION & CONTEXT', features: ['ELITE_SESSION_REPLAY', 'ELITE_AI_DEBRIEF', 'ELITE_MARKET_CONTEXT', 'ELITE_TRADE_PLAN'] },
-        ];
+  renderFreeContent() {
+    const categories = [
+      {
+        label: "BEHAVIORAL ANALYSIS",
+        features: ["ELITE_TILT_DETECTION", "ELITE_EMOTION_ANALYTICS", "ELITE_TRADER_PROFILE"],
+      },
+      {
+        label: "TRADE INTELLIGENCE",
+        features: ["ELITE_DISCIPLINE", "ELITE_STRATEGY_ANALYTICS", "ELITE_RISK_METRICS"],
+      },
+      {
+        label: "SESSION & CONTEXT",
+        features: [
+          "ELITE_SESSION_REPLAY",
+          "ELITE_AI_DEBRIEF",
+          "ELITE_MARKET_CONTEXT",
+          "ELITE_TRADE_PLAN",
+        ],
+      },
+    ];
 
-        const featureMap = {};
-        TEASED_FEATURES.ELITE.forEach(f => { featureMap[f.id] = f; });
+    const featureMap = {};
+    TEASED_FEATURES.ELITE.forEach((f) => {
+      featureMap[f.id] = f;
+    });
 
-        let html = `
+    let html = `
             <div class="insights-intro">
                 Advanced Insights reveals why your results happen — not just what happened.
                 Behavioral patterns, discipline tracking, and cross-session analytics help you identify
@@ -248,24 +264,24 @@ export const Insights = {
             </div>
         `;
 
-        categories.forEach(cat => {
-            html += `<div class="insights-section-label">${cat.label}</div>`;
-            html += `<div class="insights-grid">`;
-            cat.features.forEach(fId => {
-                const f = featureMap[fId];
-                if (f) html += renderEliteLockedCard(f.name, f.desc);
-            });
-            html += `</div>`;
-        });
+    categories.forEach((cat) => {
+      html += `<div class="insights-section-label">${cat.label}</div>`;
+      html += `<div class="insights-grid">`;
+      cat.features.forEach((fId) => {
+        const f = featureMap[fId];
+        if (f) html += renderEliteLockedCard(f.name, f.desc);
+      });
+      html += `</div>`;
+    });
 
-        return html;
-    },
+    return html;
+  },
 
-    renderEliteContent(state) {
-        const session = Store.getActiveSession();
-        const behavior = Store.getActiveBehavior();
+  renderEliteContent(state) {
+    const session = Store.getActiveSession();
+    const behavior = Store.getActiveBehavior();
 
-        return `
+    return `
             <div class="insights-section-label">SESSION OVERVIEW</div>
             <div class="insights-grid">
                 <div class="insights-elite-card">
@@ -275,7 +291,7 @@ export const Insights = {
                 </div>
                 <div class="insights-elite-card">
                     <div class="insights-elite-card-title">Behavior Profile</div>
-                    <div class="insights-elite-card-value">${behavior.profile || 'Disciplined'}</div>
+                    <div class="insights-elite-card-value">${behavior.profile || "Disciplined"}</div>
                     <div class="insights-elite-card-desc">Your current trading behavior classification.</div>
                 </div>
             </div>
@@ -296,5 +312,5 @@ export const Insights = {
                 </div>
             </div>
         `;
-    }
+  },
 };

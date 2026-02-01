@@ -1,4 +1,4 @@
-import { IDS } from './ids.js';
+import { IDS } from "./ids.js";
 
 export const PNL_HUD_CSS = `
 #${IDS.pnlHud} {

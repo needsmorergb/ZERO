@@ -1,9 +1,9 @@
-import { Store } from '../store.js';
-import { OverlayManager } from './overlay.js';
-import { Analytics, EVENT_CATEGORIES } from '../core/analytics.js';
-import { FeatureManager } from '../featureManager.js';
-import { Paywall } from './paywall.js';
-import { ICONS } from './icons.js';
+import { Store } from "../store.js";
+import { OverlayManager } from "./overlay.js";
+import { Analytics, EVENT_CATEGORIES } from "../core/analytics.js";
+import { FeatureManager } from "../featureManager.js";
+import { Paywall } from "./paywall.js";
+import { ICONS } from "./icons.js";
 
 export const SESSION_REPLAY_CSS = `
 .replay-overlay {
@@ -320,58 +320,58 @@ export const SESSION_REPLAY_CSS = `
 `;
 
 export const SessionReplay = {
-    isOpen: false,
-    activeFilters: ['TRADE', 'ALERT', 'DISCIPLINE', 'MILESTONE'],
+  isOpen: false,
+  activeFilters: ["TRADE", "ALERT", "DISCIPLINE", "MILESTONE"],
 
-    open() {
-        this.isOpen = true;
-        this.render();
-    },
+  open() {
+    this.isOpen = true;
+    this.render();
+  },
 
-    close() {
-        this.isOpen = false;
-        const overlay = OverlayManager.getShadowRoot().querySelector('.replay-overlay');
-        if (overlay) overlay.remove();
-    },
+  close() {
+    this.isOpen = false;
+    const overlay = OverlayManager.getShadowRoot().querySelector(".replay-overlay");
+    if (overlay) overlay.remove();
+  },
 
-    toggle() {
-        if (this.isOpen) this.close();
-        else this.open();
-    },
+  toggle() {
+    if (this.isOpen) this.close();
+    else this.open();
+  },
 
-    render() {
-        const root = OverlayManager.getShadowRoot();
-        let overlay = root.querySelector('.replay-overlay');
+  render() {
+    const root = OverlayManager.getShadowRoot();
+    let overlay = root.querySelector(".replay-overlay");
 
-        if (!overlay) {
-            overlay = document.createElement('div');
-            overlay.className = 'replay-overlay';
+    if (!overlay) {
+      overlay = document.createElement("div");
+      overlay.className = "replay-overlay";
 
-            // Inject styles
-            if (!root.getElementById('replay-styles')) {
-                const style = document.createElement('style');
-                style.id = 'replay-styles';
-                style.textContent = SESSION_REPLAY_CSS;
-                root.appendChild(style);
-            }
+      // Inject styles
+      if (!root.getElementById("replay-styles")) {
+        const style = document.createElement("style");
+        style.id = "replay-styles";
+        style.textContent = SESSION_REPLAY_CSS;
+        root.appendChild(style);
+      }
 
-            root.appendChild(overlay);
-        }
+      root.appendChild(overlay);
+    }
 
-        const state = Store.state;
-        const flags = FeatureManager.resolveFlags(state, 'SESSION_REPLAY');
-        const eventStats = Analytics.getEventStats(state);
-        const session = Store.getActiveSession();
+    const state = Store.state;
+    const flags = FeatureManager.resolveFlags(state, "SESSION_REPLAY");
+    const eventStats = Analytics.getEventStats(state);
+    const session = Store.getActiveSession();
 
-        if (flags.gated) {
-            overlay.innerHTML = this.renderLockedState();
-            this.bindLockedEvents(overlay);
-            return;
-        }
+    if (flags.gated) {
+      overlay.innerHTML = this.renderLockedState();
+      this.bindLockedEvents(overlay);
+      return;
+    }
 
-        const events = this.getFilteredEvents(state);
+    const events = this.getFilteredEvents(state);
 
-        overlay.innerHTML = `
+    overlay.innerHTML = `
             <div class="replay-modal">
                 <div class="replay-header">
                     <div class="replay-title">
@@ -384,7 +384,7 @@ export const SessionReplay = {
                 <div class="replay-stats">
                     <div class="replay-stat">
                         <div class="k">Session ID</div>
-                        <div class="v" style="font-size:11px; color:#a78bfa;">${session.id ? session.id.split('_')[1] : '--'}</div>
+                        <div class="v" style="font-size:11px; color:#a78bfa;">${session.id ? session.id.split("_")[1] : "--"}</div>
                     </div>
                     <div class="replay-stat">
                         <div class="k">Duration</div>
@@ -409,16 +409,16 @@ export const SessionReplay = {
                 </div>
 
                 <div class="replay-filters">
-                    <button class="filter-btn trade ${this.activeFilters.includes('TRADE') ? 'active' : ''}" data-filter="TRADE">
+                    <button class="filter-btn trade ${this.activeFilters.includes("TRADE") ? "active" : ""}" data-filter="TRADE">
                         Trades (${eventStats.trades})
                     </button>
-                    <button class="filter-btn alert ${this.activeFilters.includes('ALERT') ? 'active' : ''}" data-filter="ALERT">
+                    <button class="filter-btn alert ${this.activeFilters.includes("ALERT") ? "active" : ""}" data-filter="ALERT">
                         Alerts (${eventStats.alerts})
                     </button>
-                    <button class="filter-btn discipline ${this.activeFilters.includes('DISCIPLINE') ? 'active' : ''}" data-filter="DISCIPLINE">
+                    <button class="filter-btn discipline ${this.activeFilters.includes("DISCIPLINE") ? "active" : ""}" data-filter="DISCIPLINE">
                         Discipline (${eventStats.disciplineEvents})
                     </button>
-                    <button class="filter-btn milestone ${this.activeFilters.includes('MILESTONE') ? 'active' : ''}" data-filter="MILESTONE">
+                    <button class="filter-btn milestone ${this.activeFilters.includes("MILESTONE") ? "active" : ""}" data-filter="MILESTONE">
                         Milestones (${eventStats.milestones})
                     </button>
                 </div>
@@ -436,11 +436,11 @@ export const SessionReplay = {
             </div>
         `;
 
-        this.bindEvents(overlay);
-    },
+    this.bindEvents(overlay);
+  },
 
-    renderLockedState() {
-        return `
+  renderLockedState() {
+    return `
             <div class="replay-modal">
                 <div class="replay-header">
                     <div class="replay-title">
@@ -457,116 +457,129 @@ export const SessionReplay = {
                 </div>
             </div>
         `;
-    },
+  },
 
-    renderEmpty() {
-        return `
+  renderEmpty() {
+    return `
             <div class="timeline-empty">
                 ${ICONS.TARGET}
                 <div style="font-size:14px; font-weight:600; margin-bottom:4px;">No events yet</div>
                 <div style="font-size:12px;">Start trading to build your session timeline</div>
             </div>
         `;
-    },
+  },
 
-    renderEvents(events) {
-        return events.map(event => {
-            const time = new Date(event.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-            const category = event.category.toLowerCase();
-            const icon = this.getEventIcon(event.category);
-            const dataTags = this.renderEventData(event);
+  renderEvents(events) {
+    return events
+      .map((event) => {
+        const time = new Date(event.ts).toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        });
+        const category = event.category.toLowerCase();
+        const icon = this.getEventIcon(event.category);
+        const dataTags = this.renderEventData(event);
 
-            return `
+        return `
                 <div class="timeline-event">
                     <div class="event-time">${time}</div>
                     <div class="event-icon ${category}">${icon}</div>
                     <div class="event-content">
                         <div class="event-type ${category}">${event.type}</div>
                         <div class="event-message">${event.message}</div>
-                        ${dataTags ? `<div class="event-data">${dataTags}</div>` : ''}
+                        ${dataTags ? `<div class="event-data">${dataTags}</div>` : ""}
                     </div>
                 </div>
             `;
-        }).join('');
-    },
+      })
+      .join("");
+  },
 
-    renderEventData(event) {
-        const data = event.data || {};
-        const tags = [];
+  renderEventData(event) {
+    const data = event.data || {};
+    const tags = [];
 
-        if (data.symbol) tags.push(`<span class="event-tag">${data.symbol}</span>`);
-        if (data.strategy) tags.push(`<span class="event-tag">${data.strategy}</span>`);
-        if (data.realizedPnlSol !== undefined && data.realizedPnlSol !== null) {
-            const pnl = data.realizedPnlSol;
-            const cls = pnl >= 0 ? 'win' : 'loss';
-            tags.push(`<span class="event-tag ${cls}">${pnl >= 0 ? '+' : ''}${pnl.toFixed(4)} SOL</span>`);
-        }
-        if (data.penalty) tags.push(`<span class="event-tag">-${data.penalty} pts</span>`);
-        if (data.winStreak) tags.push(`<span class="event-tag win">${data.winStreak}W Streak</span>`);
-        if (data.tradeCount) tags.push(`<span class="event-tag">${data.tradeCount} trades</span>`);
-
-        return tags.join('');
-    },
-
-    getEventIcon(category) {
-        switch (category) {
-            case 'TRADE': return ICONS.TARGET;
-            case 'ALERT': return ICONS.TILT;
-            case 'DISCIPLINE': return ICONS.BRAIN;
-            case 'MILESTONE': return ICONS.WIN;
-            default: return ICONS.ZERO;
-        }
-    },
-
-    getFilteredEvents(state) {
-        const allEvents = Analytics.getEventLog(state, { limit: 100 });
-        return allEvents.filter(e => this.activeFilters.includes(e.category));
-    },
-
-    toggleFilter(category) {
-        const idx = this.activeFilters.indexOf(category);
-        if (idx > -1) {
-            this.activeFilters.splice(idx, 1);
-        } else {
-            this.activeFilters.push(category);
-        }
-        this.render();
-    },
-
-    bindEvents(overlay) {
-        const closeBtn = overlay.querySelector('.replay-close');
-        if (closeBtn) {
-            closeBtn.onclick = () => this.close();
-        }
-
-        overlay.onclick = (e) => {
-            if (e.target === overlay) this.close();
-        };
-
-        overlay.querySelectorAll('.filter-btn').forEach(btn => {
-            btn.onclick = () => {
-                const filter = btn.getAttribute('data-filter');
-                this.toggleFilter(filter);
-            };
-        });
-    },
-
-    bindLockedEvents(overlay) {
-        const closeBtn = overlay.querySelector('.replay-close');
-        if (closeBtn) {
-            closeBtn.onclick = () => this.close();
-        }
-
-        const unlockBtn = overlay.querySelector('.unlock-btn');
-        if (unlockBtn) {
-            unlockBtn.onclick = () => {
-                this.close();
-                Paywall.showUpgradeModal('SESSION_REPLAY');
-            };
-        }
-
-        overlay.onclick = (e) => {
-            if (e.target === overlay) this.close();
-        };
+    if (data.symbol) tags.push(`<span class="event-tag">${data.symbol}</span>`);
+    if (data.strategy) tags.push(`<span class="event-tag">${data.strategy}</span>`);
+    if (data.realizedPnlSol !== undefined && data.realizedPnlSol !== null) {
+      const pnl = data.realizedPnlSol;
+      const cls = pnl >= 0 ? "win" : "loss";
+      tags.push(
+        `<span class="event-tag ${cls}">${pnl >= 0 ? "+" : ""}${pnl.toFixed(4)} SOL</span>`
+      );
     }
+    if (data.penalty) tags.push(`<span class="event-tag">-${data.penalty} pts</span>`);
+    if (data.winStreak) tags.push(`<span class="event-tag win">${data.winStreak}W Streak</span>`);
+    if (data.tradeCount) tags.push(`<span class="event-tag">${data.tradeCount} trades</span>`);
+
+    return tags.join("");
+  },
+
+  getEventIcon(category) {
+    switch (category) {
+      case "TRADE":
+        return ICONS.TARGET;
+      case "ALERT":
+        return ICONS.TILT;
+      case "DISCIPLINE":
+        return ICONS.BRAIN;
+      case "MILESTONE":
+        return ICONS.WIN;
+      default:
+        return ICONS.ZERO;
+    }
+  },
+
+  getFilteredEvents(state) {
+    const allEvents = Analytics.getEventLog(state, { limit: 100 });
+    return allEvents.filter((e) => this.activeFilters.includes(e.category));
+  },
+
+  toggleFilter(category) {
+    const idx = this.activeFilters.indexOf(category);
+    if (idx > -1) {
+      this.activeFilters.splice(idx, 1);
+    } else {
+      this.activeFilters.push(category);
+    }
+    this.render();
+  },
+
+  bindEvents(overlay) {
+    const closeBtn = overlay.querySelector(".replay-close");
+    if (closeBtn) {
+      closeBtn.onclick = () => this.close();
+    }
+
+    overlay.onclick = (e) => {
+      if (e.target === overlay) this.close();
+    };
+
+    overlay.querySelectorAll(".filter-btn").forEach((btn) => {
+      btn.onclick = () => {
+        const filter = btn.getAttribute("data-filter");
+        this.toggleFilter(filter);
+      };
+    });
+  },
+
+  bindLockedEvents(overlay) {
+    const closeBtn = overlay.querySelector(".replay-close");
+    if (closeBtn) {
+      closeBtn.onclick = () => this.close();
+    }
+
+    const unlockBtn = overlay.querySelector(".unlock-btn");
+    if (unlockBtn) {
+      unlockBtn.onclick = () => {
+        this.close();
+        Paywall.showUpgradeModal("SESSION_REPLAY");
+      };
+    }
+
+    overlay.onclick = (e) => {
+      if (e.target === overlay) this.close();
+    };
+  },
 };

@@ -1,102 +1,107 @@
-import { IDS, CSS } from './styles.js';
+import { IDS, CSS } from "./styles.js";
 
 export const OverlayManager = {
-    shadowHost: null,
-    shadowRoot: null,
-    initialized: false,
+  shadowHost: null,
+  shadowRoot: null,
+  initialized: false,
 
-    platformName: null,
+  platformName: null,
 
-    init(platformName) {
-        if (this.initialized) return;
-        if (!document.documentElement && !document.body) {
-            document.addEventListener('DOMContentLoaded', () => this.init(platformName), { once: true });
-            return;
-        }
+  init(platformName) {
+    if (this.initialized) return;
+    if (!document.documentElement && !document.body) {
+      document.addEventListener("DOMContentLoaded", () => this.init(platformName), { once: true });
+      return;
+    }
 
-        this.initialized = true;
-        this.platformName = platformName;
-        console.log(`[ZERØ] OverlayManager.init() called with platform: "${platformName}"`);
+    this.initialized = true;
+    this.platformName = platformName;
+    console.log(`[ZERØ] OverlayManager.init() called with platform: "${platformName}"`);
 
-        try { this.createShadowRoot(); } catch (e) {
-            console.warn('[ZERØ] Shadow root creation failed:', e);
-        }
+    try {
+      this.createShadowRoot();
+    } catch (e) {
+      console.warn("[ZERØ] Shadow root creation failed:", e);
+    }
 
-        try { this.injectStyles(); } catch (e) {
-            console.warn('[ZERØ] Style injection failed:', e);
-        }
-    },
+    try {
+      this.injectStyles();
+    } catch (e) {
+      console.warn("[ZERØ] Style injection failed:", e);
+    }
+  },
 
+  getShadowRoot() {
+    if (this.shadowRoot && this.shadowHost && this.shadowHost.isConnected) {
+      return this.shadowRoot;
+    }
+    return this.createShadowRoot();
+  },
 
+  getContainer() {
+    const root = this.getShadowRoot();
+    return root.getElementById("paper-shadow-container") || root;
+  },
 
-    getShadowRoot() {
-        if (this.shadowRoot && this.shadowHost && this.shadowHost.isConnected) {
-            return this.shadowRoot;
-        }
-        return this.createShadowRoot();
-    },
+  createShadowRoot() {
+    const existingHost = document.querySelector("paper-trader-host");
+    if (existingHost?.shadowRoot) {
+      this.shadowHost = existingHost;
+      this.shadowRoot = existingHost.shadowRoot;
+      return this.shadowRoot;
+    }
 
-    getContainer() {
-        const root = this.getShadowRoot();
-        return root.getElementById('paper-shadow-container') || root;
-    },
+    const mountTarget = document.documentElement || document.body;
+    if (!mountTarget) {
+      throw new Error("No documentElement/body available for overlay mount");
+    }
 
-    createShadowRoot() {
-        const existingHost = document.querySelector('paper-trader-host');
-        if (existingHost?.shadowRoot) {
-            this.shadowHost = existingHost;
-            this.shadowRoot = existingHost.shadowRoot;
-            return this.shadowRoot;
-        }
+    this.shadowHost = document.createElement("paper-trader-host");
+    this.shadowHost.style.cssText =
+      "position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 2147483647; pointer-events: none;";
 
-        const mountTarget = document.documentElement || document.body;
-        if (!mountTarget) {
-            throw new Error('No documentElement/body available for overlay mount');
-        }
+    try {
+      this.shadowRoot = this.shadowHost.attachShadow({ mode: "open" });
 
-        this.shadowHost = document.createElement('paper-trader-host');
-        this.shadowHost.style.cssText = 'position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 2147483647; pointer-events: none;';
+      const container = document.createElement("div");
+      container.id = "paper-shadow-container";
+      container.style.cssText =
+        "position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 2147483647;";
 
-        try {
-            this.shadowRoot = this.shadowHost.attachShadow({ mode: 'open' });
+      this.shadowRoot.appendChild(container);
+      mountTarget.appendChild(this.shadowHost);
 
-            const container = document.createElement('div');
-            container.id = 'paper-shadow-container';
-            container.style.cssText = 'position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 2147483647;';
+      return this.shadowRoot;
+    } catch (e) {
+      console.warn("[ZERØ] Shadow DOM unavailable, using DOM fallback", e);
+      const container = document.createElement("div");
+      container.id = "paper-shadow-container";
+      container.style.cssText =
+        "position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 2147483647;";
+      mountTarget.appendChild(container);
+      this.shadowHost = container;
+      this.shadowRoot = document;
+      return this.shadowRoot;
+    }
+  },
 
-            this.shadowRoot.appendChild(container);
-            mountTarget.appendChild(this.shadowHost);
+  injectStyles() {
+    const root = this.getShadowRoot();
+    if (root.getElementById(IDS.style)) return;
 
-            return this.shadowRoot;
-        } catch (e) {
-            console.warn('[ZERØ] Shadow DOM unavailable, using DOM fallback', e);
-            const container = document.createElement('div');
-            container.id = 'paper-shadow-container';
-            container.style.cssText = 'position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 2147483647;';
-            mountTarget.appendChild(container);
-            this.shadowHost = container;
-            this.shadowRoot = document;
-            return this.shadowRoot;
-        }
-    },
+    const s = document.createElement("style");
+    s.id = IDS.style;
+    s.textContent = CSS;
+    root.appendChild(s);
+  },
 
-    injectStyles() {
-        const root = this.getShadowRoot();
-        if (root.getElementById(IDS.style)) return;
+  injectPadreOffset() {
+    const styleId = "paper-padre-offset-style";
+    if (document.getElementById(styleId)) return;
 
-        const s = document.createElement("style");
-        s.id = IDS.style;
-        s.textContent = CSS;
-        root.appendChild(s);
-    },
-
-    injectPadreOffset() {
-        const styleId = 'paper-padre-offset-style';
-        if (document.getElementById(styleId)) return;
-
-        const style = document.createElement('style');
-        style.id = styleId;
-        style.textContent = `
+    const style = document.createElement("style");
+    style.id = styleId;
+    style.textContent = `
           html, body {
             scroll-padding-top: 28px;
           }
@@ -113,6 +118,6 @@ export const OverlayManager = {
             top: 28px !important;
           }
         `;
-        document.head.appendChild(style);
-    }
+    document.head.appendChild(style);
+  },
 };

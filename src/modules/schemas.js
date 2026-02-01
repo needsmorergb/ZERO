@@ -7,13 +7,13 @@
 // UUID helper
 // ---------------------------------------------------------------------------
 export function uuid() {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
     return crypto.randomUUID();
   }
   // Fallback for environments without crypto.randomUUID
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0;
-    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+    return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
   });
 }
 
@@ -23,44 +23,44 @@ export function uuid() {
 
 /** @enum {string} */
 export const Platform = {
-  AXIOM: 'AXIOM',
-  PADRE: 'PADRE',
-  UNKNOWN: 'UNKNOWN',
+  AXIOM: "AXIOM",
+  PADRE: "PADRE",
+  UNKNOWN: "UNKNOWN",
 };
 
 /** @enum {string} */
 export const TradeSide = {
-  BUY: 'BUY',
-  SELL: 'SELL',
+  BUY: "BUY",
+  SELL: "SELL",
 };
 
 /** @enum {string} */
 export const TradeType = {
-  PAPER: 'PAPER',
-  REAL_SHADOW: 'REAL_SHADOW',
+  PAPER: "PAPER",
+  REAL_SHADOW: "REAL_SHADOW",
 };
 
 /** @enum {string} */
 export const QuoteCurrency = {
-  SOL: 'SOL',
-  USD: 'USD',
-  UNKNOWN: 'UNKNOWN',
+  SOL: "SOL",
+  USD: "USD",
+  UNKNOWN: "UNKNOWN",
 };
 
 /** @enum {string} */
 export const EventType = {
-  SESSION_STARTED: 'SESSION_STARTED',
-  SESSION_ENDED: 'SESSION_ENDED',
-  TRADE_OPENED: 'TRADE_OPENED',
-  TRADE_CLOSED: 'TRADE_CLOSED',
-  PLAN_SET: 'PLAN_SET',
-  STRATEGY_SET: 'STRATEGY_SET',
-  EMOTION_SET: 'EMOTION_SET',
-  UI_LOCKED_FEATURE_CLICKED: 'UI_LOCKED_FEATURE_CLICKED',
-  UPLOAD_PACKET_ENQUEUED: 'UPLOAD_PACKET_ENQUEUED',
-  UPLOAD_SENT: 'UPLOAD_SENT',
-  UPLOAD_FAILED: 'UPLOAD_FAILED',
-  ERROR: 'ERROR',
+  SESSION_STARTED: "SESSION_STARTED",
+  SESSION_ENDED: "SESSION_ENDED",
+  TRADE_OPENED: "TRADE_OPENED",
+  TRADE_CLOSED: "TRADE_CLOSED",
+  PLAN_SET: "PLAN_SET",
+  STRATEGY_SET: "STRATEGY_SET",
+  EMOTION_SET: "EMOTION_SET",
+  UI_LOCKED_FEATURE_CLICKED: "UI_LOCKED_FEATURE_CLICKED",
+  UPLOAD_PACKET_ENQUEUED: "UPLOAD_PACKET_ENQUEUED",
+  UPLOAD_SENT: "UPLOAD_SENT",
+  UPLOAD_FAILED: "UPLOAD_FAILED",
+  ERROR: "ERROR",
 };
 
 // ---------------------------------------------------------------------------
@@ -107,9 +107,9 @@ export const EventType = {
 export function createTrade(overrides = {}) {
   return {
     tradeId: uuid(),
-    sessionId: '',
+    sessionId: "",
     platform: Platform.UNKNOWN,
-    token: { address: '', symbol: '', name: '' },
+    token: { address: "", symbol: "", name: "" },
     side: TradeSide.BUY,
     entryPrice: 0,
     exitPrice: undefined,

@@ -1,4 +1,4 @@
-import { IDS } from './ids.js';
+import { IDS } from "./ids.js";
 
 export const BUY_HUD_CSS = `
 #${IDS.buyHud} {
