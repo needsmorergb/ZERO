@@ -4,8 +4,12 @@ compatibility_date = "2024-12-01"
 
 # Feature flags — set TWITTER154_ENABLED="true" and add secret via:
 #   wrangler secret put TWITTER154_API_KEY
+# Whop integration — set product IDs and add secret via:
+#   wrangler secret put WHOP_API_KEY
 [vars]
 TWITTER154_ENABLED = "true"
+WHOP_PRODUCT_ID_ELITE = "prod_MV6E6MyAvkrXl"
+WHOP_PRODUCT_ID_FOUNDERS = "prod_tyyX0AEmzOZON"
 
 # KV namespace for handle rename tracking
 # Create with: wrangler kv:namespace create HANDLE_TRACKING
@@ -13,3 +17,10 @@ TWITTER154_ENABLED = "true"
 [[kv_namespaces]]
 binding = "HANDLE_TRACKING"
 id = "fa0f017ce8164bc381c93b316d9b1b28"
+
+# KV namespace for license validation caching
+# Create with: wrangler kv:namespace create LICENSE_CACHE
+# Then replace the id below with the returned namespace ID
+[[kv_namespaces]]
+binding = "LICENSE_CACHE"
+id = "35c09f2708da4b35b168e6cfdbe33437"

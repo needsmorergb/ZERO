@@ -48,7 +48,7 @@ function corsHeaders(request) {
     const origin = request.headers.get('Origin') || '*';
     return {
         'Access-Control-Allow-Origin': origin,
-        'Access-Control-Allow-Methods': 'GET, OPTIONS',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type, X-Zero-Client-Id, X-Zero-Version',
         'Access-Control-Max-Age': '86400',
     };
@@ -1252,6 +1252,173 @@ function parseXHandle(url) {
 }
 
 // ---------------------------------------------------------------------------
+// Whop Membership Verification
+// ---------------------------------------------------------------------------
+
+const WHOP_API_BASE = 'https://api.whop.com/api/v1';
+
+/**
+ * SHA-256 hash a string and return hex.
+ * @param {string} str
+ * @returns {Promise<string>}
+ */
+async function sha256Hex(str) {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+    return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Rate-limit check via KV. Returns true if request should be blocked.
+ * @param {string} ip
+ * @param {object} env
+ * @returns {Promise<boolean>}
+ */
+async function isRateLimited(ip, env) {
+    if (!env?.LICENSE_CACHE) return false;
+    const key = `ratelimit:${ip}`;
+    try {
+        const val = await env.LICENSE_CACHE.get(key, { type: 'json' });
+        if (val && val.count >= 10) return true;
+        const count = (val?.count || 0) + 1;
+        await env.LICENSE_CACHE.put(key, JSON.stringify({ count }), { expirationTtl: 3600 });
+        return false;
+    } catch (_) {
+        return false;
+    }
+}
+
+/**
+ * Determine plan type from Whop membership response.
+ * @param {object} membership - Whop membership object
+ * @param {string} productId - Which product ID matched
+ * @param {object} env
+ * @returns {string} 'monthly' | 'annual' | 'founders'
+ */
+function derivePlan(membership, productId, env) {
+    if (productId === env.WHOP_PRODUCT_ID_FOUNDERS) return 'founders';
+    // Distinguish monthly vs annual by renewal period length
+    if (membership.renewal_period_start && membership.renewal_period_end) {
+        const start = new Date(membership.renewal_period_start).getTime();
+        const end = new Date(membership.renewal_period_end).getTime();
+        const daysInPeriod = (end - start) / (86400 * 1000);
+        if (daysInPeriod > 60) return 'annual';
+    }
+    return 'monthly';
+}
+
+/**
+ * Handle POST /verify-membership
+ * @param {Request} request
+ * @param {object} env
+ * @returns {Promise<Response>}
+ */
+async function handleVerifyMembership(request, env) {
+    // Validate env
+    if (!env.WHOP_API_KEY) {
+        return json({ ok: false, error: 'server_misconfigured' }, 500);
+    }
+
+    // Rate limit by IP
+    const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+    if (await isRateLimited(ip, env)) {
+        return json({ ok: false, error: 'rate_limited' }, 429);
+    }
+
+    // Parse body
+    let body;
+    try {
+        body = await request.json();
+    } catch (_) {
+        return json({ ok: false, error: 'invalid_json' }, 400);
+    }
+
+    const { licenseKey } = body;
+    if (!licenseKey || typeof licenseKey !== 'string' || licenseKey.length < 4) {
+        return json({ ok: false, error: 'invalid_key' }, 400);
+    }
+
+    // Check KV cache first
+    const cacheKey = `license:${await sha256Hex(licenseKey)}`;
+    if (env.LICENSE_CACHE) {
+        try {
+            const cached = await env.LICENSE_CACHE.get(cacheKey, { type: 'json' });
+            if (cached && cached.cachedAt && (Date.now() - cached.cachedAt) < 86400000) {
+                console.log('[Whop] Returning cached license validation');
+                return json({ ok: true, membership: cached.membership, cachedAt: cached.cachedAt, fromCache: true });
+            }
+        } catch (_) { /* cache miss */ }
+    }
+
+    // Call Whop API: GET /memberships/{licenseKey}
+    try {
+        const res = await fetchWithTimeout(
+            `${WHOP_API_BASE}/memberships/${encodeURIComponent(licenseKey)}`,
+            {
+                headers: {
+                    'Authorization': `Bearer ${env.WHOP_API_KEY}`,
+                    'Accept': 'application/json',
+                },
+            },
+            8000
+        );
+
+        if (res.status === 404) {
+            return json({ ok: false, error: 'invalid_key' }, 404);
+        }
+
+        if (res.status === 429) {
+            return json({ ok: false, error: 'whop_rate_limited' }, 429);
+        }
+
+        if (!res.ok) {
+            console.warn(`[Whop] API returned ${res.status}`);
+            return json({ ok: false, error: 'verification_failed' }, 502);
+        }
+
+        const data = await res.json();
+
+        // Validate product ID matches one of our products
+        const memberProductId = data.product?.id || null;
+        const validProductIds = [
+            env.WHOP_PRODUCT_ID_ELITE,
+            env.WHOP_PRODUCT_ID_FOUNDERS,
+        ].filter(Boolean);
+
+        if (!memberProductId || !validProductIds.includes(memberProductId)) {
+            console.warn(`[Whop] Product ID mismatch: ${memberProductId}`);
+            return json({ ok: false, error: 'invalid_product' }, 403);
+        }
+
+        // Check membership status
+        const isValid = data.status === 'active' || data.status === 'trialing';
+        const plan = derivePlan(data, memberProductId, env);
+
+        const membership = {
+            valid: isValid,
+            status: data.status,
+            plan,
+            tier: isValid ? 'elite' : 'free',
+            expiresAt: plan === 'founders' ? null : (data.renewal_period_end || null),
+        };
+
+        // Cache in KV (24h TTL)
+        if (env.LICENSE_CACHE) {
+            try {
+                await env.LICENSE_CACHE.put(cacheKey, JSON.stringify({
+                    membership,
+                    cachedAt: Date.now(),
+                }), { expirationTtl: 86400 });
+            } catch (_) { /* non-critical */ }
+        }
+
+        return json({ ok: true, membership, cachedAt: Date.now(), fromCache: false });
+    } catch (e) {
+        console.error('[Whop] Verification error:', e?.message || e);
+        return json({ ok: false, error: 'service_unavailable' }, 503);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Route: /context
 // ---------------------------------------------------------------------------
 
@@ -1323,6 +1490,12 @@ export default {
         // Context
         if (path === '/context' && request.method === 'GET') {
             const response = await handleContext(request, env);
+            return withCors(response, request);
+        }
+
+        // Verify Membership (Whop)
+        if (path === '/verify-membership' && request.method === 'POST') {
+            const response = await handleVerifyMembership(request, env);
             return withCors(response, request);
         }
 

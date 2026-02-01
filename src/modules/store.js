@@ -1,6 +1,6 @@
 // Build-time dev override — flip to false before shipping.
 // Baked into the bundle as a literal; cannot be changed from the console.
-const DEV_FORCE_ELITE = true;
+const DEV_FORCE_ELITE = false;
 
 export const EXT_KEY = "sol_paper_trader_v1";
 
@@ -28,7 +28,17 @@ const DEFAULTS = {
         // Onboarding State
         onboardingSeen: false,
         onboardingVersion: null,
-        onboardingCompletedAt: null
+        onboardingCompletedAt: null,
+
+        // License / Whop Membership
+        license: {
+            key: null,            // Whop license key (mem_xxx or license string)
+            valid: false,         // Last known validation result
+            lastVerified: null,   // Timestamp (ms) of last successful verification
+            expiresAt: null,      // ISO string or null (founders = lifetime)
+            status: 'none',       // 'none' | 'active' | 'expired' | 'cancelled' | 'error'
+            plan: null,           // 'monthly' | 'annual' | 'founders'
+        }
     },
     // Session as first-class object
     session: {
@@ -254,9 +264,24 @@ export const Store = {
                 this.state.settings.tier = 'free';
             }
 
-            // Build-time Elite override for dev testing
+            // Build-time Elite override for dev testing (highest priority)
             if (DEV_FORCE_ELITE) {
                 this.state.settings.tier = 'elite';
+            }
+            // License-based tier derivation (72h grace period)
+            else if (this.state.settings.license?.valid && this.state.settings.license?.lastVerified) {
+                const GRACE_MS = 72 * 60 * 60 * 1000; // 72 hours
+                const elapsed = Date.now() - this.state.settings.license.lastVerified;
+                if (elapsed < GRACE_MS) {
+                    this.state.settings.tier = 'elite';
+                } else {
+                    // Grace period expired — revert to free
+                    this.state.settings.tier = 'free';
+                    this.state.settings.license.valid = false;
+                    this.state.settings.license.status = 'expired';
+                }
+            } else {
+                this.state.settings.tier = 'free';
             }
 
             // Migrate old ENTRY/EXIT side values to BUY/SELL
