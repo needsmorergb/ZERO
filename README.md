@@ -1,13 +1,15 @@
-# Solana Paper Trader Overlay
+# ZERØ — Solana Paper Trading
 
-A Chrome extension that provides paper trading functionality for Solana spot trading on Axiom and Terminal (Padre) platforms.
+A Chrome extension that provides zero-risk paper trading, real trade observation, and market context analysis for Solana on Axiom and Terminal (Padre) platforms.
 
 ## Features
 
-- 📊 **Paper Trading Overlay**: Simulated trading without risking real funds
-- 💰 **Real-time Price Tracking**: Monitors SOL/USD prices from multiple sources (Coinbase, Kraken)
-- 🎯 **Multi-Platform Support**: Works with Axiom and Terminal (Padre)
-- 🔒 **Safe**: Your real wallet is never touched by this extension
+- **Paper Trading Overlay**: Simulated trading without risking real funds
+- **Shadow Mode**: Observe and analyze real trades with behavioral coaching
+- **Market Context**: Trust scoring with X account enrichment, community detection, and developer history
+- **Real-time Price Tracking**: Monitors SOL/USD prices from multiple sources (Coinbase, Kraken)
+- **Multi-Platform Support**: Works with Axiom and Terminal (Padre)
+- **Safe**: Your real wallet is never touched by this extension
 
 ## Installation
 
@@ -17,63 +19,96 @@ A Chrome extension that provides paper trading functionality for Solana spot tra
 2. Open Chrome and navigate to `chrome://extensions/`
 3. Enable "Developer mode" in the top right
 4. Click "Load unpacked"
-5. Select the `sol-paper-ext` directory
+5. Select the project directory
 
 ## Usage
 
-1. Click the extension icon in your browser toolbar
+1. Click the ZERØ extension icon in your browser toolbar
 2. Choose either "Launch Axiom" or "Launch Terminal" to open the trading platform
 3. The extension will automatically activate on supported platforms
-4. Look for the "Paper mode active" badge in the bottom-right corner
+4. Use the HUD controls to switch between Paper, Analysis, and Shadow modes
 
 ## Architecture
 
 ### Directory Structure
 
 ```
-sol-paper-ext/
-├── assets/              # Extension icons and logos
+├── assets/                  # Extension icons and mode SVGs
 ├── src/
-│   ├── background.js    # Service worker for price fetching
-│   ├── content.js       # Content script entry point
-│   ├── content.bundle.js # Bundled content script
-│   ├── page-bridge.js   # Page context bridge for API hooking
-│   ├── inject/          # Injection utilities
-│   │   ├── bridge.js    # Message bridge setup
-│   │   └── ws_hook.js   # WebSocket hooking
-│   ├── popup/           # Extension popup UI
-│   │   ├── popup.html
-│   │   ├── popup.css
-│   │   └── popup.js
-│   ├── terminals/       # Platform-specific adapters
-│   │   ├── adapters.js
-│   │   ├── axiom.js
-│   │   └── padre.js
-│   └── ui/              # UI components
-│       └── overlay.js   # Badge overlay
-└── manifest.json        # Extension manifest
+│   ├── background.js        # Service worker for price fetching and proxy
+│   ├── content.bundle.axiom.js  # Bundled content script (Axiom)
+│   ├── content.bundle.padre.js  # Bundled content script (Padre)
+│   ├── bridge.bundle.axiom.js   # Page-context bridge (Axiom)
+│   ├── bridge.bundle.padre.js   # Page-context bridge (Padre)
+│   ├── modules/
+│   │   ├── core/
+│   │   │   ├── analytics.js         # Trade analytics, discipline scoring, behavioral detection
+│   │   │   ├── market.js            # Market state (price, mcap, mint tracking)
+│   │   │   ├── narrative-trust.js   # Trust scoring orchestrator
+│   │   │   ├── order-execution.js   # Buy/sell execution with WAC PnL
+│   │   │   ├── pnl-calculator.js    # PnL computation
+│   │   │   ├── token-market-data.js # Token data aggregation
+│   │   │   └── trade-notes.js       # Session trade notes
+│   │   ├── ui/
+│   │   │   ├── shadow-hud.js        # Shadow Mode HUD (Market Context, Strategy, Notes)
+│   │   │   ├── shadow-hud-styles.js # Shadow HUD styles
+│   │   │   ├── hud.js               # Main trading HUD
+│   │   │   ├── settings-panel.js    # Settings panel
+│   │   │   └── ...                  # Icons, styles, overlay, professor
+│   │   ├── store.js             # Chrome storage persistence
+│   │   ├── featureManager.js    # Feature flags and tier gating
+│   │   └── mode-manager.js      # Paper / Analysis / Shadow mode switching
+│   ├── services/
+│   │   ├── context/
+│   │   │   ├── client.js        # Context API client (api.get-zero.xyz)
+│   │   │   ├── view-model.js    # Status-aware VM builder for UI
+│   │   │   └── statusText.js    # FieldStatus → display string mapping
+│   │   ├── socialx/
+│   │   │   ├── observed-adapter.js  # X handle parsing from page
+│   │   │   └── types.js             # FieldStatus enum
+│   │   └── providers/           # DexScreener, Helius adapters
+│   ├── platforms/               # Platform boot and bridge scripts
+│   │   ├── axiom/
+│   │   └── padre/
+│   └── popup/                   # Extension popup UI
+│       ├── popup.html
+│       ├── popup.css
+│       └── popup.js
+├── worker-context/              # Cloudflare Worker: Context API
+│   ├── src/index.js             # X enrichment (twitter154), KV rename tracking
+│   └── wrangler.toml
+├── worker/                      # Cloudflare Worker: Diagnostics
+└── manifest.json
 ```
 
 ### How It Works
 
 1. **Background Service Worker** (`background.js`)
    - Fetches SOL/USD prices from Coinbase and Kraken APIs
-   - Caches prices for 5 minutes
-   - Provides price data to content scripts on demand
+   - Proxies requests to external APIs (DexScreener, Context API)
+   - Caches prices and provides data to content scripts on demand
 
-2. **Content Script** (`content.js`)
-   - Detects which trading platform is active (Axiom or Padre)
-   - Injects the page bridge script
-   - Displays the "Paper mode active" badge
+2. **Content Scripts** (`content.bundle.axiom.js`, `content.bundle.padre.js`)
+   - Detect which trading platform is active
+   - Mount the ZERØ HUD overlay
+   - Track market state (price, mcap, mint) in real time
 
-3. **Page Bridge** (`page-bridge.js`)
-   - Runs in the page context (not isolated extension context)
-   - Hooks into fetch, XMLHttpRequest, and WebSocket APIs
-   - Intercepts price updates and relays them to the content script
+3. **Market Context** (`narrative-trust.js` → `shadow-hud.js`)
+   - Fetches context from the ZERØ Context API for the current token
+   - Resolves X account via page observation
+   - Builds a trust score from weighted signals (X presence, account age, communities, developer history)
+   - Caps score to 70 when missing account age or CA proof
 
-4. **Platform Adapters** (`terminals/`)
-   - Platform-specific logic for extracting token information
-   - Currently supports Axiom with Padre support planned
+4. **Context API Worker** (`worker-context/`)
+   - Enriches tokens with twitter154 data (account age, followers, CA mentions)
+   - Tracks X handle renames via Cloudflare KV
+   - Detects X Communities from linked URLs
+   - Returns structured `ContextResponseV1` with status-aware fields
+
+5. **Platform Bridges** (`bridge.bundle.*.js`)
+   - Run in the page context (not isolated extension context)
+   - Hook into fetch, XMLHttpRequest, and WebSocket APIs
+   - Intercept price updates and relay them to the content script
 
 ## Configuration
 
@@ -90,53 +125,58 @@ const CONFIG = {
 };
 ```
 
+### Context API Worker
+
+The Context API worker requires:
+- A RapidAPI key for twitter154 (set via `wrangler secret put TWITTER154_API_KEY`)
+- A Cloudflare KV namespace for handle rename tracking
+
+See `worker-context/wrangler.toml` for configuration.
+
 ## Development
 
 ### Building
 
-The extension uses ES6 modules. The `content.bundle.js` file is a bundled version of the content script and its dependencies.
-
-To rebuild the bundle, you'll need a bundler like Rollup or esbuild. Example with esbuild:
+ZERØ uses esbuild to bundle content scripts per platform:
 
 ```bash
-npm install -g esbuild
-esbuild src/content.js --bundle --outfile=src/content.bundle.js --format=iife
+npm run build
+```
+
+This builds both Axiom and Padre bundles. To build individually:
+
+```bash
+npm run build:axiom
+npm run build:padre
 ```
 
 ### Adding a New Platform
 
-1. Create a new adapter file in `src/terminals/`
-2. Implement the adapter interface:
-   ```javascript
-   export const myPlatformAdapter = {
-     name: "Platform Name",
-     getCurrentMint() { /* ... */ },
-     findMainBuyButton() { /* ... */ },
-     findQuickBuyAmountButtons() { /* ... */ }
-   };
-   ```
-3. Register it in `src/terminals/adapters.js`
-4. Add the platform URL to `manifest.json` permissions
+1. Create a new directory in `src/platforms/`
+2. Implement boot and bridge scripts following the Axiom/Padre pattern
+3. Add content script entries to `manifest.json`
+4. Add the platform URL to `host_permissions`
 
-## Security & Privacy
+## Security and Privacy
 
-- ✅ All trading is simulated - no real transactions are made
-- ✅ Your wallet private keys are never accessed
-- ✅ Only monitors public price data from exchanges
-- ✅ No data is sent to external servers (except public price APIs)
+- All paper trading is simulated — no real transactions are made
+- Your wallet private keys are never accessed
+- Only monitors public price data from exchanges
+- Market context data is fetched from the ZERØ API (api.get-zero.xyz)
+- X enrichment data is processed server-side and cached
 
 ## Permissions
 
 The extension requires the following permissions:
 
-- `storage`: To cache price data and settings
+- `storage`: To persist settings, positions, and trade history
 - `alarms`: To schedule periodic price updates
 - `tabs`: To open trading platforms from the popup
-- `host_permissions`: To inject scripts on Axiom and Terminal platforms
+- `host_permissions`: To inject scripts on Axiom and Terminal, and fetch from price/context APIs
 
 ## Support
 
-For questions or issues, visit get-zero.xyz or follow @get_zero_xyz on X.
+For questions or issues, visit [get-zero.xyz](https://get-zero.xyz) or follow [@get_zero_xyz](https://x.com/get_zero_xyz) on X.
 
 ## License
 
@@ -144,4 +184,4 @@ This is a personal/educational project. Use at your own risk.
 
 ## Disclaimer
 
-**IMPORTANT**: This extension is for paper trading (simulation) only. It does not execute real trades. Always verify any trading decisions independently. The developers are not responsible for any financial losses.
+**IMPORTANT**: ZERØ is for paper trading (simulation) and trade observation only. It does not execute real trades or interact with your wallet. Always verify any trading decisions independently. The developers are not responsible for any financial losses.
