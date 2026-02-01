@@ -17,7 +17,9 @@
       "Bash(CLOUDFLARE_API_TOKEN=ayGi7K2S50DAMsZtdM641G8ay25hj4veJ5lAy1Hm npx wrangler secret put:*)",
       "Bash(CLOUDFLARE_API_TOKEN=yDvu_v9kusCFafdNhe60eNgVP6MnkhkThmuOcgCo npx wrangler secret put:*)",
       "Bash(npx wrangler whoami)",
-      "Bash(git commit -m \"$\\(cat <<''EOF''\nchore: Add wrangler secret management permissions to Claude settings\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nchore: Add wrangler secret management permissions to Claude settings\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(npx wrangler deploy)",
+      "Bash(git commit:*)"
     ],
     "additionalDirectories": [
       "D:\\apaul\\Documents\\sol-paper-ext-beta\\src"
