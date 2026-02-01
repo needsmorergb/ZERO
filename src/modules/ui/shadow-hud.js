@@ -349,7 +349,14 @@ export const ShadowHud = {
         if (!d) return '';
         return `
             ${this._field('Deployer', d.knownLaunches)}
-            ${this._field('Recent (30d)', d.recentLaunches)}
+            ${this._field('Mint Auth', d.mintAuthority)}
+            ${this._field('Freeze Auth', d.freezeAuthority)}
+            ${this._field('Metadata', d.metadataMutable)}
+            ${this._field('Dev Holdings', d.devHoldings)}
+            ${this._field('Dev SOL', d.deployerBalance)}
+            ${this._field('Wallet Age', d.deployerAge)}
+            ${this._field('Dev Tokens', d.recentLaunches)}
+            ${this._field('Recent (7d)', d.recentMints7d)}
             ${this._field('Mint Age', d.historicalSummary)}
         `;
     },

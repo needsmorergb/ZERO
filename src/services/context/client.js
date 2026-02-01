@@ -32,7 +32,7 @@ const STORAGE_PREFIX = 'zero_ctx_';
  * @property {{ website?: { url: string|null, status: FieldStatus }, x?: { url: string|null, status: FieldStatus } }} links
  * @property {{ profile: { url: string|null, handle: string|null, status: FieldStatus, accountAgeDays?: number|null, followerCount?: number|null, verified?: boolean|null, caMentionCount?: number|null, displayName?: string|null, renameCount?: number|null, enrichmentStatus?: FieldStatus }, communities: { items: Array<{ name: string, url: string, memberCount?: number|null, activityLevel?: string, evidence?: string[] }>, status: FieldStatus, lastFetched: string|null } }} [x]
  * @property {{ url: string|null, domain: string|null, title: string|null, metaDescription: string|null, domainAgeDays?: number|null, statusCode?: number|null, tls?: boolean|null, redirects?: number|null, lastFetched: string|null, status: FieldStatus }} website
- * @property {{ mintAgeDays?: number|null, deployer?: string|null, deployerMints30d?: number|null, status: FieldStatus, lastFetched: string|null }} dev
+ * @property {{ mintAgeDays?: number|null, deployer?: string|null, deployerMints30d?: number|null, mintAuthority?: string|null, freezeAuthority?: string|null, metadataMutable?: boolean|null, devHoldingsPct?: number|null, deployerBalanceSol?: number|null, deployerAgeDays?: number|null, recentMints7d?: number|null, status: FieldStatus, lastFetched: string|null }} dev
  * @property {string} fetchedAt
  */
 
@@ -194,6 +194,13 @@ function _emptyResponse(ca) {
             mintAgeDays: null,
             deployer: null,
             deployerMints30d: null,
+            mintAuthority: undefined,
+            freezeAuthority: undefined,
+            metadataMutable: null,
+            devHoldingsPct: null,
+            deployerBalanceSol: null,
+            deployerAgeDays: null,
+            recentMints7d: null,
             status: FIELD_STATUS.NOT_SUPPORTED,
             lastFetched: null
         },

@@ -9385,6 +9385,13 @@ canvas#equity-canvas {
         mintAgeDays: null,
         deployer: null,
         deployerMints30d: null,
+        mintAuthority: void 0,
+        freezeAuthority: void 0,
+        metadataMutable: null,
+        devHoldingsPct: null,
+        deployerBalanceSol: null,
+        deployerAgeDays: null,
+        recentMints7d: null,
         status: FIELD_STATUS.NOT_SUPPORTED,
         lastFetched: null
       },
@@ -9642,21 +9649,90 @@ canvas#equity-canvas {
   function _buildDeveloperVM(context) {
     const dev = context?.dev;
     const devStatus = dev?.status || FIELD_STATUS.NOT_SUPPORTED;
+    const nullFallback = devStatus === FIELD_STATUS.OK ? "Unknown" : statusToText(devStatus);
+    const nullStatus = devStatus === FIELD_STATUS.OK ? FIELD_STATUS.NOT_SUPPORTED : devStatus;
+    let mintAuthField;
+    if (dev?.mintAuthority === null) {
+      mintAuthField = field(null, "Revoked", FIELD_STATUS.OK);
+    } else if (typeof dev?.mintAuthority === "string") {
+      mintAuthField = field(dev.mintAuthority, `Active \u2014 ${truncateAddress(dev.mintAuthority)}`, FIELD_STATUS.OK);
+    } else {
+      mintAuthField = field(null, nullFallback, nullStatus);
+    }
+    let freezeAuthField;
+    if (dev?.freezeAuthority === null) {
+      freezeAuthField = field(null, "Revoked", FIELD_STATUS.OK);
+    } else if (typeof dev?.freezeAuthority === "string") {
+      freezeAuthField = field(dev.freezeAuthority, `Active \u2014 ${truncateAddress(dev.freezeAuthority)}`, FIELD_STATUS.OK);
+    } else {
+      freezeAuthField = field(null, nullFallback, nullStatus);
+    }
+    let metadataField;
+    if (dev?.metadataMutable === false) {
+      metadataField = field(false, "Immutable", FIELD_STATUS.OK);
+    } else if (dev?.metadataMutable === true) {
+      metadataField = field(true, "Mutable", FIELD_STATUS.OK);
+    } else {
+      metadataField = field(null, nullFallback, nullStatus);
+    }
+    let devHoldingsField;
+    if (dev?.devHoldingsPct != null) {
+      const pct = dev.devHoldingsPct;
+      const display = pct < 0.01 ? "< 0.01%" : pct < 1 ? `${pct.toFixed(2)}%` : `${pct.toFixed(1)}%`;
+      devHoldingsField = field(pct, display, FIELD_STATUS.OK);
+    } else {
+      devHoldingsField = field(null, nullFallback, nullStatus);
+    }
+    let deployerBalanceField;
+    if (dev?.deployerBalanceSol != null) {
+      const sol = dev.deployerBalanceSol;
+      const display = sol < 0.01 ? "< 0.01 SOL" : `${sol.toFixed(2)} SOL`;
+      deployerBalanceField = field(sol, display, FIELD_STATUS.OK);
+    } else {
+      deployerBalanceField = field(null, nullFallback, nullStatus);
+    }
+    let deployerAgeField;
+    if (dev?.deployerAgeDays != null) {
+      const days = dev.deployerAgeDays;
+      const display = days >= 365 ? `${(days / 365).toFixed(1)} years` : days === 0 ? "< 1 day" : `${days} days`;
+      deployerAgeField = field(days, display, FIELD_STATUS.OK);
+    } else {
+      deployerAgeField = field(null, nullFallback, nullStatus);
+    }
+    let recentMints7dField;
+    if (dev?.recentMints7d != null) {
+      const cnt = dev.recentMints7d;
+      recentMints7dField = field(cnt, `${cnt} token${cnt !== 1 ? "s" : ""} in 7d`, FIELD_STATUS.OK);
+    } else {
+      recentMints7dField = field(null, nullFallback, nullStatus);
+    }
     return {
+      // Identity
       knownLaunches: field(
         dev?.deployer || null,
-        dev?.deployer ? truncateAddress(dev.deployer) : statusToText(devStatus),
-        dev?.deployer ? FIELD_STATUS.OK : devStatus
+        dev?.deployer ? truncateAddress(dev.deployer) : nullFallback,
+        dev?.deployer ? FIELD_STATUS.OK : nullStatus
       ),
+      // Tier 1: Authority signals
+      mintAuthority: mintAuthField,
+      freezeAuthority: freezeAuthField,
+      metadataMutable: metadataField,
+      // Tier 1b: Holdings
+      devHoldings: devHoldingsField,
+      // Tier 2: Deployer context
+      deployerBalance: deployerBalanceField,
+      deployerAge: deployerAgeField,
+      // History
       recentLaunches: field(
         dev?.deployerMints30d ?? null,
-        dev?.deployerMints30d != null ? `${dev.deployerMints30d} mints` : statusToText(devStatus),
-        dev?.deployerMints30d != null ? FIELD_STATUS.OK : devStatus
+        dev?.deployerMints30d != null ? `${formatCount(dev.deployerMints30d)} tokens` : nullFallback,
+        dev?.deployerMints30d != null ? FIELD_STATUS.OK : nullStatus
       ),
+      recentMints7d: recentMints7dField,
       historicalSummary: field(
         dev?.mintAgeDays ?? null,
-        dev?.mintAgeDays != null ? `Token created ${dev.mintAgeDays} days ago` : statusToText(devStatus),
-        dev?.mintAgeDays != null ? FIELD_STATUS.OK : devStatus
+        dev?.mintAgeDays != null ? `Token created ${dev.mintAgeDays} days ago` : nullFallback,
+        dev?.mintAgeDays != null ? FIELD_STATUS.OK : nullStatus
       )
     };
   }
@@ -9893,6 +9969,30 @@ canvas#equity-canvas {
           weight: 5,
           available: enriched && context?.x?.profile?.renameCount != null,
           passes: (context?.x?.profile?.renameCount || 0) < 3
+        },
+        // Dev: Mint authority revoked (strongest rug protection signal)
+        {
+          weight: 15,
+          available: context?.dev?.status === FIELD_STATUS.OK && context?.dev?.mintAuthority !== void 0,
+          passes: context?.dev?.mintAuthority === null
+        },
+        // Dev: Freeze authority revoked
+        {
+          weight: 10,
+          available: context?.dev?.status === FIELD_STATUS.OK && context?.dev?.freezeAuthority !== void 0,
+          passes: context?.dev?.freezeAuthority === null
+        },
+        // Dev: Metadata immutable
+        {
+          weight: 5,
+          available: context?.dev?.status === FIELD_STATUS.OK && context?.dev?.metadataMutable != null,
+          passes: context?.dev?.metadataMutable === false
+        },
+        // Dev: Dev holdings < 10% of supply
+        {
+          weight: 10,
+          available: context?.dev?.status === FIELD_STATUS.OK && context?.dev?.devHoldingsPct != null,
+          passes: (context?.dev?.devHoldingsPct ?? 100) < 10
         }
       ];
       rules.forEach((rule) => {
@@ -10326,7 +10426,14 @@ canvas#equity-canvas {
         return "";
       return `
             ${this._field("Deployer", d.knownLaunches)}
-            ${this._field("Recent (30d)", d.recentLaunches)}
+            ${this._field("Mint Auth", d.mintAuthority)}
+            ${this._field("Freeze Auth", d.freezeAuthority)}
+            ${this._field("Metadata", d.metadataMutable)}
+            ${this._field("Dev Holdings", d.devHoldings)}
+            ${this._field("Dev SOL", d.deployerBalance)}
+            ${this._field("Wallet Age", d.deployerAge)}
+            ${this._field("Dev Tokens", d.recentLaunches)}
+            ${this._field("Recent (7d)", d.recentMints7d)}
             ${this._field("Mint Age", d.historicalSummary)}
         `;
     },

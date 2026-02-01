@@ -88,13 +88,22 @@ async function fetchWithTimeout(url, opts = {}, timeoutMs = FETCH_TIMEOUT_MS) {
  * Fetch deployer and mint age information via Helius.
  * @param {string} ca - Token mint address
  * @param {object} env
- * @returns {Promise<{ mintAgeDays: number|null, deployer: string|null, deployerMints30d: number|null, status: string }>}
+ * @returns {Promise<{ mintAgeDays: number|null, deployer: string|null, deployerMints30d: number|null, mintAuthority: string|null|undefined, freezeAuthority: string|null|undefined, metadataMutable: boolean|null, devHoldingsPct: number|null, deployerBalanceSol: number|null, deployerAgeDays: number|null, recentMints7d: number|null, status: string }>}
  */
 async function fetchDevEnrichment(ca, env) {
     const result = {
         mintAgeDays: null,
         deployer: null,
         deployerMints30d: null,
+        // Tier 1: Authority signals (extracted from getAsset, no extra calls)
+        mintAuthority: undefined,      // null = revoked, string = active, undefined = not fetched
+        freezeAuthority: undefined,    // null = revoked, string = active, undefined = not fetched
+        metadataMutable: null,         // true = mutable, false = immutable, null = unknown
+        // Tier 1b + 2: Deployer-dependent signals (parallel calls after deployer resolved)
+        devHoldingsPct: null,          // Deployer's % of total supply
+        deployerBalanceSol: null,      // Deployer wallet SOL balance
+        deployerAgeDays: null,         // Age of deployer wallet
+        recentMints7d: null,           // Tokens created by deployer in last 7 days
         status: STATUS.NOT_SUPPORTED,
     };
 
@@ -120,6 +129,8 @@ async function fetchDevEnrichment(ca, env) {
 
         let createdAt = null;
         let creator = null;
+        let tokenSupply = null;  // raw supply (integer string)
+        let tokenDecimals = null;
 
         if (assetRes.ok) {
             const assetData = await assetRes.json();
@@ -141,9 +152,27 @@ async function fetchDevEnrichment(ca, env) {
                 creator = asset.ownership.owner;
             }
 
+            // Tier 1: Extract authority signals from token_info
+            const tokenInfo = asset?.token_info;
+            if (tokenInfo) {
+                // mint_authority: null means revoked (safe), string means active (risk)
+                result.mintAuthority = tokenInfo.mint_authority ?? null;
+                result.freezeAuthority = tokenInfo.freeze_authority ?? null;
+                tokenSupply = tokenInfo.supply;
+                tokenDecimals = tokenInfo.decimals;
+            }
+
+            // Metadata mutability: false = immutable (safe), true = mutable (risk)
+            if (asset?.mutable !== undefined) {
+                result.metadataMutable = asset.mutable;
+            }
+
             console.log(`[DevEnrichment] DAS Asset data for ${ca.slice(0, 8)}:`, {
                 hasCreatedAt: !!createdAt,
-                hasCreator: !!creator
+                hasCreator: !!creator,
+                mintAuth: result.mintAuthority === null ? 'revoked' : result.mintAuthority ? 'active' : 'unknown',
+                freezeAuth: result.freezeAuthority === null ? 'revoked' : result.freezeAuthority ? 'active' : 'unknown',
+                mutable: result.metadataMutable
             });
         }
 
@@ -162,16 +191,26 @@ async function fetchDevEnrichment(ca, env) {
 
             if (mintRes.ok) {
                 const mintData = await mintRes.json();
-                const mintAuthority = mintData?.result?.value?.data?.parsed?.info?.mintAuthority;
+                const parsedInfo = mintData?.result?.value?.data?.parsed?.info;
+                const mintAuthority = parsedInfo?.mintAuthority;
                 if (mintAuthority) {
                     creator = mintAuthority;
+                }
+                // Backfill authority signals if DAS didn't provide token_info
+                if (result.mintAuthority === undefined && parsedInfo) {
+                    result.mintAuthority = parsedInfo.mintAuthority ?? null;
+                    result.freezeAuthority = parsedInfo.freezeAuthority ?? null;
+                }
+                // Backfill supply if not from DAS
+                if (tokenSupply == null && parsedInfo?.supply) {
+                    tokenSupply = parsedInfo.supply;
+                    tokenDecimals = parsedInfo.decimals;
                 }
             }
         }
 
-        result.deployer = creator;
-
         // 3. Get mint creation timestamp by paginating backwards through signatures
+        let creationSig = null;
         if (!createdAt) {
             let oldestBlockTime = null;
             let beforeSig = null;
@@ -211,6 +250,7 @@ async function fetchDevEnrichment(ca, env) {
                 // If we got fewer than 1000 signatures, we've reached the token creation
                 if (signatures.length < 1000) {
                     foundCreation = true;
+                    creationSig = batchOldest.signature;
                     createdAt = oldestBlockTime * 1000;
                     console.log(`[DevEnrichment] Found token creation for ${ca.slice(0, 8)} at ${new Date(createdAt).toISOString()}`);
                     break;
@@ -224,15 +264,134 @@ async function fetchDevEnrichment(ca, env) {
             }
         }
 
+        // 4. If deployer still unknown, extract fee payer from creation tx
+        //    (handles pump.fun tokens where DAS creators and mint authority are empty/revoked)
+        if (!creator && creationSig) {
+            try {
+                const txRes = await fetchWithTimeout(rpcUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        jsonrpc: '2.0',
+                        id: 'zero-creation-tx',
+                        method: 'getTransaction',
+                        params: [creationSig, { maxSupportedTransactionVersion: 0, encoding: 'json' }]
+                    })
+                }, 5000);
+
+                if (txRes.ok) {
+                    const txData = await txRes.json();
+                    const msg = txData?.result?.transaction?.message;
+                    const accountKeys = msg?.accountKeys || msg?.staticAccountKeys || [];
+                    if (accountKeys.length > 0) {
+                        // First account key is the fee payer (deployer)
+                        const key = accountKeys[0];
+                        creator = typeof key === 'string' ? key : key?.pubkey;
+                        console.log(`[DevEnrichment] Deployer from creation tx for ${ca.slice(0, 8)}: ${creator?.slice(0, 8)}`);
+                    }
+                }
+            } catch (e) {
+                console.warn(`[DevEnrichment] Could not fetch creation tx: ${e?.message}`);
+            }
+        }
+
+        result.deployer = creator;
+
         // Calculate mint age from creation timestamp
         if (createdAt) {
             const ageMs = Date.now() - createdAt;
             result.mintAgeDays = Math.floor(ageMs / (86400 * 1000));
         }
 
-        // 5. Skip deployer mints counting for now (requires complex transaction parsing)
-        // Future enhancement: Count TOKEN_MINT or Token Program Initialize instructions
-        // from the deployer in the last 30 days
+        // 5. Parallel fan-out: fetch all deployer-dependent signals at once
+        if (creator) {
+            const rpcCall = (id, method, params) => fetchWithTimeout(rpcUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ jsonrpc: '2.0', id, method, params })
+            }, 5000).then(r => r.ok ? r.json() : null).catch(() => null);
+
+            const [creatorAssetsData, devTokenData, deployerInfoData, deployerSigsData] = await Promise.all([
+                // (a) getAssetsByCreator — total count + recent 20 for 7-day filter
+                rpcCall('zero-deployer-creations', 'getAssetsByCreator', {
+                    creatorAddress: creator,
+                    onlyVerified: false,
+                    page: 1,
+                    limit: 20,
+                    sortBy: 'created',
+                    sortDirection: 'desc'
+                }),
+                // (b) getTokenAccounts — deployer's holdings of this token
+                rpcCall('zero-dev-holdings', 'getTokenAccounts', {
+                    mint: ca,
+                    owner: creator,
+                    limit: 1
+                }),
+                // (c) getAccountInfo — deployer wallet SOL balance
+                rpcCall('zero-deployer-info', 'getAccountInfo', [creator, { encoding: 'jsonParsed' }]),
+                // (d) getSignaturesForAddress — deployer wallet age (oldest tx)
+                rpcCall('zero-deployer-sigs', 'getSignaturesForAddress', [creator, { limit: 1000 }])
+            ]);
+
+            // (a) Process creator assets: total count + 7-day count
+            if (creatorAssetsData?.result) {
+                const total = creatorAssetsData.result.total;
+                if (total != null) {
+                    result.deployerMints30d = total;
+                }
+                // Count assets created in last 7 days
+                const sevenDaysAgo = Date.now() - (7 * 86400 * 1000);
+                const items = creatorAssetsData.result.items || [];
+                let recent7d = 0;
+                for (const item of items) {
+                    const created = item?.content?.metadata?.created_at;
+                    if (created && new Date(created).getTime() > sevenDaysAgo) {
+                        recent7d++;
+                    }
+                }
+                result.recentMints7d = recent7d;
+                console.log(`[DevEnrichment] Deployer ${creator.slice(0, 8)}: ${total} total, ${recent7d} in 7d`);
+            }
+
+            // (b) Process dev token holdings
+            if (devTokenData?.result && tokenSupply) {
+                const accounts = devTokenData.result.token_accounts || [];
+                if (accounts.length > 0) {
+                    const devBalance = Number(accounts[0]?.amount || 0);
+                    const supply = Number(tokenSupply);
+                    if (supply > 0) {
+                        result.devHoldingsPct = Number(((devBalance / supply) * 100).toFixed(2));
+                    }
+                } else {
+                    // Deployer has no token account for this mint — 0%
+                    result.devHoldingsPct = 0;
+                }
+            }
+
+            // (c) Process deployer wallet SOL balance
+            if (deployerInfoData?.result?.value) {
+                const lamports = deployerInfoData.result.value.lamports;
+                if (lamports != null) {
+                    result.deployerBalanceSol = Number((lamports / 1e9).toFixed(4));
+                }
+            }
+
+            // (d) Process deployer wallet age from oldest signature
+            if (deployerSigsData?.result) {
+                const sigs = deployerSigsData.result;
+                if (sigs.length > 0) {
+                    const oldest = sigs[sigs.length - 1];
+                    if (oldest?.blockTime) {
+                        const walletAgeMs = Date.now() - (oldest.blockTime * 1000);
+                        result.deployerAgeDays = Math.floor(walletAgeMs / (86400 * 1000));
+                        // If we got 1000 results, this is a lower bound (wallet is at least this old)
+                        if (sigs.length >= 1000) {
+                            console.log(`[DevEnrichment] Deployer wallet age ≥ ${result.deployerAgeDays} days (high-activity wallet)`);
+                        }
+                    }
+                }
+            }
+        }
 
         // Mark as OK if we successfully queried the token (even if data is limited)
         result.status = STATUS.OK;
@@ -240,7 +399,13 @@ async function fetchDevEnrichment(ca, env) {
             mintAgeDays: result.mintAgeDays,
             deployer: result.deployer?.slice(0, 8) || 'null',
             deployerMints30d: result.deployerMints30d,
-            note: result.mintAgeDays === null ? '(age unknown - high volume token)' : ''
+            mintAuth: result.mintAuthority === null ? 'revoked' : result.mintAuthority === undefined ? 'unknown' : 'active',
+            freezeAuth: result.freezeAuthority === null ? 'revoked' : result.freezeAuthority === undefined ? 'unknown' : 'active',
+            mutable: result.metadataMutable,
+            devHoldingsPct: result.devHoldingsPct,
+            deployerBalanceSol: result.deployerBalanceSol,
+            deployerAgeDays: result.deployerAgeDays,
+            recentMints7d: result.recentMints7d
         });
 
         return result;
@@ -1223,6 +1388,15 @@ async function buildContext(ca, env) {
             mintAgeDays: devEnrichment.mintAgeDays,
             deployer: devEnrichment.deployer,
             deployerMints30d: devEnrichment.deployerMints30d,
+            // Tier 1: Authority signals
+            mintAuthority: devEnrichment.mintAuthority,
+            freezeAuthority: devEnrichment.freezeAuthority,
+            metadataMutable: devEnrichment.metadataMutable,
+            // Tier 1b + 2: Deployer-dependent signals
+            devHoldingsPct: devEnrichment.devHoldingsPct,
+            deployerBalanceSol: devEnrichment.deployerBalanceSol,
+            deployerAgeDays: devEnrichment.deployerAgeDays,
+            recentMints7d: devEnrichment.recentMints7d,
             status: devEnrichment.status,
             lastFetched: devEnrichment.status === STATUS.OK ? new Date().toISOString() : null,
         },

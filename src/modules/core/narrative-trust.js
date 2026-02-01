@@ -300,6 +300,30 @@ export const NarrativeTrust = {
                 weight: 5,
                 available: enriched && context?.x?.profile?.renameCount != null,
                 passes: (context?.x?.profile?.renameCount || 0) < 3
+            },
+            // Dev: Mint authority revoked (strongest rug protection signal)
+            {
+                weight: 15,
+                available: context?.dev?.status === FIELD_STATUS.OK && context?.dev?.mintAuthority !== undefined,
+                passes: context?.dev?.mintAuthority === null
+            },
+            // Dev: Freeze authority revoked
+            {
+                weight: 10,
+                available: context?.dev?.status === FIELD_STATUS.OK && context?.dev?.freezeAuthority !== undefined,
+                passes: context?.dev?.freezeAuthority === null
+            },
+            // Dev: Metadata immutable
+            {
+                weight: 5,
+                available: context?.dev?.status === FIELD_STATUS.OK && context?.dev?.metadataMutable != null,
+                passes: context?.dev?.metadataMutable === false
+            },
+            // Dev: Dev holdings < 10% of supply
+            {
+                weight: 10,
+                available: context?.dev?.status === FIELD_STATUS.OK && context?.dev?.devHoldingsPct != null,
+                passes: (context?.dev?.devHoldingsPct ?? 100) < 10
             }
         ];
 
