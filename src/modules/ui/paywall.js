@@ -96,8 +96,7 @@ export const Paywall = {
 
                 <div class="paywall-pricing" style="text-align:center; margin:16px 0 8px; font-size:12px; color:#94a3b8; line-height:1.6;">
                     <span style="color:#f8fafc; font-weight:600;">$19/mo</span> &middot;
-                    <span style="color:#f8fafc; font-weight:600;">$149/yr</span> &middot;
-                    <span style="color:#a78bfa; font-weight:600;">$299 Founders Lifetime</span>
+                    <span style="color:#f8fafc; font-weight:600;">$149/yr</span>
                 </div>
 
                 <div class="paywall-actions" style="display:flex; flex-direction:column; gap:8px;">
