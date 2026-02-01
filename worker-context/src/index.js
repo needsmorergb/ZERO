@@ -81,6 +81,340 @@ async function fetchWithTimeout(url, opts = {}, timeoutMs = FETCH_TIMEOUT_MS) {
 }
 
 // ---------------------------------------------------------------------------
+// Developer Enrichment (Helius)
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch deployer and mint age information via Helius.
+ * @param {string} ca - Token mint address
+ * @param {object} env
+ * @returns {Promise<{ mintAgeDays: number|null, deployer: string|null, deployerMints30d: number|null, status: string }>}
+ */
+async function fetchDevEnrichment(ca, env) {
+    const result = {
+        mintAgeDays: null,
+        deployer: null,
+        deployerMints30d: null,
+        status: STATUS.NOT_SUPPORTED,
+    };
+
+    if (!env.HELIUS_API_KEY) {
+        console.log('[DevEnrichment] Skipped - HELIUS_API_KEY not configured');
+        return result;
+    }
+
+    try {
+        const rpcUrl = `https://mainnet.helius-rpc.com/?api-key=${env.HELIUS_API_KEY}`;
+
+        // 1. Try Helius DAS getAsset first (may have creation time and creator info)
+        const assetRes = await fetchWithTimeout(rpcUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                jsonrpc: '2.0',
+                id: 'zero-asset',
+                method: 'getAsset',
+                params: { id: ca }
+            })
+        }, 5000);
+
+        let createdAt = null;
+        let creator = null;
+
+        if (assetRes.ok) {
+            const assetData = await assetRes.json();
+            const asset = assetData?.result;
+
+            // Check for creation timestamp
+            if (asset?.content?.metadata?.created_at) {
+                createdAt = asset.content.metadata.created_at;
+            }
+
+            // Check for creator info
+            if (asset?.creators && asset.creators.length > 0) {
+                // First creator is usually the deployer
+                creator = asset.creators[0].address;
+            }
+
+            // Also check ownership for creator
+            if (!creator && asset?.ownership?.owner) {
+                creator = asset.ownership.owner;
+            }
+
+            console.log(`[DevEnrichment] DAS Asset data for ${ca.slice(0, 8)}:`, {
+                hasCreatedAt: !!createdAt,
+                hasCreator: !!creator
+            });
+        }
+
+        // 2. Fallback: Get mint account info to extract mint authority
+        if (!creator) {
+            const mintRes = await fetchWithTimeout(rpcUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    jsonrpc: '2.0',
+                    id: 'zero-mint-info',
+                    method: 'getAccountInfo',
+                    params: [ca, { encoding: 'jsonParsed' }]
+                })
+            }, 5000);
+
+            if (mintRes.ok) {
+                const mintData = await mintRes.json();
+                const mintAuthority = mintData?.result?.value?.data?.parsed?.info?.mintAuthority;
+                if (mintAuthority) {
+                    creator = mintAuthority;
+                }
+            }
+        }
+
+        result.deployer = creator;
+
+        // 3. Get mint creation timestamp by paginating backwards through signatures
+        if (!createdAt) {
+            let oldestBlockTime = null;
+            let beforeSig = null;
+            let foundCreation = false;
+            const maxPages = 5; // Limit pagination to avoid rate limits (covers ~5000 tx)
+
+            for (let page = 0; page < maxPages; page++) {
+                const params = beforeSig
+                    ? [ca, { limit: 1000, before: beforeSig }]
+                    : [ca, { limit: 1000 }];
+
+                const sigsRes = await fetchWithTimeout(rpcUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        jsonrpc: '2.0',
+                        id: `zero-sigs-${page}`,
+                        method: 'getSignaturesForAddress',
+                        params: params
+                    })
+                }, 8000);
+
+                if (!sigsRes.ok) break;
+
+                const sigsData = await sigsRes.json();
+                const signatures = sigsData?.result || [];
+
+                if (signatures.length === 0) break; // No more signatures
+
+                // Get the oldest signature from this batch
+                const batchOldest = signatures[signatures.length - 1];
+                if (batchOldest?.blockTime) {
+                    oldestBlockTime = batchOldest.blockTime;
+                    beforeSig = batchOldest.signature;
+                }
+
+                // If we got fewer than 1000 signatures, we've reached the token creation
+                if (signatures.length < 1000) {
+                    foundCreation = true;
+                    createdAt = oldestBlockTime * 1000;
+                    console.log(`[DevEnrichment] Found token creation for ${ca.slice(0, 8)} at ${new Date(createdAt).toISOString()}`);
+                    break;
+                }
+            }
+
+            // If we didn't find creation (hit maxPages), don't guess - leave as null
+            if (!foundCreation && oldestBlockTime) {
+                console.log(`[DevEnrichment] Could not determine creation date for ${ca.slice(0, 8)} (high volume token)`);
+                // createdAt remains null
+            }
+        }
+
+        // Calculate mint age from creation timestamp
+        if (createdAt) {
+            const ageMs = Date.now() - createdAt;
+            result.mintAgeDays = Math.floor(ageMs / (86400 * 1000));
+        }
+
+        // 5. Skip deployer mints counting for now (requires complex transaction parsing)
+        // Future enhancement: Count TOKEN_MINT or Token Program Initialize instructions
+        // from the deployer in the last 30 days
+
+        // Mark as OK if we successfully queried the token (even if data is limited)
+        result.status = STATUS.OK;
+        console.log(`[DevEnrichment] Complete for ${ca.slice(0, 8)}:`, {
+            mintAgeDays: result.mintAgeDays,
+            deployer: result.deployer?.slice(0, 8) || 'null',
+            deployerMints30d: result.deployerMints30d,
+            note: result.mintAgeDays === null ? '(age unknown - high volume token)' : ''
+        });
+
+        return result;
+    } catch (e) {
+        console.warn('[DevEnrichment] Fetch failed:', e?.message || e);
+        return result;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// On-Chain Metadata Fetching (Fallback for DexScreener)
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch on-chain token metadata from Solana via Helius.
+ * Fallback for when DexScreener doesn't have socials.
+ * @param {string} ca - Token mint address
+ * @param {object} env
+ * @returns {Promise<{ xUrl: string|null, websiteUrl: string|null, communityUrls: string[] }>}
+ */
+async function fetchOnChainMetadata(ca, env) {
+    const result = { xUrl: null, websiteUrl: null, communityUrls: [] };
+
+    try {
+        // Try Helius DAS API first (if configured), otherwise use public RPC
+        const useHelius = !!env.HELIUS_API_KEY;
+        const rpcUrl = useHelius
+            ? `https://mainnet.helius-rpc.com/?api-key=${env.HELIUS_API_KEY}`
+            : 'https://api.mainnet-beta.solana.com';
+
+        if (useHelius) {
+            // Use Helius DAS API
+            const res = await fetchWithTimeout(rpcUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    jsonrpc: '2.0',
+                    id: 'zero-metadata',
+                    method: 'getAsset',
+                    params: { id: ca }
+                })
+            }, 5000);
+
+            if (!res.ok) return result;
+
+            const data = await res.json();
+            const content = data?.result?.content;
+            const metadata = content?.metadata;
+            const links = content?.links;
+            const jsonUri = content?.json_uri;
+
+            // Check links first (newer format)
+            if (links) {
+                // Skip community URLs in links.twitter - they'll be parsed separately
+                if (links.twitter && !links.twitter.includes('/communities/')) {
+                    result.xUrl = `https://twitter.com/${links.twitter.replace('@', '')}`;
+                }
+                if (links.external_url) result.websiteUrl = links.external_url;
+            }
+
+            // Fallback to metadata fields
+            if (metadata) {
+                const twitterField = metadata.twitter || metadata.x || metadata.social_twitter;
+                if (twitterField) {
+                    const isCommunityUrl = twitterField.includes('/communities/');
+                    if (isCommunityUrl) {
+                        // Add to community URLs list
+                        if (!result.communityUrls.includes(twitterField)) {
+                            result.communityUrls.push(twitterField);
+                        }
+                    } else if (!result.xUrl) {
+                        // Use as profile URL
+                        if (twitterField.includes('twitter.com') || twitterField.includes('x.com')) {
+                            result.xUrl = twitterField;
+                        } else {
+                            result.xUrl = `https://twitter.com/${twitterField.replace('@', '')}`;
+                        }
+                    }
+                }
+            }
+
+            if (!result.websiteUrl && metadata?.external_url) {
+                result.websiteUrl = metadata.external_url;
+            }
+
+            // If still no results and json_uri exists, fetch it
+            if ((!result.xUrl || !result.websiteUrl) && jsonUri) {
+                try {
+                    const jsonRes = await fetchWithTimeout(jsonUri, {}, 5000);
+                    if (jsonRes.ok) {
+                        const json = await jsonRes.json();
+
+                        // Check various fields in the external JSON
+                        const twitterField = json.twitter || json.x || json.social?.twitter || json.socials?.twitter;
+                        if (twitterField) {
+                            const isCommunityUrl = twitterField.includes('/communities/');
+                            if (isCommunityUrl) {
+                                // Add to community URLs list
+                                if (!result.communityUrls.includes(twitterField)) {
+                                    result.communityUrls.push(twitterField);
+                                }
+                            } else if (!result.xUrl) {
+                                // Use as profile URL
+                                if (twitterField.includes('twitter.com') || twitterField.includes('x.com')) {
+                                    result.xUrl = twitterField;
+                                } else {
+                                    result.xUrl = `https://twitter.com/${twitterField.replace('@', '')}`;
+                                }
+                            }
+                        }
+
+                        if (!result.websiteUrl) {
+                            result.websiteUrl = json.website || json.external_url || json.url;
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[OnChainMetadata] Failed to fetch json_uri:', e?.message);
+                }
+            }
+        } else {
+            // Use public RPC getAccountInfo to fetch metadata account
+            // First, derive the metadata PDA address
+            const metadataRes = await fetchWithTimeout(rpcUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    jsonrpc: '2.0',
+                    id: 'zero-metadata',
+                    method: 'getAccountInfo',
+                    params: [
+                        ca,
+                        { encoding: 'jsonParsed' }
+                    ]
+                })
+            }, 5000);
+
+            if (!metadataRes.ok) return result;
+
+            const accountData = await metadataRes.json();
+            const parsed = accountData?.result?.value?.data?.parsed;
+
+            if (parsed?.info?.extensions) {
+                // Token-2022 extensions may contain metadata
+                const metadata = parsed.info.extensions.find((ext) => ext.extension === 'metadata');
+                if (metadata) {
+                    const uri = metadata.state?.uri;
+                    if (uri) {
+                        // Fetch the metadata JSON from the URI
+                        try {
+                            const jsonRes = await fetchWithTimeout(uri, {}, 5000);
+                            if (jsonRes.ok) {
+                                const json = await jsonRes.json();
+                                if (json.twitter) result.xUrl = json.twitter;
+                                if (json.website) result.websiteUrl = json.website;
+                            }
+                        } catch (_) {
+                            // Ignore metadata fetch errors
+                        }
+                    }
+                }
+            }
+        }
+
+        if (result.xUrl || result.websiteUrl) {
+            console.log(`[OnChainMetadata] Fetched for ${ca.slice(0, 8)}:`, result);
+        }
+        return result;
+    } catch (e) {
+        console.warn('[OnChainMetadata] Fetch failed:', e?.message || e);
+        return result;
+    }
+}
+
+// ---------------------------------------------------------------------------
 // DexScreener
 // ---------------------------------------------------------------------------
 
@@ -648,8 +982,11 @@ async function fetchTwitter154WithCache(handle, ca, env) {
         return cached;
     }
 
+    console.log(`[Twitter154] Fetching fresh data for @${handle}, cached status:`, cached?.enrichmentStatus || 'none');
+
     // Fetch profile first (optimized: don't fetch tweets if profile fails)
     const profile = await fetchTwitter154Profile(handle, env);
+    console.log(`[Twitter154] Profile fetch result for @${handle}:`, profile?._error || 'success');
 
     // If rate limited, set cooldown and return
     if (profile?._error === STATUS.RATE_LIMITED) {
@@ -771,26 +1108,68 @@ async function buildContext(ca, env) {
     // 1. Fetch DexScreener data
     const dex = await fetchDexScreener(ca);
 
-    // 2. Fetch website metadata (Phase 1: always attempt if URL exists)
+    // 2. Fallback to on-chain metadata if DexScreener has no socials
+    let onChainCommunityUrls = [];
+    if (!dex.xUrl || !dex.websiteUrl) {
+        console.log(`[Context] DexScreener missing socials for ${ca.slice(0, 8)}, fetching on-chain metadata`);
+        const onChain = await fetchOnChainMetadata(ca, env);
+        if (!dex.xUrl && onChain.xUrl) {
+            dex.xUrl = onChain.xUrl;
+            console.log(`[Context] Using on-chain X URL: ${onChain.xUrl}`);
+        }
+        if (!dex.websiteUrl && onChain.websiteUrl) {
+            dex.websiteUrl = onChain.websiteUrl;
+            dex.websiteDomain = onChain.websiteUrl ? new URL(onChain.websiteUrl).hostname : null;
+            console.log(`[Context] Using on-chain website URL: ${onChain.websiteUrl}`);
+        }
+        if (onChain.communityUrls.length > 0) {
+            onChainCommunityUrls = onChain.communityUrls;
+            console.log(`[Context] Found ${onChainCommunityUrls.length} community URL(s) in on-chain metadata`);
+        }
+    }
+
+    // 3. Fetch website metadata (Phase 1: always attempt if URL exists)
     const websiteMeta = await fetchWebsiteMetadata(dex.websiteUrl);
 
-    // 3. Fetch X Communities from website (Phase 1: always attempt if URL exists)
-    const xCommunities = await fetchAndParseXCommunities(dex.websiteUrl);
+    // 4. Fetch X Communities from website (Phase 1: always attempt if URL exists)
+    let xCommunities = await fetchAndParseXCommunities(dex.websiteUrl);
 
-    // 4. Parse X handle
+    // 4b. Merge on-chain community URLs with parsed communities
+    if (onChainCommunityUrls.length > 0) {
+        const existingUrls = new Set(xCommunities.items.map(c => c.url));
+        for (const url of onChainCommunityUrls) {
+            if (!existingUrls.has(url)) {
+                xCommunities.items.push({
+                    name: 'X Community',
+                    url: url,
+                    memberCount: null,
+                    activityLevel: 'unknown',
+                    evidence: ['Found in on-chain metadata']
+                });
+            }
+        }
+        if (xCommunities.items.length > 0 && xCommunities.status === STATUS.MISSING_IDENTIFIER) {
+            xCommunities.status = STATUS.OK;
+        }
+    }
+
+    // 5. Parse X handle
     const handle = parseXHandle(dex.xUrl);
     const handleClean = handle ? handle.replace(/^@/, '') : null;
 
-    // 5. Twitter154 enrichment (feature-flagged, with caching and rate limit protection)
+    // 6. Twitter154 enrichment (feature-flagged, with caching and rate limit protection)
     const enrichment = await fetchTwitter154WithCache(handleClean, ca, env);
 
-    // 6. KV rename tracking (feature-flagged via KV binding presence)
+    // 7. KV rename tracking (feature-flagged via KV binding presence)
     let renameData = null;
     if (enrichment.userId && handleClean) {
         renameData = await trackHandleRename(enrichment.userId, handleClean, env);
     }
 
-    // 7. Build X profile
+    // 8. Dev enrichment (Helius)
+    const devEnrichment = await fetchDevEnrichment(ca, env);
+
+    // 9. Build X profile
     const xProfile = {
         url: dex.xUrl,
         handle: handle,
@@ -805,7 +1184,7 @@ async function buildContext(ca, env) {
         enrichmentStatus: enrichment.enrichmentStatus,
     };
 
-    // 8. Build full response
+    // 10. Build full response
     return {
         schemaVersion: SCHEMA_VERSION,
         token: {
@@ -841,11 +1220,11 @@ async function buildContext(ca, env) {
             status: websiteMeta.status,
         },
         dev: {
-            mintAgeDays: null,
-            deployer: null,
-            deployerMints30d: null,
-            status: STATUS.NOT_SUPPORTED,
-            lastFetched: null,
+            mintAgeDays: devEnrichment.mintAgeDays,
+            deployer: devEnrichment.deployer,
+            deployerMints30d: devEnrichment.deployerMints30d,
+            status: devEnrichment.status,
+            lastFetched: devEnrichment.status === STATUS.OK ? new Date().toISOString() : null,
         },
         fetchedAt: new Date().toISOString(),
     };
@@ -860,7 +1239,12 @@ function parseXHandle(url) {
     if (!url || typeof url !== 'string') return null;
     try {
         const cleaned = url.trim().replace(/\/+$/, '').split('?')[0].split('#')[0];
-        const match = cleaned.match(/(?:twitter\.com|x\.com)\/([A-Za-z0-9_]{1,15})$/i);
+
+        // Match both profile URLs and status/tweet URLs
+        // Profile: x.com/username or twitter.com/username
+        // Status: x.com/username/status/123456
+        // Other: x.com/username/with_replies, etc.
+        const match = cleaned.match(/(?:twitter\.com|x\.com)\/([A-Za-z0-9_]{1,15})(?:\/|$)/i);
         return match ? `@${match[1].toLowerCase()}` : null;
     } catch (_) {
         return null;

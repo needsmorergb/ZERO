@@ -3,6 +3,8 @@
  * Primary Source: Dexscreener API
  */
 
+import { proxyFetch } from '../../services/shared/proxy-fetch.js';
+
 export const TokenMarketDataService = {
     currentMint: null,
     pollInterval: null,
@@ -99,11 +101,7 @@ export const TokenMarketDataService = {
             if (this.dexHasData) {
                 const url = `https://api.dexscreener.com/latest/dex/tokens/${this.currentMint}`;
 
-                const response = await chrome.runtime.sendMessage({
-                    type: 'PROXY_FETCH',
-                    url: url,
-                    options: { method: 'GET' }
-                });
+                const response = await proxyFetch(url, { method: 'GET' });
 
                 if (response.ok && response.data?.pairs?.length > 0) {
                     const bestPair = response.data.pairs.sort((a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0))[0];
@@ -147,11 +145,7 @@ export const TokenMarketDataService = {
         try {
             // Jupiter v3 lite endpoint (free, no API key required)
             const jupUrl = `https://lite-api.jup.ag/price/v3?ids=${this.currentMint}`;
-            const jupResponse = await chrome.runtime.sendMessage({
-                type: 'PROXY_FETCH',
-                url: jupUrl,
-                options: { method: 'GET' }
-            });
+            const jupResponse = await proxyFetch(jupUrl, { method: 'GET' });
 
             // v3 response format: { "mint": { "usdPrice": number, ... } }
             if (jupResponse.ok && jupResponse.data?.[this.currentMint]) {

@@ -4510,6 +4510,26 @@ input:checked + .slider:before {
     }
   };
 
+  // src/services/shared/proxy-fetch.js
+  async function proxyFetch(url, options) {
+    try {
+      if (typeof chrome === "undefined" || !chrome.runtime?.sendMessage) {
+        return { ok: false, error: "Chrome runtime not available" };
+      }
+      return await chrome.runtime.sendMessage({
+        type: "PROXY_FETCH",
+        url,
+        options: options || { method: "GET" }
+      });
+    } catch (e) {
+      const msg = e?.message || "";
+      if (msg.includes("context invalidated") || msg.includes("Receiving end does not exist")) {
+        return { ok: false, error: "context_invalidated" };
+      }
+      return { ok: false, error: msg || "Proxy fetch failed" };
+    }
+  }
+
   // src/modules/core/token-market-data.js
   var TokenMarketDataService = {
     currentMint: null,
@@ -4588,11 +4608,7 @@ input:checked + .slider:before {
       try {
         if (this.dexHasData) {
           const url = `https://api.dexscreener.com/latest/dex/tokens/${this.currentMint}`;
-          const response = await chrome.runtime.sendMessage({
-            type: "PROXY_FETCH",
-            url,
-            options: { method: "GET" }
-          });
+          const response = await proxyFetch(url, { method: "GET" });
           if (response.ok && response.data?.pairs?.length > 0) {
             const bestPair = response.data.pairs.sort((a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0))[0];
             if (bestPair) {
@@ -4625,11 +4641,7 @@ input:checked + .slider:before {
         return;
       try {
         const jupUrl = `https://lite-api.jup.ag/price/v3?ids=${this.currentMint}`;
-        const jupResponse = await chrome.runtime.sendMessage({
-          type: "PROXY_FETCH",
-          url: jupUrl,
-          options: { method: "GET" }
-        });
+        const jupResponse = await proxyFetch(jupUrl, { method: "GET" });
         if (jupResponse.ok && jupResponse.data?.[this.currentMint]) {
           const jupData = jupResponse.data[this.currentMint];
           const price = parseFloat(jupData.usdPrice) || 0;
@@ -6348,11 +6360,7 @@ input:checked + .slider:before {
       console.log("[PNL] Fetching SOL Price (Kraken + Coinbase)...");
       const fetchKraken = async () => {
         try {
-          const res = await chrome.runtime.sendMessage({
-            type: "PROXY_FETCH",
-            url: "https://api.kraken.com/0/public/Ticker?pair=SOLUSD",
-            options: { method: "GET" }
-          });
+          const res = await proxyFetch("https://api.kraken.com/0/public/Ticker?pair=SOLUSD", { method: "GET" });
           if (res.ok && res.data?.result?.SOLUSD?.c?.[0]) {
             return parseFloat(res.data.result.SOLUSD.c[0]);
           }
@@ -6363,11 +6371,7 @@ input:checked + .slider:before {
       };
       const fetchCoinbase = async () => {
         try {
-          const res = await chrome.runtime.sendMessage({
-            type: "PROXY_FETCH",
-            url: "https://api.coinbase.com/v2/prices/SOL-USD/spot",
-            options: { method: "GET" }
-          });
+          const res = await proxyFetch("https://api.coinbase.com/v2/prices/SOL-USD/spot", { method: "GET" });
           if (res.ok && res.data?.data?.amount) {
             return parseFloat(res.data.data.amount);
           }
@@ -9269,26 +9273,6 @@ canvas#equity-canvas {
     AGGREGATOR: "aggregator"
   };
   var SCHEMA_VERSION2 = "1.0";
-
-  // src/services/shared/proxy-fetch.js
-  async function proxyFetch(url, options) {
-    try {
-      if (typeof chrome === "undefined" || !chrome.runtime?.sendMessage) {
-        return { ok: false, error: "Chrome runtime not available" };
-      }
-      return await chrome.runtime.sendMessage({
-        type: "PROXY_FETCH",
-        url,
-        options: options || { method: "GET" }
-      });
-    } catch (e) {
-      const msg = e?.message || "";
-      if (msg.includes("context invalidated") || msg.includes("Receiving end does not exist")) {
-        return { ok: false, error: "context_invalidated" };
-      }
-      return { ok: false, error: msg || "Proxy fetch failed" };
-    }
-  }
 
   // src/services/context/client.js
   var CONTEXT_API_BASE = "https://api.get-zero.xyz";

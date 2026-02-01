@@ -1,6 +1,7 @@
 import { Market } from './market.js';
 import { Store } from '../store.js';
 import { Analytics } from './analytics.js'; // Ensure we keep analytics hooks
+import { proxyFetch } from '../../services/shared/proxy-fetch.js';
 
 export const PnlCalculator = {
     cachedSolPrice: 200, // Default fallback
@@ -30,11 +31,7 @@ export const PnlCalculator = {
 
         const fetchKraken = async () => {
             try {
-                const res = await chrome.runtime.sendMessage({
-                    type: 'PROXY_FETCH',
-                    url: 'https://api.kraken.com/0/public/Ticker?pair=SOLUSD',
-                    options: { method: 'GET' }
-                });
+                const res = await proxyFetch('https://api.kraken.com/0/public/Ticker?pair=SOLUSD', { method: 'GET' });
                 if (res.ok && res.data?.result?.SOLUSD?.c?.[0]) {
                     return parseFloat(res.data.result.SOLUSD.c[0]);
                 }
@@ -44,11 +41,7 @@ export const PnlCalculator = {
 
         const fetchCoinbase = async () => {
             try {
-                const res = await chrome.runtime.sendMessage({
-                    type: 'PROXY_FETCH',
-                    url: 'https://api.coinbase.com/v2/prices/SOL-USD/spot',
-                    options: { method: 'GET' }
-                });
+                const res = await proxyFetch('https://api.coinbase.com/v2/prices/SOL-USD/spot', { method: 'GET' });
                 if (res.ok && res.data?.data?.amount) {
                     return parseFloat(res.data.data.amount);
                 }
