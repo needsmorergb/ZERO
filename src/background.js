@@ -1,7 +1,12 @@
 const CACHE_MS = 5 * 60 * 1000;
 const ZERO_STATE_KEY = 'zero_state';
+const EXT_KEY = 'sol_paper_trader_v1';
 const UPLOAD_ALARM = 'zero_upload';
+const LICENSE_ALARM = 'zero_license_revalidation';
 const UPLOAD_INTERVAL_MIN = 15;
+const LICENSE_CHECK_INTERVAL_MIN = 360; // 6 hours
+const LICENSE_REVALIDATION_MS = 24 * 60 * 60 * 1000; // 24 hours
+const VERIFY_ENDPOINT = 'https://api.get-zero.xyz/verify-membership';
 const BACKOFF_STEPS = [60000, 300000, 900000, 3600000]; // 1m, 5m, 15m, 60m
 
 let cache = { price: null, feedCount: 0, ts: 0 };
@@ -74,10 +79,12 @@ async function refreshSolUsd() {
 
 chrome.alarms.create("sol_usd_refresh", { periodInMinutes: 5 });
 chrome.alarms.create(UPLOAD_ALARM, { periodInMinutes: UPLOAD_INTERVAL_MIN });
+chrome.alarms.create(LICENSE_ALARM, { periodInMinutes: LICENSE_CHECK_INTERVAL_MIN });
 
 chrome.alarms.onAlarm.addListener((a) => {
   if (a.name === "sol_usd_refresh") refreshSolUsd();
   if (a.name === UPLOAD_ALARM) handleUploadAlarm();
+  if (a.name === LICENSE_ALARM) handleLicenseRevalidation();
 });
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -100,6 +107,31 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg?.type === "ZERO_TRIGGER_UPLOAD") {
       const result = await handleUploadAlarm();
       sendResponse({ ok: true, result });
+      return;
+    }
+
+    // License verification via Context API Worker
+    if (msg?.type === "VERIFY_LICENSE") {
+      const { licenseKey } = msg;
+      if (!licenseKey) {
+        sendResponse({ ok: false, error: 'no_key' });
+        return;
+      }
+      try {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 10000);
+        const r = await fetch(VERIFY_ENDPOINT, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ licenseKey }),
+          signal: ctrl.signal,
+        });
+        clearTimeout(t);
+        const data = await r.json();
+        sendResponse(data);
+      } catch (e) {
+        sendResponse({ ok: false, error: e.toString() });
+      }
       return;
     }
 
@@ -198,6 +230,68 @@ function genUUID() {
     const r = (Math.random() * 16) | 0;
     return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
   });
+}
+
+/**
+ * Background license revalidation — called by chrome.alarm every 6 hours.
+ * Reads license key from extension storage and re-verifies if stale (>24h).
+ */
+async function handleLicenseRevalidation() {
+  try {
+    const data = await new Promise((resolve) => {
+      chrome.storage.local.get([EXT_KEY], (res) => {
+        if (chrome.runtime.lastError) { resolve(null); return; }
+        resolve(res[EXT_KEY] || null);
+      });
+    });
+    if (!data?.settings?.license?.key) return;
+
+    const license = data.settings.license;
+    const elapsed = license.lastVerified ? (Date.now() - license.lastVerified) : Infinity;
+    if (elapsed < LICENSE_REVALIDATION_MS) return; // Still fresh
+
+    console.log('[Background] License revalidation triggered');
+
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 10000);
+    const r = await fetch(VERIFY_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ licenseKey: license.key }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(t);
+
+    if (!r.ok) {
+      console.warn('[Background] License revalidation HTTP error:', r.status);
+      return; // Keep cached validity (grace period handles expiry)
+    }
+
+    const result = await r.json();
+    if (result.ok && result.membership) {
+      const m = result.membership;
+      data.settings.license.valid = m.valid;
+      data.settings.license.status = m.status || (m.valid ? 'active' : 'expired');
+      data.settings.license.plan = m.plan || license.plan;
+      data.settings.license.expiresAt = m.expiresAt || license.expiresAt;
+      data.settings.license.lastVerified = Date.now();
+      data.settings.tier = m.valid ? 'elite' : 'free';
+    } else {
+      // Verification returned invalid — but respect grace period
+      const GRACE_MS = 72 * 60 * 60 * 1000;
+      if (license.lastVerified && (Date.now() - license.lastVerified) > GRACE_MS) {
+        data.settings.license.valid = false;
+        data.settings.license.status = 'expired';
+        data.settings.tier = 'free';
+      }
+    }
+
+    await new Promise((resolve) => {
+      chrome.storage.local.set({ [EXT_KEY]: data }, () => resolve());
+    });
+  } catch (e) {
+    console.warn('[Background] License revalidation error:', e?.message || e);
+  }
 }
 
 /**

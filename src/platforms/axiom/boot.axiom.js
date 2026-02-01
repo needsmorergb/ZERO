@@ -8,6 +8,7 @@ import { PnlCalculator } from '../../modules/core/pnl-calculator.js';
 import { DiagnosticsStore } from '../../modules/diagnostics-store.js';
 import { Logger } from '../../modules/logger.js';
 import { TokenContextResolver } from '../../modules/core/token-context.js';
+import { License } from '../../modules/license.js';
 
 (async () => {
     "use strict";
@@ -31,6 +32,16 @@ import { TokenContextResolver } from '../../modules/core/token-context.js';
         Logger.info('Store loaded:', state.settings?.enabled ? 'Enabled' : 'Disabled');
     } catch (e) {
         Logger.error('Store Load Failed:', e);
+    }
+
+    // License revalidation check (non-blocking)
+    try {
+        if (License.needsRevalidation()) {
+            Logger.info('License revalidation needed...');
+            await License.revalidate();
+        }
+    } catch (e) {
+        Logger.error('License revalidation failed:', e);
     }
 
     // Initialize Diagnostics Store

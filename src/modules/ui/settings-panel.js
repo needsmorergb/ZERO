@@ -10,6 +10,8 @@ import { OverlayManager } from './overlay.js';
 import { TEASED_FEATURES, FeatureManager } from '../featureManager.js';
 import { renderEliteLockedCard } from './elite-helpers.js';
 import { ModeManager, MODES } from '../mode-manager.js';
+import { License } from '../license.js';
+import { Paywall } from './paywall.js';
 import { ICONS } from './icons.js';
 
 export const SettingsPanel = {
@@ -154,18 +156,41 @@ export const SettingsPanel = {
                     </span>
                 </div>
 
-                ${FeatureManager.isElite(Store.state) ? `
+                ${FeatureManager.isElite(Store.state) ? (() => {
+                    const ls = License.getStatus();
+                    const planLabel = License.getPlanLabel();
+                    const hasLicense = ls.status !== 'none' && ls.maskedKey;
+                    return `
                 <div style="padding:12px 16px; background:rgba(16,185,129,0.05); border:1px solid rgba(16,185,129,0.15); border-radius:10px; margin-bottom:12px;">
-                    <div style="font-size:12px; font-weight:600; color:#10b981;">Elite Active</div>
+                    <div style="font-size:12px; font-weight:600; color:#10b981; display:flex; align-items:center; gap:8px;">
+                        Elite Active
+                        ${planLabel ? `<span style="font-size:9px; padding:1px 6px; border-radius:3px; background:rgba(139,92,246,0.12); color:#a78bfa; font-weight:700;">${planLabel}</span>` : ''}
+                    </div>
+                    ${hasLicense ? `
+                    <div style="font-size:11px; color:#64748b; margin-top:6px; display:flex; flex-direction:column; gap:3px;">
+                        <div>License: <span style="color:#94a3b8; font-family:monospace;">${ls.maskedKey}</span></div>
+                        ${ls.lastVerified ? `<div>Verified: ${new Date(ls.lastVerified).toLocaleDateString()}</div>` : ''}
+                        ${ls.expiresAt ? `<div>Renews: ${new Date(ls.expiresAt).toLocaleDateString()}</div>` : ''}
+                        ${ls.plan === 'founders' ? `<div style="color:#a78bfa;">Lifetime access</div>` : ''}
+                    </div>
+                    <div style="display:flex; gap:8px; margin-top:10px;">
+                        <button data-setting-act="manageMembership" class="settings-action-btn" style="font-size:11px; padding:5px 10px;">Manage on Whop</button>
+                        <button data-setting-act="deactivateLicense" class="settings-action-btn danger" style="font-size:11px; padding:5px 10px;">Deactivate</button>
+                    </div>
+                    ` : `
                     <div style="font-size:11px; color:#64748b; margin-top:4px;">All advanced insights and behavioral analytics are unlocked.</div>
-                </div>
-                ` : `
+                    `}
+                </div>`;
+                })() : `
                 <div style="font-size:11px; color:#64748b; margin-bottom:12px; line-height:1.5;">
                     Unlock cross-session context and behavioral analytics.
                 </div>
                 <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:16px;">
                     ${TEASED_FEATURES.ELITE.map(f => renderEliteLockedCard(f.name, f.desc)).join('')}
                 </div>
+                <button data-setting-act="showUpgradeModal" style="width:100%; background:linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color:white; border:none; padding:10px 16px; border-radius:8px; font-weight:700; font-size:13px; cursor:pointer; margin-bottom:8px;">
+                    Upgrade to Elite
+                </button>
                 `}
 
                 <div style="margin-top:20px; text-align:center; font-size:11px; color:#64748b;">
@@ -259,6 +284,16 @@ export const SettingsPanel = {
             }
             if (act === 'deleteLocal') {
                 this._showDeleteConfirm(overlay);
+            }
+            if (act === 'showUpgradeModal') {
+                overlay.remove();
+                Paywall.showUpgradeModal();
+            }
+            if (act === 'manageMembership') {
+                window.open('https://whop.com/orders/', '_blank');
+            }
+            if (act === 'deactivateLicense') {
+                this._showDeactivateConfirm(overlay);
             }
         });
     },
@@ -387,6 +422,32 @@ export const SettingsPanel = {
         modal.querySelector('.confirm').onclick = async () => {
             await DiagnosticsStore.clearAllData();
             modal.remove();
+        };
+        modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+    },
+
+    _showDeactivateConfirm(parent) {
+        const modal = document.createElement('div');
+        modal.className = 'confirm-modal-overlay';
+        modal.style.zIndex = '2147483648';
+        modal.innerHTML = `
+            <div class="confirm-modal">
+                <h3>Deactivate Elite?</h3>
+                <p>This will remove your license key from this browser and revert to the Free tier. You can re-activate anytime with your license key.</p>
+                <div class="confirm-modal-buttons">
+                    <button class="confirm-modal-btn cancel">Cancel</button>
+                    <button class="confirm-modal-btn confirm">Deactivate</button>
+                </div>
+            </div>
+        `;
+        parent.appendChild(modal);
+        modal.querySelector('.cancel').onclick = () => modal.remove();
+        modal.querySelector('.confirm').onclick = async () => {
+            await License.deactivate();
+            modal.remove();
+            parent.remove();
+            // Re-open settings to reflect new state
+            this.show();
         };
         modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
     },

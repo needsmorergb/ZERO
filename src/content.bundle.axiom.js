@@ -11,8 +11,7 @@
 
   // src/modules/store.js
   function deepMerge(base, patch) {
-    if (!patch || typeof patch !== "object")
-      return base;
+    if (!patch || typeof patch !== "object") return base;
     const out = Array.isArray(base) ? [...base] : { ...base };
     for (const [k, v] of Object.entries(patch)) {
       if (v && typeof v === "object" && !Array.isArray(v) && base[k] && typeof base[k] === "object") {
@@ -33,7 +32,7 @@
   var DEV_FORCE_ELITE, EXT_KEY, DEFAULTS, Store;
   var init_store = __esm({
     "src/modules/store.js"() {
-      DEV_FORCE_ELITE = true;
+      DEV_FORCE_ELITE = false;
       EXT_KEY = "sol_paper_trader_v1";
       DEFAULTS = {
         settings: {
@@ -64,7 +63,22 @@
           // Onboarding State
           onboardingSeen: false,
           onboardingVersion: null,
-          onboardingCompletedAt: null
+          onboardingCompletedAt: null,
+          // License / Whop Membership
+          license: {
+            key: null,
+            // Whop license key (mem_xxx or license string)
+            valid: false,
+            // Last known validation result
+            lastVerified: null,
+            // Timestamp (ms) of last successful verification
+            expiresAt: null,
+            // ISO string or null (founders = lifetime)
+            status: "none",
+            // 'none' | 'active' | 'expired' | 'cancelled' | 'error'
+            plan: null
+            // 'monthly' | 'annual' | 'founders'
+          }
         },
         // Session as first-class object
         session: {
@@ -141,14 +155,12 @@
             try {
               if (!isChromeStorageAvailable()) {
                 this.state = JSON.parse(JSON.stringify(DEFAULTS));
-                if (timeoutId)
-                  clearTimeout(timeoutId);
+                if (timeoutId) clearTimeout(timeoutId);
                 resolve(this.state);
                 return;
               }
               chrome.storage.local.get([EXT_KEY], (res) => {
-                if (timeoutId)
-                  clearTimeout(timeoutId);
+                if (timeoutId) clearTimeout(timeoutId);
                 if (chrome.runtime.lastError) {
                   const msg = chrome.runtime.lastError.message;
                   if (msg && !msg.includes("context invalidated")) {
@@ -173,24 +185,21 @@
               });
             } catch (e) {
               console.error("[ZER\xD8] Storage load exception:", e);
-              if (timeoutId)
-                clearTimeout(timeoutId);
+              if (timeoutId) clearTimeout(timeoutId);
               resolve(JSON.parse(JSON.stringify(DEFAULTS)));
             }
           });
           const timeout = new Promise((resolve) => {
             timeoutId = setTimeout(() => {
               console.warn("[ZER\xD8] Storage load timed out, using defaults.");
-              if (!this.state)
-                this.state = JSON.parse(JSON.stringify(DEFAULTS));
+              if (!this.state) this.state = JSON.parse(JSON.stringify(DEFAULTS));
               resolve(this.state);
             }, 1e3);
           });
           return Promise.race([loadLogic, timeout]);
         },
         async save() {
-          if (!isChromeStorageAvailable() || !this.state)
-            return;
+          if (!isChromeStorageAvailable() || !this.state) return;
           return new Promise((resolve) => {
             try {
               chrome.storage.local.set({ [EXT_KEY]: this.state }, () => {
@@ -216,8 +225,7 @@
           return this.save();
         },
         async clear() {
-          if (!isChromeStorageAvailable())
-            return;
+          if (!isChromeStorageAvailable()) return;
           return new Promise((resolve) => {
             chrome.storage.local.remove(EXT_KEY, () => {
               this.state = JSON.parse(JSON.stringify(DEFAULTS));
@@ -261,21 +269,29 @@
             }
             if (DEV_FORCE_ELITE) {
               this.state.settings.tier = "elite";
+            } else if (this.state.settings.license?.valid && this.state.settings.license?.lastVerified) {
+              const GRACE_MS = 72 * 60 * 60 * 1e3;
+              const elapsed = Date.now() - this.state.settings.license.lastVerified;
+              if (elapsed < GRACE_MS) {
+                this.state.settings.tier = "elite";
+              } else {
+                this.state.settings.tier = "free";
+                this.state.settings.license.valid = false;
+                this.state.settings.license.status = "expired";
+              }
+            } else {
+              this.state.settings.tier = "free";
             }
             if (this.state.fills) {
               this.state.fills.forEach((f) => {
-                if (f.side === "ENTRY")
-                  f.side = "BUY";
-                if (f.side === "EXIT")
-                  f.side = "SELL";
+                if (f.side === "ENTRY") f.side = "BUY";
+                if (f.side === "EXIT") f.side = "SELL";
               });
             }
             if (this.state.trades) {
               Object.values(this.state.trades).forEach((t) => {
-                if (t.side === "ENTRY")
-                  t.side = "BUY";
-                if (t.side === "EXIT")
-                  t.side = "SELL";
+                if (t.side === "ENTRY") t.side = "BUY";
+                if (t.side === "EXIT") t.side = "SELL";
               });
             }
             if (!this.state.session.id) {
@@ -293,8 +309,7 @@
           if (currentSession.trades && currentSession.trades.length > 0) {
             currentSession.endTime = Date.now();
             currentSession.status = "completed";
-            if (!this.state.sessionHistory)
-              this.state.sessionHistory = [];
+            if (!this.state.sessionHistory) this.state.sessionHistory = [];
             this.state.sessionHistory.push({ ...currentSession });
             if (this.state.sessionHistory.length > 10) {
               this.state.sessionHistory = this.state.sessionHistory.slice(-10);
@@ -326,16 +341,14 @@
         // Get current session duration in minutes
         getSessionDuration() {
           const session = this.state?.session;
-          if (!session || !session.startTime)
-            return 0;
+          if (!session || !session.startTime) return 0;
           const endTime = session.endTime || Date.now();
           return Math.floor((endTime - session.startTime) / 6e4);
         },
         // Get session summary
         getSessionSummary() {
           const session = this.state?.session;
-          if (!session)
-            return null;
+          if (!session) return null;
           const trades = session.trades || [];
           const sellTrades = trades.map((id) => this.state.trades[id]).filter((t) => t && t.side === "SELL");
           const wins = sellTrades.filter((t) => (t.realizedPnlSol || 0) > 0).length;
@@ -423,8 +436,7 @@
     }
   }
   async function chromeStorageGet(key) {
-    if (!isStorageAvailable())
-      return null;
+    if (!isStorageAvailable()) return null;
     return new Promise((resolve) => {
       try {
         chrome.storage.local.get([key], (res) => {
@@ -447,8 +459,7 @@
     });
   }
   async function chromeStorageSet(key, value) {
-    if (!isStorageAvailable())
-      return;
+    if (!isStorageAvailable()) return;
     return new Promise((resolve) => {
       try {
         chrome.storage.local.set({ [key]: value }, () => {
@@ -469,8 +480,7 @@
     });
   }
   async function chromeStorageRemove(key) {
-    if (!isStorageAvailable())
-      return;
+    if (!isStorageAvailable()) return;
     return new Promise((resolve) => {
       try {
         chrome.storage.local.remove(key, () => resolve());
@@ -510,27 +520,22 @@
           s.settings.privacy = { ...defaultState().settings.privacy, ...s.settings?.privacy };
           s.settings.diagnostics = { ...defaultState().settings.diagnostics, ...s.settings?.diagnostics };
           s.upload = { ...defaultState().upload, ...s.upload };
-          if (!s.clientId)
-            s.clientId = uuid();
-          if (!Array.isArray(s.events))
-            s.events = [];
-          if (!Array.isArray(s.upload.queue))
-            s.upload.queue = [];
+          if (!s.clientId) s.clientId = uuid();
+          if (!Array.isArray(s.events)) s.events = [];
+          if (!Array.isArray(s.upload.queue)) s.upload.queue = [];
           s.schemaVersion = SCHEMA_VERSION;
           return s;
         },
         // ------ Debounced persist ------
         save() {
-          if (this._saveTimer)
-            return;
+          if (this._saveTimer) return;
           this._saveTimer = setTimeout(() => {
             this._saveTimer = null;
             this._persist();
           }, DEBOUNCE_MS);
         },
         async _persist() {
-          if (!this.state)
-            return;
+          if (!this.state) return;
           await chromeStorageSet(STORAGE_KEY, this.state);
         },
         async forceSave() {
@@ -548,12 +553,10 @@
          * @param {{ sessionId?: string, tradeId?: string, platform?: string }} ctx
          */
         logEvent(type, payload = {}, ctx = {}) {
-          if (!this.state)
-            return;
+          if (!this.state) return;
           if (type === "ERROR") {
             const now = Date.now();
-            if (now - this._lastErrorTs < ERROR_COOLDOWN_MS)
-              return;
+            if (now - this._lastErrorTs < ERROR_COOLDOWN_MS) return;
             this._lastErrorTs = now;
           }
           const evt = createEvent(type, payload, {
@@ -569,8 +572,7 @@
         },
         // ------ Upload queue ------
         enqueuePacket(packet) {
-          if (!this.state)
-            return;
+          if (!this.state) return;
           this.state.upload.queue.push({
             uploadId: packet.uploadId,
             createdAt: packet.createdAt,
@@ -584,15 +586,13 @@
           this.save();
         },
         dequeuePacket() {
-          if (!this.state || !this.state.upload.queue.length)
-            return null;
+          if (!this.state || !this.state.upload.queue.length) return null;
           const item = this.state.upload.queue.shift();
           this.save();
           return item;
         },
         peekPacket() {
-          if (!this.state || !this.state.upload.queue.length)
-            return null;
+          if (!this.state || !this.state.upload.queue.length) return null;
           return this.state.upload.queue[0];
         },
         // ------ Privacy settings ------
@@ -600,15 +600,13 @@
           return !!this.state?.settings?.privacy?.autoSendDiagnostics;
         },
         enableAutoSend() {
-          if (!this.state)
-            return;
+          if (!this.state) return;
           this.state.settings.privacy.autoSendDiagnostics = true;
           this.state.settings.privacy.diagnosticsConsentAcceptedAt = Date.now();
           this.save();
         },
         disableAutoSend() {
-          if (!this.state)
-            return;
+          if (!this.state) return;
           this.state.settings.privacy.autoSendDiagnostics = false;
           this.save();
         },
@@ -616,8 +614,7 @@
           return this.state?.settings?.diagnostics?.endpointUrl || "";
         },
         setEndpointUrl(url) {
-          if (!this.state)
-            return;
+          if (!this.state) return;
           this.state.settings.diagnostics.endpointUrl = url;
           this.save();
         },
@@ -625,8 +622,7 @@
           return this.state?.settings?.diagnostics?.lastUploadedEventTs || 0;
         },
         setLastUploadedEventTs(ts) {
-          if (!this.state)
-            return;
+          if (!this.state) return;
           this.state.settings.diagnostics.lastUploadedEventTs = ts;
           this.save();
         },
@@ -635,21 +631,18 @@
           return Date.now() < (this.state?.upload?.backoffUntilTs || 0);
         },
         setBackoff(delayMs) {
-          if (!this.state)
-            return;
+          if (!this.state) return;
           this.state.upload.backoffUntilTs = Date.now() + delayMs;
           this.save();
         },
         clearBackoff() {
-          if (!this.state)
-            return;
+          if (!this.state) return;
           this.state.upload.backoffUntilTs = 0;
           this.state.upload.lastError = null;
           this.save();
         },
         setLastError(msg) {
-          if (!this.state)
-            return;
+          if (!this.state) return;
           this.state.upload.lastError = msg;
           this.save();
         },
@@ -660,8 +653,7 @@
           await this._persist();
         },
         async clearUploadQueue() {
-          if (!this.state)
-            return;
+          if (!this.state) return;
           this.state.upload.queue = [];
           this.state.upload.backoffUntilTs = 0;
           this.state.upload.lastError = null;
@@ -669,8 +661,7 @@
         },
         // ------ Delta query ------
         getEventsDelta() {
-          if (!this.state)
-            return [];
+          if (!this.state) return [];
           const lastTs = this.getLastUploadedEventTs();
           return this.state.events.filter((e) => e.ts > lastTs);
         },
@@ -684,8 +675,7 @@
   // src/modules/upload-packet.js
   function buildUploadPackets() {
     const events = DiagnosticsStore.getEventsDelta();
-    if (events.length === 0)
-      return { packets: [], totalEvents: 0 };
+    if (events.length === 0) return { packets: [], totalEvents: 0 };
     const clientId = DiagnosticsStore.getClientId();
     const version = Store.state?.version || "0.0.0";
     const chunks = [];
@@ -743,14 +733,12 @@
       DiagnosticsManager = {
         _timer: null,
         init() {
-          if (this._timer)
-            return;
+          if (this._timer) return;
           console.log("[DiagnosticsManager] Initialized. Status:", DiagnosticsStore.isAutoSendEnabled() ? "ENABLED" : "DISABLED");
           this._scheduleNextTick();
         },
         _scheduleNextTick(delay = UPLOAD_INTERVAL_MS) {
-          if (this._timer)
-            clearTimeout(this._timer);
+          if (this._timer) clearTimeout(this._timer);
           this._timer = setTimeout(() => this._tick(), delay);
         },
         async _tick() {
@@ -3893,8 +3881,7 @@ input:checked + .slider:before {
     initialized: false,
     platformName: null,
     init(platformName) {
-      if (this.initialized)
-        return;
+      if (this.initialized) return;
       if (!document.documentElement && !document.body) {
         document.addEventListener("DOMContentLoaded", () => this.init(platformName), { once: true });
         return;
@@ -3957,8 +3944,7 @@ input:checked + .slider:before {
     },
     injectStyles() {
       const root = this.getShadowRoot();
-      if (root.getElementById(IDS.style))
-        return;
+      if (root.getElementById(IDS.style)) return;
       const s = document.createElement("style");
       s.id = IDS.style;
       s.textContent = CSS;
@@ -3966,8 +3952,7 @@ input:checked + .slider:before {
     },
     injectPadreOffset() {
       const styleId = "paper-padre-offset-style";
-      if (document.getElementById(styleId))
-        return;
+      if (document.getElementById(styleId)) return;
       const style = document.createElement("style");
       style.id = styleId;
       style.textContent = `
@@ -4077,11 +4062,9 @@ input:checked + .slider:before {
     _showStep(stepIndex) {
       const container = OverlayManager.getContainer();
       const shadowRoot = OverlayManager.getShadowRoot();
-      if (!container || !shadowRoot)
-        return;
+      if (!container || !shadowRoot) return;
       const step = TUTORIAL_STEPS[stepIndex];
-      if (!step)
-        return;
+      if (!step) return;
       const highlighted = container.querySelectorAll(".highlight-active");
       highlighted.forEach((el) => el.classList.remove("highlight-active"));
       if (step.highlightId) {
@@ -4091,8 +4074,7 @@ input:checked + .slider:before {
         }
       }
       const existing = container.querySelector(".professor-overlay");
-      if (existing)
-        existing.remove();
+      if (existing) existing.remove();
       const professorImgUrl = typeof chrome !== "undefined" && chrome.runtime?.getURL ? chrome.runtime.getURL("src/professor.png") : "";
       const overlay = document.createElement("div");
       overlay.className = "professor-overlay tutorial-mode";
@@ -4130,11 +4112,9 @@ input:checked + .slider:before {
     showCritique(trigger, value, analysisState) {
       return;
       const container = OverlayManager.getContainer();
-      if (!container)
-        return;
+      if (!container) return;
       const existing = container.querySelector(".professor-overlay");
-      if (existing)
-        existing.remove();
+      if (existing) existing.remove();
       const { title, message } = this.generateMessage(trigger, value, analysisState);
       const overlay = document.createElement("div");
       overlay.className = "professor-overlay";
@@ -4178,8 +4158,7 @@ input:checked + .slider:before {
       };
       dismissBtn.onclick = close;
       setTimeout(() => {
-        if (overlay.isConnected)
-          close();
+        if (overlay.isConnected) close();
       }, 15e3);
     },
     generateMessage(trigger, value, analysis) {
@@ -4319,8 +4298,7 @@ input:checked + .slider:before {
         interactive: false,
         gated: false
       };
-      if (!requiredTier)
-        return flags;
+      if (!requiredTier) return flags;
       const hasEntitlement = this.hasTierAccess(userTier, requiredTier);
       if (requiredTier === TIERS.FREE) {
         flags.enabled = true;
@@ -4347,10 +4325,8 @@ input:checked + .slider:before {
       return flags;
     },
     hasTierAccess(userTier, requiredTier) {
-      if (requiredTier === TIERS.FREE)
-        return true;
-      if (requiredTier === TIERS.ELITE)
-        return userTier === TIERS.ELITE;
+      if (requiredTier === TIERS.FREE) return true;
+      if (requiredTier === TIERS.ELITE) return userTier === TIERS.ELITE;
       return false;
     },
     isElite(state) {
@@ -4368,12 +4344,9 @@ input:checked + .slider:before {
       lastDomScanAt: 0
     },
     init(platformName) {
-      if (platformName === "Axiom")
-        this._platform = "axiom";
-      else if (platformName === "Padre")
-        this._platform = "padre";
-      else
-        this._platform = "unknown";
+      if (platformName === "Axiom") this._platform = "axiom";
+      else if (platformName === "Padre") this._platform = "padre";
+      else this._platform = "unknown";
     },
     resolve() {
       const url = window.location.href;
@@ -4395,12 +4368,10 @@ input:checked + .slider:before {
         const title = document.title || "";
         const cleaned = title.replace(/\s*[↓↑]\s*\$[\d,.]+[KMB]?\s*$/i, "").trim();
         const m = cleaned.match(/([A-Z0-9]+)\s*\//i);
-        if (m)
-          activeSymbol = m[1].toUpperCase();
+        if (m) activeSymbol = m[1].toUpperCase();
         if (!activeSymbol && cleaned) {
           const parts = cleaned.split("|")[0]?.trim();
-          if (parts && parts.length <= 12)
-            activeSymbol = parts.toUpperCase();
+          if (parts && parts.length <= 12) activeSymbol = parts.toUpperCase();
         }
       }
       if (sourceSite !== "padre" && sourceSite !== "axiom") {
@@ -4410,13 +4381,11 @@ input:checked + .slider:before {
         }
         if (!activeMint) {
           const urlParamMatch = url.match(/[?&](?:mint|token|address)=([1-9A-HJ-NP-Za-km-z]{32,44})/i);
-          if (urlParamMatch)
-            activeMint = urlParamMatch[1];
+          if (urlParamMatch) activeMint = urlParamMatch[1];
         }
         if (!activeMint) {
           const allMints = url.match(/[1-9A-HJ-NP-Za-km-z]{32,44}/g);
-          if (allMints)
-            activeMint = allMints.find((m) => m.length >= 32 && m.length <= 44);
+          if (allMints) activeMint = allMints.find((m) => m.length >= 32 && m.length <= 44);
         }
       }
       const domScanThrottle = sourceSite === "padre" || sourceSite === "axiom" ? 500 : 1500;
@@ -4443,8 +4412,7 @@ input:checked + .slider:before {
                 }
               }
             }
-            if (activeMint)
-              break;
+            if (activeMint) break;
           }
         } catch (e) {
         }
@@ -4489,8 +4457,7 @@ input:checked + .slider:before {
                 }
                 container = container.parentElement;
               }
-              if (activeMint)
-                break;
+              if (activeMint) break;
               seen += 1;
             }
           } catch (e) {
@@ -4562,8 +4529,7 @@ input:checked + .slider:before {
       }));
     },
     setMint(mint) {
-      if (this.currentMint === mint)
-        return;
+      if (this.currentMint === mint) return;
       this.currentMint = mint;
       this.stopPolling();
       this.data = { priceUsd: 0, marketCapUsd: 0, liquidityUsd: 0, symbol: null, name: null, info: null };
@@ -4577,8 +4543,7 @@ input:checked + .slider:before {
       }
     },
     startPolling() {
-      if (this.pollInterval)
-        return;
+      if (this.pollInterval) return;
       this.fetchData();
       this.pollInterval = setInterval(() => {
         if (this.currentMint) {
@@ -4603,8 +4568,7 @@ input:checked + .slider:before {
       }
     },
     async fetchData() {
-      if (!this.currentMint)
-        return;
+      if (!this.currentMint) return;
       try {
         if (this.dexHasData) {
           const url = `https://api.dexscreener.com/latest/dex/tokens/${this.currentMint}`;
@@ -4637,8 +4601,7 @@ input:checked + .slider:before {
       }
     },
     async fetchJupiterFallback() {
-      if (!this.currentMint)
-        return;
+      if (!this.currentMint) return;
       try {
         const jupUrl = `https://lite-api.jup.ag/price/v3?ids=${this.currentMint}`;
         const jupResponse = await proxyFetch(jupUrl, { method: "GET" });
@@ -4705,8 +4668,7 @@ input:checked + .slider:before {
           this.marketCap = data.marketCapUsd;
         }
         this.liquidity = data.liquidityUsd;
-        if (data.symbol)
-          this.currentSymbol = data.symbol;
+        if (data.symbol) this.currentSymbol = data.symbol;
         this.lastSource = "api";
         if (data.priceUsd > 0 && data.marketCapUsd > 0) {
           const priceDelta = this._lastRefPrice ? Math.abs(data.priceUsd - this._lastRefPrice) / this._lastRefPrice : 1;
@@ -4725,14 +4687,12 @@ input:checked + .slider:before {
       this.pollContext();
       setInterval(() => this.pollContext(), 250);
       window.addEventListener("message", (e) => {
-        if (e.source !== window || !e.data?.__paper)
-          return;
+        if (e.source !== window || !e.data?.__paper) return;
         const d = e.data;
         if (d.type === "PRICE_TICK") {
           if (d.price > 0 && d.confidence >= 1) {
             const now = Date.now();
-            if (this.price > 0 && Math.abs(d.price - this.price) / this.price > 0.8 && d.confidence < 3)
-              return;
+            if (this.price > 0 && Math.abs(d.price - this.price) / this.price > 0.8 && d.confidence < 3) return;
             console.log(`[Market] Real-time Price Integration (${d.source}): $${d.price}`);
             this.price = d.price;
             this.priceIsFresh = true;
@@ -4914,10 +4874,8 @@ input:checked + .slider:before {
      */
     getContainerClass() {
       const mode = this.getMode();
-      if (mode === MODES.ANALYSIS)
-        return "zero-analysis-mode";
-      if (mode === MODES.SHADOW)
-        return "zero-shadow-mode";
+      if (mode === MODES.ANALYSIS) return "zero-analysis-mode";
+      if (mode === MODES.SHADOW) return "zero-shadow-mode";
       return "";
     },
     /**
@@ -4931,10 +4889,8 @@ input:checked + .slider:before {
      * Returns true only once per user (first shadow session completion).
      */
     shouldShowShadowAha() {
-      if (this.getMode() !== MODES.SHADOW)
-        return false;
-      if (!FeatureManager.isElite(Store.state))
-        return false;
+      if (this.getMode() !== MODES.SHADOW) return false;
+      if (!FeatureManager.isElite(Store.state)) return false;
       return !Store.state.settings._shadowAhaShown;
     },
     /**
@@ -4950,10 +4906,8 @@ input:checked + .slider:before {
   init_store();
   var sessionBannerShownForSession = null;
   function getModeIcon(mode) {
-    if (mode === MODES.ANALYSIS)
-      return ICONS.MODE_ANALYSIS;
-    if (mode === MODES.SHADOW)
-      return ICONS.MODE_SHADOW;
+    if (mode === MODES.ANALYSIS) return ICONS.MODE_ANALYSIS;
+    if (mode === MODES.SHADOW) return ICONS.MODE_SHADOW;
     return ICONS.MODE_PAPER;
   }
   var ModesUI = {
@@ -4986,17 +4940,13 @@ input:checked + .slider:before {
     showSessionBanner() {
       const mode = ModeManager.getMode();
       const meta = ModeManager.getMeta();
-      if (!meta.sessionBanner)
-        return;
+      if (!meta.sessionBanner) return;
       const sessionId = Store.state?.session?.id;
-      if (sessionBannerShownForSession === sessionId)
-        return;
+      if (sessionBannerShownForSession === sessionId) return;
       sessionBannerShownForSession = sessionId;
       const container = OverlayManager.getContainer();
-      if (!container)
-        return;
-      if (container.querySelector(".zero-session-banner-overlay"))
-        return;
+      if (!container) return;
+      if (container.querySelector(".zero-session-banner-overlay")) return;
       const icon = getModeIcon(mode);
       const banner = meta.sessionBanner;
       const overlay = document.createElement("div");
@@ -5016,8 +4966,7 @@ input:checked + .slider:before {
       const dismiss = () => overlay.remove();
       overlay.querySelector(".banner-dismiss").onclick = dismiss;
       overlay.addEventListener("click", (e) => {
-        if (e.target === overlay)
-          dismiss();
+        if (e.target === overlay) dismiss();
       });
     },
     /**
@@ -5069,10 +5018,8 @@ input:checked + .slider:before {
      */
     getBannerHint() {
       const mode = ModeManager.getMode();
-      if (mode === MODES.ANALYSIS)
-        return "(Analysis Mode)";
-      if (mode === MODES.SHADOW)
-        return "(Shadow Mode)";
+      if (mode === MODES.ANALYSIS) return "(Analysis Mode)";
+      if (mode === MODES.SHADOW) return "(Shadow Mode)";
       return "(Paper Trading Overlay)";
     },
     /**
@@ -5088,17 +5035,14 @@ input:checked + .slider:before {
      */
     applyContainerClass() {
       const container = OverlayManager.getContainer();
-      if (!container)
-        return;
+      if (!container) return;
       container.classList.remove("zero-shadow-mode", "zero-analysis-mode");
       const cls = ModeManager.getContainerClass();
-      if (cls)
-        container.classList.add(cls);
+      if (cls) container.classList.add(cls);
       const host = OverlayManager.shadowHost;
       if (host) {
         host.classList.remove("zero-shadow-mode", "zero-analysis-mode");
-        if (cls)
-          host.classList.add(cls);
+        if (cls) host.classList.add(cls);
       }
     },
     /**
@@ -5110,12 +5054,9 @@ input:checked + .slider:before {
       let hasPaper = false;
       let hasReal = false;
       for (const t of trades) {
-        if (t.mode === "paper" || !t.mode)
-          hasPaper = true;
-        if (t.mode === "analysis" || t.mode === "shadow")
-          hasReal = true;
-        if (hasPaper && hasReal)
-          return true;
+        if (t.mode === "paper" || !t.mode) hasPaper = true;
+        if (t.mode === "analysis" || t.mode === "shadow") hasReal = true;
+        if (hasPaper && hasReal) return true;
       }
       return false;
     },
@@ -5135,18 +5076,15 @@ input:checked + .slider:before {
   var Banner = {
     ensurePageOffset() {
       const body = document.body;
-      if (!body)
-        return;
+      if (!body) return;
       const isPadre = window.location.hostname.includes("padre.gg");
-      if (isPadre)
-        return;
+      if (isPadre) return;
       const offset = 44;
       const html = document.documentElement;
       const bodyStyle = getComputedStyle(body);
       const htmlStyle = getComputedStyle(html);
       const isOverflowLocked = ["hidden", "clip"].includes(bodyStyle.overflowY) || ["hidden", "clip"].includes(bodyStyle.overflow) || ["hidden", "clip"].includes(htmlStyle.overflowY) || ["hidden", "clip"].includes(htmlStyle.overflow);
-      if (isOverflowLocked)
-        return;
+      if (isOverflowLocked) return;
       const prev = body.getAttribute("data-paper-prev-padding-top");
       if (!prev) {
         body.setAttribute("data-paper-prev-padding-top", bodyStyle.paddingTop || "0px");
@@ -5158,11 +5096,9 @@ input:checked + .slider:before {
     },
     mountBanner() {
       const root = OverlayManager.getShadowRoot();
-      if (!root)
-        return;
+      if (!root) return;
       let bar = root.getElementById(IDS.banner);
-      if (bar)
-        return;
+      if (bar) return;
       bar = document.createElement("div");
       bar.id = IDS.banner;
       const modeHint = ModesUI.getBannerHint();
@@ -5176,8 +5112,7 @@ input:checked + .slider:before {
             <div style="position:absolute; right:20px; font-size:10px; color:#334155; pointer-events:none;">v${Store.state?.version || "0.9.1"}</div>
         `;
       bar.addEventListener("click", async () => {
-        if (!Store.state)
-          return;
+        if (!Store.state) return;
         Store.state.settings.enabled = !Store.state.settings.enabled;
         await Store.save();
         if (window.ZeroHUD && window.ZeroHUD.updateAll) {
@@ -5190,27 +5125,22 @@ input:checked + .slider:before {
     updateBanner() {
       const root = OverlayManager.getShadowRoot();
       const bar = root?.getElementById(IDS.banner);
-      if (!bar || !Store.state)
-        return;
+      if (!bar || !Store.state) return;
       const enabled = Store.state.settings.enabled;
       const stateEl = bar.querySelector(".state");
-      if (stateEl)
-        stateEl.textContent = enabled ? "ENABLED" : "DISABLED";
+      if (stateEl) stateEl.textContent = enabled ? "ENABLED" : "DISABLED";
       bar.classList.toggle("disabled", !enabled);
       const hintEl = bar.querySelector(".hint");
-      if (hintEl)
-        hintEl.textContent = ModesUI.getBannerHint();
+      if (hintEl) hintEl.textContent = ModesUI.getBannerHint();
       this.updateAlerts();
     },
     updateAlerts() {
       const root = OverlayManager.getShadowRoot();
-      if (!root || !Store.state)
-        return;
+      if (!root || !Store.state) return;
       const flags = FeatureManager.resolveFlags(Store.state, "TILT_DETECTION");
       if (!flags.visible || !Store.state.settings.behavioralAlerts) {
         const existing = root.getElementById("elite-alert-container");
-        if (existing)
-          existing.remove();
+        if (existing) existing.remove();
         return;
       }
       let container = root.getElementById("elite-alert-container");
@@ -5271,8 +5201,7 @@ input:checked + .slider:before {
     // PERSISTENT EVENT LOGGING
     // ==========================================
     logEvent(state, type, category, message, data = {}) {
-      if (!state.eventLog)
-        state.eventLog = [];
+      if (!state.eventLog) state.eventLog = [];
       const event = {
         id: `evt_${Date.now()}_${Math.floor(Math.random() * 1e3)}`,
         ts: Date.now(),
@@ -5302,8 +5231,7 @@ input:checked + .slider:before {
       });
     },
     logDisciplineEvent(state, score, penalty, reasons) {
-      if (penalty <= 0)
-        return;
+      if (penalty <= 0) return;
       const message = `Discipline -${penalty} pts: ${reasons.join(", ")}`;
       this.logEvent(state, "PENALTY", EVENT_CATEGORIES.DISCIPLINE, message, {
         score,
@@ -5339,8 +5267,7 @@ input:checked + .slider:before {
     },
     analyzeRecentTrades(state) {
       const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
-      if (trades.length === 0)
-        return null;
+      if (trades.length === 0) return null;
       const recentTrades = trades.slice(-10);
       let wins = 0, losses = 0;
       let totalHoldTimeMs = 0;
@@ -5351,10 +5278,8 @@ input:checked + .slider:before {
       let longHolds = 0;
       for (const trade of recentTrades) {
         const pnl = trade.realizedPnlSol || 0;
-        if (pnl > 0)
-          wins++;
-        else if (pnl < 0)
-          losses++;
+        if (pnl > 0) wins++;
+        else if (pnl < 0) losses++;
         totalPnlSol += pnl;
         if (trade.marketCap) {
           avgExitMc += trade.marketCap;
@@ -5368,11 +5293,9 @@ input:checked + .slider:before {
       let peak = 0, maxDd = 0, currentBal = 0;
       recentTrades.forEach((t) => {
         currentBal += t.realizedPnlSol || 0;
-        if (currentBal > peak)
-          peak = currentBal;
+        if (currentBal > peak) peak = currentBal;
         const dd = peak - currentBal;
-        if (dd > maxDd)
-          maxDd = dd;
+        if (dd > maxDd) maxDd = dd;
       });
       return {
         totalTrades: recentTrades.length,
@@ -5386,8 +5309,7 @@ input:checked + .slider:before {
     },
     calculateDiscipline(trade, state) {
       const flags = FeatureManager.resolveFlags(state, "DISCIPLINE_SCORING");
-      if (!flags.enabled)
-        return { score: state.session.disciplineScore || 100, penalty: 0, reasons: [] };
+      if (!flags.enabled) return { score: state.session.disciplineScore || 100, penalty: 0, reasons: [] };
       const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
       const prevTrade = trades.length > 1 ? trades[trades.length - 2] : null;
       let penalty = 0;
@@ -5436,8 +5358,7 @@ input:checked + .slider:before {
       const buyTrade = trades.find(
         (t) => t.side === "BUY" && t.mint === sellTrade.mint && t.ts < sellTrade.ts && t.riskDefined
       );
-      if (!buyTrade || !buyTrade.plannedStop)
-        return { penalty: 0, reasons: [] };
+      if (!buyTrade || !buyTrade.plannedStop) return { penalty: 0, reasons: [] };
       const exitPrice = sellTrade.priceUsd;
       const plannedStop = buyTrade.plannedStop;
       const plannedTarget = buyTrade.plannedTarget;
@@ -5471,14 +5392,12 @@ input:checked + .slider:before {
       const buyTrade = trades.find(
         (t) => t.side === "BUY" && t.mint === sellTrade.mint && t.ts < sellTrade.ts && t.riskDefined
       );
-      if (!buyTrade || !buyTrade.plannedStop)
-        return null;
+      if (!buyTrade || !buyTrade.plannedStop) return null;
       const entryPrice = buyTrade.priceUsd;
       const exitPrice = sellTrade.priceUsd;
       const stopPrice = buyTrade.plannedStop;
       const riskPerUnit = entryPrice - stopPrice;
-      if (riskPerUnit <= 0)
-        return null;
+      if (riskPerUnit <= 0) return null;
       const pnlPerUnit = exitPrice - entryPrice;
       const rMultiple = pnlPerUnit / riskPerUnit;
       return {
@@ -5491,8 +5410,7 @@ input:checked + .slider:before {
       };
     },
     updateStreaks(trade, state) {
-      if (trade.side !== "SELL")
-        return;
+      if (trade.side !== "SELL") return;
       const pnl = trade.realizedPnlSol || 0;
       if (pnl > 0) {
         state.session.winStreak = (state.session.winStreak || 0) + 1;
@@ -5503,14 +5421,12 @@ input:checked + .slider:before {
         state.session.winStreak = 0;
         console.log(`[ZER\xD8] Loss. ${pnl.toFixed(4)} SOL. Loss streak: ${state.session.lossStreak}`);
       }
-      if (!state.session.equityHistory)
-        state.session.equityHistory = [];
+      if (!state.session.equityHistory) state.session.equityHistory = [];
       state.session.equityHistory.push({
         ts: Date.now(),
         equity: state.session.balance + (state.session.realized || 0)
       });
-      if (state.session.equityHistory.length > 50)
-        state.session.equityHistory.shift();
+      if (state.session.equityHistory.length > 50) state.session.equityHistory.shift();
       this.detectTilt(trade, state);
       this.detectFomo(trade, state);
       this.detectPanicSell(trade, state);
@@ -5521,11 +5437,9 @@ input:checked + .slider:before {
     },
     monitorMarketRegime(state) {
       const flags = FeatureManager.resolveFlags(state, "ADVANCED_COACHING");
-      if (!flags.enabled)
-        return;
+      if (!flags.enabled) return;
       const ctx = Market.context;
-      if (!ctx)
-        return;
+      if (!ctx) return;
       const vol = ctx.vol24h;
       const chg = Math.abs(ctx.priceChange24h);
       if (vol < 5e5 && Date.now() - (state.lastRegimeAlert || 0) > 36e5) {
@@ -5539,8 +5453,7 @@ input:checked + .slider:before {
     },
     detectTilt(trade, state) {
       const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
-      if (!flags.enabled)
-        return;
+      if (!flags.enabled) return;
       const lossStreak = state.session.lossStreak || 0;
       if (lossStreak >= 3) {
         this.addAlert(state, "TILT", `TILT DETECTED: ${lossStreak} Losses in a row. Take a break.`);
@@ -5548,11 +5461,9 @@ input:checked + .slider:before {
       }
     },
     detectSunkCost(trade, state) {
-      if (trade.side !== "BUY")
-        return;
+      if (trade.side !== "BUY") return;
       const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
-      if (!flags.enabled)
-        return;
+      if (!flags.enabled) return;
       const pos = state.positions[trade.mint];
       if (pos && (pos.pnlSol || 0) < 0) {
         this.addAlert(state, "SUNK_COST", "SUNK COST: Averaging down into a losing position increases risk.");
@@ -5561,8 +5472,7 @@ input:checked + .slider:before {
     },
     detectOvertrading(state) {
       const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
-      if (!flags.enabled)
-        return;
+      if (!flags.enabled) return;
       if (state.session?.activeAlerts) {
         const lastAlert = state.session.activeAlerts.slice().reverse().find((a) => a.type === "VELOCITY");
         if (lastAlert && Date.now() - lastAlert.ts < 6e4) {
@@ -5570,8 +5480,7 @@ input:checked + .slider:before {
         }
       }
       const trades = Object.values(state.trades || {}).filter((t) => t.mode === (state.settings.tradingMode || "paper")).sort((a, b) => a.ts - b.ts);
-      if (trades.length < 5)
-        return;
+      if (trades.length < 5) return;
       const last5 = trades.slice(-5);
       const timeSpan = last5[4].ts - last5[0].ts;
       const timeSinceLast = Date.now() - last5[4].ts;
@@ -5584,8 +5493,7 @@ input:checked + .slider:before {
     },
     monitorProfitOverstay(state) {
       const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
-      if (!flags.enabled)
-        return;
+      if (!flags.enabled) return;
       Object.values(state.positions).forEach((pos) => {
         const pnlPct = pos.pnlPct || 0;
         const peakPct = pos.peakPnlPct !== void 0 ? pos.peakPnlPct : 0;
@@ -5599,11 +5507,9 @@ input:checked + .slider:before {
       });
     },
     detectStrategyDrift(trade, state) {
-      if (trade.side !== "BUY")
-        return;
+      if (trade.side !== "BUY") return;
       const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
-      if (!flags.enabled)
-        return;
+      if (!flags.enabled) return;
       if (trade.strategy === "Unknown" || trade.strategy === "Other") {
         const trades = Object.values(state.trades || {});
         const profitableStrategies = trades.filter((t) => (t.realizedPnlSol || 0) > 0 && t.strategy !== "Unknown").map((t) => t.strategy);
@@ -5614,11 +5520,9 @@ input:checked + .slider:before {
       }
     },
     detectFomo(trade, state) {
-      if (trade.side !== "BUY")
-        return;
+      if (trade.side !== "BUY") return;
       const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
-      if (!flags.enabled)
-        return;
+      if (!flags.enabled) return;
       const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
       const prevTrade = trades.length > 1 ? trades[trades.length - 2] : null;
       if (prevTrade && trade.ts - prevTrade.ts < 3e4 && prevTrade.side === "SELL" && (prevTrade.realizedPnlSol || 0) < 0) {
@@ -5627,39 +5531,30 @@ input:checked + .slider:before {
       }
     },
     detectPanicSell(trade, state) {
-      if (trade.side !== "SELL")
-        return;
+      if (trade.side !== "SELL") return;
       const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
-      if (!flags.enabled)
-        return;
+      if (!flags.enabled) return;
       if (trade.entryTs && trade.ts - trade.entryTs < 45e3 && (trade.realizedPnlSol || 0) < 0) {
         this.addAlert(state, "PANIC", "PANIC SELL: You're cutting too early. Trust your stops.");
         state.behavior.panicSells = (state.behavior.panicSells || 0) + 1;
       }
     },
     addAlert(state, type, message) {
-      if (!state.session.activeAlerts)
-        state.session.activeAlerts = [];
+      if (!state.session.activeAlerts) state.session.activeAlerts = [];
       const alert = { type, message, ts: Date.now() };
       state.session.activeAlerts.push(alert);
-      if (state.session.activeAlerts.length > 3)
-        state.session.activeAlerts.shift();
+      if (state.session.activeAlerts.length > 3) state.session.activeAlerts.shift();
       this.logAlertEvent(state, type, message);
       console.log(`[ELITE ALERT] ${type}: ${message}`);
     },
     updateProfile(state) {
       const b = state.behavior;
       const totalMistakes = (b.tiltFrequency || 0) + (b.fomoTrades || 0) + (b.panicSells || 0);
-      if (totalMistakes === 0)
-        b.profile = "Disciplined";
-      else if (b.tiltFrequency > 2)
-        b.profile = "Emotional";
-      else if (b.fomoTrades > 2)
-        b.profile = "Impulsive";
-      else if (b.panicSells > 2)
-        b.profile = "Hesitant";
-      else
-        b.profile = "Improving";
+      if (totalMistakes === 0) b.profile = "Disciplined";
+      else if (b.tiltFrequency > 2) b.profile = "Emotional";
+      else if (b.fomoTrades > 2) b.profile = "Impulsive";
+      else if (b.panicSells > 2) b.profile = "Hesitant";
+      else b.profile = "Improving";
     },
     getProfessorDebrief(state) {
       const score = state.session.disciplineScore !== void 0 ? state.session.disciplineScore : 100;
@@ -5734,17 +5629,14 @@ input:checked + .slider:before {
       } else {
         trades = allTrades;
       }
-      if (trades.length === 0)
-        return null;
+      if (trades.length === 0) return null;
       const recentTrades = trades.slice(-10);
       let wins = 0, losses = 0;
       let totalPnlSol = 0;
       for (const trade of recentTrades) {
         const pnl = trade.realizedPnlSol || 0;
-        if (pnl > 0)
-          wins++;
-        else if (pnl < 0)
-          losses++;
+        if (pnl > 0) wins++;
+        else if (pnl < 0) losses++;
         totalPnlSol += pnl;
       }
       const winRate = recentTrades.length > 0 ? wins / recentTrades.length * 100 : 0;
@@ -5754,11 +5646,9 @@ input:checked + .slider:before {
       let peak = 0, maxDd = 0, currentBal = 0;
       recentTrades.forEach((t) => {
         currentBal += t.realizedPnlSol || 0;
-        if (currentBal > peak)
-          peak = currentBal;
+        if (currentBal > peak) peak = currentBal;
         const dd = peak - currentBal;
-        if (dd > maxDd)
-          maxDd = dd;
+        if (dd > maxDd) maxDd = dd;
       });
       return {
         totalTrades: recentTrades.length,
@@ -5776,8 +5666,7 @@ input:checked + .slider:before {
     // ==========================================
     exportToCSV(state) {
       const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
-      if (trades.length === 0)
-        return null;
+      if (trades.length === 0) return null;
       const headers = [
         "Trade ID",
         "Timestamp",
@@ -5961,8 +5850,7 @@ input:checked + .slider:before {
           if (strategyStats[strat]) {
             const pnl = sell.realizedPnlSol || 0;
             strategyStats[strat].totalPnl += pnl;
-            if (pnl > 0)
-              strategyStats[strat].wins++;
+            if (pnl > 0) strategyStats[strat].wins++;
             strategyStats[strat].avgHoldTime += sell.ts - matchingBuy.ts;
           }
         }
@@ -6032,8 +5920,7 @@ input:checked + .slider:before {
         const matchingBuy = trades.find((b) => b.side === "BUY" && b.mint === t.mint && b.ts < t.ts);
         if (matchingBuy && matchingBuy.solAmount > avgSize * 1.5) {
           largeTotal++;
-          if ((t.realizedPnlSol || 0) > 0)
-            largeWins++;
+          if ((t.realizedPnlSol || 0) > 0) largeWins++;
         }
       });
       if (largeTotal >= 2) {
@@ -6051,14 +5938,12 @@ input:checked + .slider:before {
       const sessionTrades = this._groupBySession(trades, state);
       let lateWins = 0, lateTotal = 0;
       sessionTrades.forEach((session) => {
-        if (session.length < 5)
-          return;
+        if (session.length < 5) return;
         const sessionStart = session[0].ts;
         const lateThreshold = sessionStart + 60 * 60 * 1e3;
         session.filter((t) => t.ts > lateThreshold && t.side === "SELL").forEach((t) => {
           lateTotal++;
-          if ((t.realizedPnlSol || 0) > 0)
-            lateWins++;
+          if ((t.realizedPnlSol || 0) > 0) lateWins++;
         });
       });
       if (lateTotal >= 3) {
@@ -6095,14 +5980,10 @@ input:checked + .slider:before {
         extended: { range: "> 120 min", sessions: [], avgPnl: 0, avgWinRate: 0 }
       };
       sessionPerformance.forEach((s) => {
-        if (s.duration < 30)
-          buckets.short.sessions.push(s);
-        else if (s.duration < 60)
-          buckets.medium.sessions.push(s);
-        else if (s.duration < 120)
-          buckets.long.sessions.push(s);
-        else
-          buckets.extended.sessions.push(s);
+        if (s.duration < 30) buckets.short.sessions.push(s);
+        else if (s.duration < 60) buckets.medium.sessions.push(s);
+        else if (s.duration < 120) buckets.long.sessions.push(s);
+        else buckets.extended.sessions.push(s);
       });
       Object.values(buckets).forEach((b) => {
         if (b.sessions.length > 0) {
@@ -6138,18 +6019,13 @@ input:checked + .slider:before {
       sellTrades.forEach((t) => {
         const hour = new Date(t.ts).getHours();
         let slot;
-        if (hour >= 6 && hour < 12)
-          slot = "morning";
-        else if (hour >= 12 && hour < 18)
-          slot = "afternoon";
-        else if (hour >= 18 && hour < 24)
-          slot = "evening";
-        else
-          slot = "night";
+        if (hour >= 6 && hour < 12) slot = "morning";
+        else if (hour >= 12 && hour < 18) slot = "afternoon";
+        else if (hour >= 18 && hour < 24) slot = "evening";
+        else slot = "night";
         timeSlots[slot].total++;
         timeSlots[slot].pnl += t.realizedPnlSol || 0;
-        if ((t.realizedPnlSol || 0) > 0)
-          timeSlots[slot].wins++;
+        if ((t.realizedPnlSol || 0) > 0) timeSlots[slot].wins++;
       });
       const results = Object.entries(timeSlots).filter(([_, s]) => s.total >= 2).map(([name, s]) => ({
         name,
@@ -6166,8 +6042,7 @@ input:checked + .slider:before {
     },
     _determineTradingStyle(trades) {
       const sellTrades = trades.filter((t) => t.side === "SELL");
-      if (sellTrades.length < 5)
-        return { style: "Unknown", description: "Need more data" };
+      if (sellTrades.length < 5) return { style: "Unknown", description: "Need more data" };
       let totalHoldTime = 0, holdCount = 0;
       sellTrades.forEach((sell) => {
         const buy = trades.find((t) => t.side === "BUY" && t.mint === sell.mint && t.ts < sell.ts);
@@ -6188,8 +6063,7 @@ input:checked + .slider:before {
       }
     },
     _analyzeRiskProfile(buyTrades, state) {
-      if (buyTrades.length < 3)
-        return { profile: "Unknown", avgRisk: 0 };
+      if (buyTrades.length < 3) return { profile: "Unknown", avgRisk: 0 };
       const startSol = state.settings?.startSol || 10;
       const riskPcts = buyTrades.map((t) => t.solAmount / startSol * 100);
       const avgRisk = riskPcts.reduce((a, b) => a + b, 0) / riskPcts.length;
@@ -6197,14 +6071,10 @@ input:checked + .slider:before {
       const plansUsed = buyTrades.filter((t) => t.riskDefined).length;
       const planRate = (plansUsed / buyTrades.length * 100).toFixed(0);
       let profile;
-      if (avgRisk < 5)
-        profile = "Conservative";
-      else if (avgRisk < 15)
-        profile = "Moderate";
-      else if (avgRisk < 30)
-        profile = "Aggressive";
-      else
-        profile = "High Risk";
+      if (avgRisk < 5) profile = "Conservative";
+      else if (avgRisk < 15) profile = "Moderate";
+      else if (avgRisk < 30) profile = "Aggressive";
+      else profile = "High Risk";
       return {
         profile,
         avgRisk: avgRisk.toFixed(1),
@@ -6238,15 +6108,13 @@ input:checked + .slider:before {
         if (i === 0) {
           currentSession.push(trade);
         } else if (trade.ts - trades[i - 1].ts > SESSION_GAP) {
-          if (currentSession.length > 0)
-            sessions.push(currentSession);
+          if (currentSession.length > 0) sessions.push(currentSession);
           currentSession = [trade];
         } else {
           currentSession.push(trade);
         }
       });
-      if (currentSession.length > 0)
-        sessions.push(currentSession);
+      if (currentSession.length > 0) sessions.push(currentSession);
       return sessions;
     },
     calculateConsistencyScore(state) {
@@ -6315,14 +6183,10 @@ input:checked + .slider:before {
         breakdown.winRateStability + breakdown.sizingConsistency + breakdown.frequencyStability + breakdown.strategyFocus
       );
       let message = "";
-      if (score >= 80)
-        message = "Highly consistent trading patterns";
-      else if (score >= 60)
-        message = "Good consistency, minor variations";
-      else if (score >= 40)
-        message = "Moderate consistency, room for improvement";
-      else
-        message = "Inconsistent patterns detected";
+      if (score >= 80) message = "Highly consistent trading patterns";
+      else if (score >= 60) message = "Good consistency, minor variations";
+      else if (score >= 40) message = "Moderate consistency, room for improvement";
+      else message = "Inconsistent patterns detected";
       return {
         score,
         message,
@@ -6382,10 +6246,8 @@ input:checked + .slider:before {
       };
       const [kPrice, cPrice] = await Promise.all([fetchKraken(), fetchCoinbase()]);
       let validPrices = [];
-      if (kPrice)
-        validPrices.push(kPrice);
-      if (cPrice)
-        validPrices.push(cPrice);
+      if (kPrice) validPrices.push(kPrice);
+      if (cPrice) validPrices.push(cPrice);
       if (validPrices.length > 0) {
         const sum = validPrices.reduce((a, b) => a + b, 0);
         const median = sum / validPrices.length;
@@ -6395,18 +6257,15 @@ input:checked + .slider:before {
         console.log(`[PNL] SOL/USD Updated: $${median.toFixed(2)} (Sources: ${validPrices.length})`);
       } else {
         console.error("[PNL] All SOL price sources failed. Using fallback.");
-        if (this.lastValidSolPrice)
-          this.cachedSolPrice = this.lastValidSolPrice;
+        if (this.lastValidSolPrice) this.cachedSolPrice = this.lastValidSolPrice;
       }
     },
     getSolPrice() {
       return this.cachedSolPrice;
     },
     fmtSol(n) {
-      if (!Number.isFinite(n))
-        return "0.0000";
-      if (Math.abs(n) < 1 && n !== 0)
-        return n.toFixed(9);
+      if (!Number.isFinite(n)) return "0.0000";
+      if (Math.abs(n) < 1 && n !== 0) return n.toFixed(9);
       return n.toFixed(4);
     },
     /**
@@ -6428,8 +6287,7 @@ input:checked + .slider:before {
           pos.lastMarketCapUsd = Market.marketCap;
           priceWasUpdated = true;
         }
-        if (pos.qtyTokens <= 0)
-          return;
+        if (pos.qtyTokens <= 0) return;
         const entryMC = pos.entryMarketCapUsdReference || 0;
         const totalSolSpent = pos.totalSolSpent || 0;
         if (currentMC > 0 && entryMC > 0 && totalSolSpent > 0) {
@@ -6442,8 +6300,7 @@ input:checked + .slider:before {
             const unrealizedPnlUsd2 = unrealizedPnlSol2 * solUsd;
             const pnlPct2 = totalSolSpent > 0 ? unrealizedPnlSol2 / totalSolSpent * 100 : 0;
             pos.pnlPct = pnlPct2;
-            if (pos.peakPnlPct === void 0 || pnlPct2 > pos.peakPnlPct)
-              pos.peakPnlPct = pnlPct2;
+            if (pos.peakPnlPct === void 0 || pnlPct2 > pos.peakPnlPct) pos.peakPnlPct = pnlPct2;
             totalUnrealizedUsd += unrealizedPnlUsd2;
             totalUnrealizedSol += unrealizedPnlSol2;
             console.log(`[PNL] ${pos.symbol}: MC Ratio \u2014 entryMC=$${entryMC.toFixed(0)}, currentMC=$${currentMC.toFixed(0)}, ratio=${mcRatio.toFixed(4)}, pnl=${unrealizedPnlSol2.toFixed(4)} SOL (${pnlPct2.toFixed(1)}%)`);
@@ -6451,15 +6308,13 @@ input:checked + .slider:before {
           }
         }
         const markPriceUsd = pos.lastMarkPriceUsd || 0;
-        if (markPriceUsd <= 0)
-          return;
+        if (markPriceUsd <= 0) return;
         const currentValueUsd = pos.qtyTokens * markPriceUsd;
         const unrealizedPnlUsd = currentValueUsd - pos.costBasisUsd;
         const unrealizedPnlSol = unrealizedPnlUsd / solUsd;
         const pnlPct = pos.costBasisUsd > 0 ? unrealizedPnlUsd / pos.costBasisUsd * 100 : 0;
         pos.pnlPct = pnlPct;
-        if (pos.peakPnlPct === void 0 || pnlPct > pos.peakPnlPct)
-          pos.peakPnlPct = pnlPct;
+        if (pos.peakPnlPct === void 0 || pnlPct > pos.peakPnlPct) pos.peakPnlPct = pnlPct;
         totalUnrealizedUsd += unrealizedPnlUsd;
         totalUnrealizedSol += unrealizedPnlSol;
         console.log(`[PNL] ${pos.symbol}: WAC fallback \u2014 qty=${pos.qtyTokens.toFixed(2)}, price=$${markPriceUsd.toFixed(6)}, pnl=${unrealizedPnlSol.toFixed(4)} SOL (${pnlPct.toFixed(1)}%)`);
@@ -6485,12 +6340,9 @@ input:checked + .slider:before {
       const mint = Market.currentMint;
       const priceUsd = Market.price;
       const symbol = Market.currentSymbol || "UNKNOWN";
-      if (!mint)
-        return { success: false, error: "No active token context" };
-      if (solAmount <= 0)
-        return { success: false, error: "Invalid SOL amount" };
-      if (priceUsd <= 0)
-        return { success: false, error: `Price not available (${priceUsd})` };
+      if (!mint) return { success: false, error: "No active token context" };
+      if (solAmount <= 0) return { success: false, error: "Invalid SOL amount" };
+      if (priceUsd <= 0) return { success: false, error: `Price not available (${priceUsd})` };
       const tickAge = Date.now() - Market.lastTickTs;
       console.log(`[EXEC] BUY DIAG: price=$${priceUsd}, mcap=$${Market.marketCap}, source=${Market.lastSource}, tickAge=${tickAge}ms`);
       const solUsd = PnlCalculator.getSolPrice();
@@ -6545,10 +6397,8 @@ input:checked + .slider:before {
       const mint = Market.currentMint;
       const priceUsd = Market.price;
       const symbol = Market.currentSymbol || "UNKNOWN";
-      if (!mint)
-        return { success: false, error: "No active token context" };
-      if (!state.positions[mint] || state.positions[mint].qtyTokens <= 0)
-        return { success: false, error: "No open position" };
+      if (!mint) return { success: false, error: "No active token context" };
+      if (!state.positions[mint] || state.positions[mint].qtyTokens <= 0) return { success: false, error: "No open position" };
       const pos = state.positions[mint];
       const tickAge = Date.now() - Market.lastTickTs;
       console.log(`[EXEC] SELL DIAG: price=$${priceUsd}, mcap=$${Market.marketCap}, source=${Market.lastSource}, tickAge=${tickAge}ms`);
@@ -6556,8 +6406,7 @@ input:checked + .slider:before {
       const pct = percent === void 0 || percent === null ? 100 : Math.min(Math.max(percent, 0), 100);
       const rawDelta = pos.qtyTokens * (pct / 100);
       const qtyDelta = Math.min(rawDelta, pos.qtyTokens);
-      if (qtyDelta <= 0)
-        return { success: false, error: "Zero quantity exit" };
+      if (qtyDelta <= 0) return { success: false, error: "Zero quantity exit" };
       const proceedsUsd = qtyDelta * priceUsd;
       const costRemovedUsd = qtyDelta * pos.avgCostUsdPerToken;
       const pnlEventUsd = proceedsUsd - costRemovedUsd;
@@ -6610,10 +6459,8 @@ input:checked + .slider:before {
       return false;
     },
     recordFill(state, fillData) {
-      if (!state.fills)
-        state.fills = [];
-      if (!state.trades)
-        state.trades = {};
+      if (!state.fills) state.fills = [];
+      if (!state.trades) state.trades = {};
       const id = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
       const fill = {
         id,
@@ -6623,13 +6470,11 @@ input:checked + .slider:before {
       state.fills.unshift(fill);
       state.trades[id] = fill;
       if (state.session) {
-        if (!state.session.trades)
-          state.session.trades = [];
+        if (!state.session.trades) state.session.trades = [];
         state.session.trades.push(id);
         state.session.tradeCount = (state.session.tradeCount || 0) + 1;
       }
-      if (state.fills.length > 500)
-        state.fills.pop();
+      if (state.fills.length > 500) state.fills.pop();
       return id;
     }
   };
@@ -6662,12 +6507,219 @@ input:checked + .slider:before {
 
   // src/modules/ui/paywall.js
   init_store();
+
+  // src/modules/license.js
+  init_store();
+
+  // src/modules/logger.js
+  var Logger = {
+    isProduction: false,
+    // Set to true in prod builds
+    info(msg, ...args) {
+      if (this.isProduction) return;
+      console.log(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
+    },
+    warn(msg, ...args) {
+      console.warn(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
+    },
+    error(msg, ...args) {
+      console.error(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
+    },
+    cleanArgs(args) {
+      return args.map((arg) => {
+        if (arg instanceof Error) {
+          return { name: arg.name, message: arg.message, stack: arg.stack };
+        }
+        if (typeof DOMException !== "undefined" && arg instanceof DOMException) {
+          return { name: arg.name, message: arg.message, code: arg.code };
+        }
+        if (typeof arg === "object" && arg !== null) {
+          const clean = { ...arg };
+          ["key", "secret", "token", "auth", "password"].forEach((k) => {
+            if (k in clean) clean[k] = "***REDACTED***";
+          });
+          return clean;
+        }
+        return arg;
+      });
+    }
+  };
+
+  // src/modules/license.js
+  var WHOP_PRODUCT_URL = "https://whop.com/crowd-ctrl/zero-elite/";
+  var REVALIDATION_INTERVAL_MS = 24 * 60 * 60 * 1e3;
+  var License = {
+    /**
+     * Check if the user has a valid Elite license (from cached state).
+     * Does NOT call any API — reads Store only.
+     * @returns {boolean}
+     */
+    isValid() {
+      const license = Store.state?.settings?.license;
+      if (!license || !license.valid || !license.lastVerified) return false;
+      const GRACE_MS = 72 * 60 * 60 * 1e3;
+      const elapsed = Date.now() - license.lastVerified;
+      return elapsed < GRACE_MS;
+    },
+    /**
+     * Get the stored license key.
+     * @returns {string|null}
+     */
+    getKey() {
+      return Store.state?.settings?.license?.key || null;
+    },
+    /**
+     * Get license status for UI display.
+     * @returns {{ status: string, plan: string|null, expiresAt: string|null, lastVerified: number|null, maskedKey: string|null }}
+     */
+    getStatus() {
+      const license = Store.state?.settings?.license;
+      if (!license || !license.key) {
+        return { status: "none", plan: null, expiresAt: null, lastVerified: null, maskedKey: null };
+      }
+      const key = license.key;
+      const maskedKey = key.length > 4 ? "****" + key.slice(-4) : "****";
+      return {
+        status: license.status || "none",
+        plan: license.plan || null,
+        expiresAt: license.expiresAt || null,
+        lastVerified: license.lastVerified || null,
+        maskedKey
+      };
+    },
+    /**
+     * Get a human-readable plan label.
+     * @returns {string}
+     */
+    getPlanLabel() {
+      const plan = Store.state?.settings?.license?.plan;
+      if (plan === "founders") return "Founders Lifetime";
+      if (plan === "annual") return "Annual";
+      if (plan === "monthly") return "Monthly";
+      return "";
+    },
+    /**
+     * Activate a license key — stores it and triggers verification.
+     * @param {string} key - Whop license key or membership ID
+     * @returns {Promise<{ ok: boolean, error?: string }>}
+     */
+    async activate(key) {
+      if (!key || typeof key !== "string" || key.trim().length < 4) {
+        return { ok: false, error: "Invalid license key" };
+      }
+      key = key.trim();
+      Logger.info("[License] Activating key...");
+      Store.state.settings.license.key = key;
+      Store.state.settings.license.status = "pending";
+      await Store.save();
+      const result = await this.revalidate();
+      if (result.ok) {
+        Logger.info("[License] Activation successful");
+      } else {
+        Logger.warn("[License] Activation failed:", result.error);
+        if (result.error === "invalid_key" || result.error === "invalid_product") {
+          Store.state.settings.license.key = null;
+          Store.state.settings.license.valid = false;
+          Store.state.settings.license.status = "error";
+          Store.state.settings.tier = "free";
+          await Store.save();
+        }
+      }
+      return result;
+    },
+    /**
+     * Deactivate the license — clears key and reverts to Free.
+     * @returns {Promise<void>}
+     */
+    async deactivate() {
+      Logger.info("[License] Deactivating...");
+      Store.state.settings.license = {
+        key: null,
+        valid: false,
+        lastVerified: null,
+        expiresAt: null,
+        status: "none",
+        plan: null
+      };
+      Store.state.settings.tier = "free";
+      await Store.save();
+    },
+    /**
+     * Re-validate the stored license key against the server.
+     * @returns {Promise<{ ok: boolean, error?: string }>}
+     */
+    async revalidate() {
+      const key = Store.state?.settings?.license?.key;
+      if (!key) return { ok: false, error: "no_key" };
+      Logger.info("[License] Revalidating...");
+      try {
+        const response = await new Promise((resolve) => {
+          chrome.runtime.sendMessage(
+            { type: "VERIFY_LICENSE", licenseKey: key },
+            (res) => {
+              if (chrome.runtime.lastError) {
+                resolve({ ok: false, error: chrome.runtime.lastError.message });
+                return;
+              }
+              resolve(res || { ok: false, error: "no_response" });
+            }
+          );
+        });
+        if (response.ok && response.membership) {
+          const m = response.membership;
+          Store.state.settings.license.valid = m.valid;
+          Store.state.settings.license.status = m.status || (m.valid ? "active" : "expired");
+          Store.state.settings.license.plan = m.plan || null;
+          Store.state.settings.license.expiresAt = m.expiresAt || null;
+          Store.state.settings.license.lastVerified = Date.now();
+          Store.state.settings.tier = m.valid ? "elite" : "free";
+          await Store.save();
+          return { ok: m.valid, error: m.valid ? void 0 : "membership_inactive" };
+        }
+        const license = Store.state.settings.license;
+        if (license.valid && license.lastVerified) {
+          const GRACE_MS = 72 * 60 * 60 * 1e3;
+          const elapsed = Date.now() - license.lastVerified;
+          if (elapsed < GRACE_MS) {
+            Logger.warn("[License] Verification failed, using cached (grace period)");
+            return { ok: true };
+          }
+        }
+        Store.state.settings.license.valid = false;
+        Store.state.settings.license.status = "error";
+        Store.state.settings.tier = "free";
+        await Store.save();
+        return { ok: false, error: response.error || "verification_failed" };
+      } catch (e) {
+        Logger.error("[License] Revalidation error:", e);
+        return { ok: false, error: "network_error" };
+      }
+    },
+    /**
+     * Check if revalidation is needed (called on boot).
+     * @returns {boolean}
+     */
+    needsRevalidation() {
+      const license = Store.state?.settings?.license;
+      if (!license || !license.key) return false;
+      if (!license.lastVerified) return true;
+      return Date.now() - license.lastVerified > REVALIDATION_INTERVAL_MS;
+    },
+    /**
+     * Open the Whop product page for purchase.
+     */
+    openPurchasePage() {
+      window.open(WHOP_PRODUCT_URL, "_blank");
+      Logger.info("[License] Opened Whop purchase page");
+    }
+  };
+
+  // src/modules/ui/paywall.js
   var Paywall = {
     showUpgradeModal(lockedFeature = null) {
       const root = OverlayManager.getShadowRoot();
       const existing = root.getElementById("paywall-modal-overlay");
-      if (existing)
-        existing.remove();
+      if (existing) existing.remove();
       const overlay = document.createElement("div");
       overlay.id = "paywall-modal-overlay";
       overlay.className = "paywall-modal-overlay";
@@ -6745,40 +6797,100 @@ input:checked + .slider:before {
                     </div>
                 </div>
 
-                <div class="paywall-actions">
-                    <button class="paywall-btn secondary" data-act="demo">
-                        <span>Unlock Elite (Dev)</span>
+                <div class="paywall-pricing" style="text-align:center; margin:16px 0 8px; font-size:12px; color:#94a3b8; line-height:1.6;">
+                    <span style="color:#f8fafc; font-weight:600;">$19/mo</span> &middot;
+                    <span style="color:#f8fafc; font-weight:600;">$149/yr</span> &middot;
+                    <span style="color:#a78bfa; font-weight:600;">$299 Founders Lifetime</span>
+                </div>
+
+                <div class="paywall-actions" style="display:flex; flex-direction:column; gap:8px;">
+                    <button class="paywall-btn primary" data-act="purchase" style="background:linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color:white; border:none; padding:12px 20px; border-radius:8px; font-weight:700; font-size:14px; cursor:pointer;">
+                        Get Elite on Whop
+                    </button>
+                    <button class="paywall-btn text" data-act="show-key-input" style="background:none; border:none; color:#8b5cf6; font-size:12px; cursor:pointer; padding:6px;">
+                        I have a license key
                     </button>
                 </div>
 
+                <div class="paywall-key-section" style="display:none; margin-top:12px;">
+                    <div style="display:flex; gap:8px;">
+                        <input type="text" class="paywall-license-input" placeholder="Enter license key (mem_xxx...)" maxlength="64"
+                            style="flex:1; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:6px; padding:10px 12px; color:#f8fafc; font-size:13px; outline:none;">
+                        <button class="paywall-btn" data-act="activate" style="background:rgba(139,92,246,0.15); border:1px solid rgba(139,92,246,0.3); color:#a78bfa; padding:10px 16px; border-radius:6px; font-weight:600; font-size:13px; cursor:pointer; white-space:nowrap;">
+                            Activate
+                        </button>
+                    </div>
+                    <div class="paywall-key-status" style="margin-top:8px; font-size:12px; min-height:18px;"></div>
+                </div>
+
                 <div class="paywall-footer">
-                    <p style="font-size:11px; color:#475569;">Available in Elite</p>
+                    <p style="font-size:11px; color:#475569; margin-top:12px;">Manage your membership at whop.com/orders</p>
                 </div>
             </div>
         `;
-      overlay.addEventListener("click", (e) => {
+      overlay.addEventListener("click", async (e) => {
         if (e.target === overlay || e.target.closest('[data-act="close"]')) {
           overlay.remove();
         }
-        if (e.target.closest('[data-act="demo"]')) {
-          this.unlockDemo("elite");
-          overlay.remove();
+        if (e.target.closest('[data-act="purchase"]')) {
+          License.openPurchasePage();
+        }
+        if (e.target.closest('[data-act="show-key-input"]')) {
+          const keySection = overlay.querySelector(".paywall-key-section");
+          if (keySection) {
+            keySection.style.display = keySection.style.display === "none" ? "block" : "none";
+            const input = keySection.querySelector(".paywall-license-input");
+            if (input) input.focus();
+          }
+        }
+        if (e.target.closest('[data-act="activate"]')) {
+          const input = overlay.querySelector(".paywall-license-input");
+          const statusEl = overlay.querySelector(".paywall-key-status");
+          const key = input?.value?.trim();
+          if (!key) {
+            if (statusEl) {
+              statusEl.textContent = "Please enter a license key";
+              statusEl.style.color = "#f59e0b";
+            }
+            return;
+          }
+          const btn = e.target.closest('[data-act="activate"]');
+          const origText = btn.textContent;
+          btn.textContent = "Verifying...";
+          btn.disabled = true;
+          if (statusEl) {
+            statusEl.textContent = "Verifying your license...";
+            statusEl.style.color = "#94a3b8";
+          }
+          const result = await License.activate(key);
+          btn.textContent = origText;
+          btn.disabled = false;
+          if (result.ok) {
+            if (statusEl) {
+              statusEl.textContent = "Elite activated!";
+              statusEl.style.color = "#10b981";
+            }
+            this._showSuccessToast(License.getPlanLabel());
+            setTimeout(() => overlay.remove(), 1500);
+          } else {
+            const errorMsg = result.error === "invalid_key" ? "Invalid license key" : result.error === "invalid_product" ? "Key not for this product" : result.error === "membership_inactive" ? "Membership is not active" : "Verification failed \u2014 try again";
+            if (statusEl) {
+              statusEl.textContent = errorMsg;
+              statusEl.style.color = "#ef4444";
+            }
+          }
         }
       });
       root.appendChild(overlay);
     },
     handleUpgrade() {
-      window.open("https://zero-trading.com/elite", "_blank");
-      console.log("[Paywall] Redirecting to Elite upgrade page");
+      License.openPurchasePage();
     },
-    unlockDemo(tier = "elite") {
-      Store.state.settings.tier = "elite";
-      Store.save();
-      console.log(`[Paywall] Demo mode unlocked - ${tier.toUpperCase()} tier activated`);
+    _showSuccessToast(planLabel = "") {
       const root = OverlayManager.getShadowRoot();
       const toast = document.createElement("div");
       toast.className = "paywall-toast";
-      toast.textContent = `\u2713 ${tier.toUpperCase()} Demo Unlocked`;
+      toast.textContent = planLabel ? `Elite Activated (${planLabel})` : "Elite Activated";
       toast.style.cssText = `
             position: fixed;
             top: 80px;
@@ -6792,14 +6904,12 @@ input:checked + .slider:before {
             font-size: 14px;
             z-index: 2147483647;
             pointer-events: none;
-            animation: slideDown 0.3s cubic-bezier(0.16, 1, 0.3, 1);
         `;
       root.appendChild(toast);
-      setTimeout(() => toast.remove(), 2e3);
+      setTimeout(() => toast.remove(), 3e3);
     },
     isFeatureLocked(featureName) {
-      if (!FeatureManager)
-        return false;
+      if (!FeatureManager) return false;
       const flags = FeatureManager.resolveFlags(Store.state, featureName);
       return flags.gated;
     }
@@ -7216,10 +7326,8 @@ canvas#equity-canvas {
   var Dashboard = {
     isOpen: false,
     toggle() {
-      if (this.isOpen)
-        this.close();
-      else
-        this.open();
+      if (this.isOpen) this.close();
+      else this.open();
     },
     open() {
       this.isOpen = true;
@@ -7228,8 +7336,7 @@ canvas#equity-canvas {
     close() {
       this.isOpen = false;
       const overlay = OverlayManager.getShadowRoot().querySelector(".paper-dashboard-overlay");
-      if (overlay)
-        overlay.remove();
+      if (overlay) overlay.remove();
     },
     computeSessionStats(state) {
       const sessionTradeIds = state.session.trades || [];
@@ -7246,17 +7353,14 @@ canvas#equity-canvas {
       let peak = 0, maxDd = 0, runningBal = 0;
       exits.forEach((t) => {
         runningBal += t.realizedPnlSol || 0;
-        if (runningBal > peak)
-          peak = runningBal;
+        if (runningBal > peak) peak = runningBal;
         const dd = peak - runningBal;
-        if (dd > maxDd)
-          maxDd = dd;
+        if (dd > maxDd) maxDd = dd;
       });
       let worstTradePnl = 0;
       exits.forEach((t) => {
         const pnl = t.realizedPnlSol || 0;
-        if (pnl < worstTradePnl)
-          worstTradePnl = pnl;
+        if (pnl < worstTradePnl) worstTradePnl = pnl;
       });
       let maxWinStreak = 0, maxLossStreak = 0;
       let curWin = 0, curLoss = 0;
@@ -7265,13 +7369,11 @@ canvas#equity-canvas {
         if (pnl > 0) {
           curWin++;
           curLoss = 0;
-          if (curWin > maxWinStreak)
-            maxWinStreak = curWin;
+          if (curWin > maxWinStreak) maxWinStreak = curWin;
         } else if (pnl < 0) {
           curLoss++;
           curWin = 0;
-          if (curLoss > maxLossStreak)
-            maxLossStreak = curLoss;
+          if (curLoss > maxLossStreak) maxLossStreak = curLoss;
         }
       });
       const avgPnl = exits.length > 0 ? exits.reduce((sum, t) => sum + (t.realizedPnlSol || 0), 0) / exits.length : 0;
@@ -7331,15 +7433,12 @@ canvas#equity-canvas {
       const pnlClass = stats.sessionPnl >= 0 ? "win" : "loss";
       const pnlPctStr = `${stats.sessionPnlPct >= 0 ? "+" : ""}${stats.sessionPnlPct.toFixed(1)}%`;
       const fmtPnl = (v) => {
-        if (!Number.isFinite(v) || v === 0)
-          return "\u2014";
+        if (!Number.isFinite(v) || v === 0) return "\u2014";
         return `${v >= 0 ? "+" : ""}${v.toFixed(4)} SOL`;
       };
       const fmtPf = (v) => {
-        if (v === 0)
-          return "\u2014";
-        if (v === Infinity)
-          return "\u221E";
+        if (v === 0) return "\u2014";
+        if (v === Infinity) return "\u221E";
         return v.toFixed(2);
       };
       const isEmpty = stats.totalTrades === 0;
@@ -7478,8 +7577,7 @@ canvas#equity-canvas {
         });
       }
       overlay.onclick = (e) => {
-        if (e.target === overlay)
-          self.close();
+        if (e.target === overlay) self.close();
       };
       const shareBtn = overlay.querySelector("#dashboard-share-btn");
       if (shareBtn) {
@@ -7496,8 +7594,7 @@ canvas#equity-canvas {
       const notesSave = overlay.querySelector("#dash-notes-save");
       if (notesInput) {
         notesInput.addEventListener("input", () => {
-          if (notesCount)
-            notesCount.textContent = `${notesInput.value.length}/280`;
+          if (notesCount) notesCount.textContent = `${notesInput.value.length}/280`;
         });
         notesInput.addEventListener("blur", async () => {
           state.session.notes = notesInput.value.slice(0, 280);
@@ -7527,8 +7624,7 @@ canvas#equity-canvas {
           e.stopPropagation();
           const open = eliteContent.style.display !== "none";
           eliteContent.style.display = open ? "none" : "block";
-          if (eliteChevron)
-            eliteChevron.textContent = open ? "\u25B8" : "\u25BE";
+          if (eliteChevron) eliteChevron.textContent = open ? "\u25B8" : "\u25BE";
         });
       }
       if (hasEquityData) {
@@ -7537,12 +7633,10 @@ canvas#equity-canvas {
     },
     drawEquityCurve(root, state) {
       const canvas = root.querySelector("#equity-canvas");
-      if (!canvas)
-        return;
+      if (!canvas) return;
       const ctx = canvas.getContext("2d");
       const history = state.session.equityHistory || [];
-      if (history.length < 2)
-        return;
+      if (history.length < 2) return;
       const dpr = window.devicePixelRatio || 1;
       canvas.width = canvas.clientWidth * dpr;
       canvas.height = canvas.clientHeight * dpr;
@@ -7562,10 +7656,8 @@ canvas#equity-canvas {
       history.forEach((entry, i) => {
         const x = padding + i / (history.length - 1) * (w - padding * 2);
         const y = h - padding - (entry.equity - min) / range * (h - padding * 2);
-        if (i === 0)
-          ctx.moveTo(x, y);
-        else
-          ctx.lineTo(x, y);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
       });
       ctx.stroke();
       const grad = ctx.createLinearGradient(0, 0, 0, h);
@@ -7733,10 +7825,8 @@ canvas#equity-canvas {
   var Insights = {
     isOpen: false,
     toggle() {
-      if (this.isOpen)
-        this.close();
-      else
-        this.open();
+      if (this.isOpen) this.close();
+      else this.open();
     },
     open() {
       this.isOpen = true;
@@ -7746,8 +7836,7 @@ canvas#equity-canvas {
       this.isOpen = false;
       const root = OverlayManager.getShadowRoot();
       const overlay = root.querySelector(".insights-overlay");
-      if (overlay)
-        overlay.remove();
+      if (overlay) overlay.remove();
     },
     render() {
       const root = OverlayManager.getShadowRoot();
@@ -7792,8 +7881,7 @@ canvas#equity-canvas {
         });
       }
       overlay.onclick = (e) => {
-        if (e.target === overlay)
-          self.close();
+        if (e.target === overlay) self.close();
       };
     },
     renderFreeContent() {
@@ -7818,8 +7906,7 @@ canvas#equity-canvas {
         html += `<div class="insights-grid">`;
         cat.features.forEach((fId) => {
           const f = featureMap[fId];
-          if (f)
-            html += renderEliteLockedCard(f.name, f.desc);
+          if (f) html += renderEliteLockedCard(f.name, f.desc);
         });
         html += `</div>`;
       });
@@ -7872,8 +7959,7 @@ canvas#equity-canvas {
     show() {
       const container = OverlayManager.getContainer();
       const existing = container.querySelector(".zero-settings-overlay");
-      if (existing)
-        existing.remove();
+      if (existing) existing.remove();
       const overlay = document.createElement("div");
       overlay.className = "confirm-modal-overlay zero-settings-overlay";
       const currentMode = Store.state.settings.tradingMode || "paper";
@@ -8005,18 +8091,41 @@ canvas#equity-canvas {
                     </span>
                 </div>
 
-                ${FeatureManager.isElite(Store.state) ? `
+                ${FeatureManager.isElite(Store.state) ? (() => {
+        const ls = License.getStatus();
+        const planLabel = License.getPlanLabel();
+        const hasLicense = ls.status !== "none" && ls.maskedKey;
+        return `
                 <div style="padding:12px 16px; background:rgba(16,185,129,0.05); border:1px solid rgba(16,185,129,0.15); border-radius:10px; margin-bottom:12px;">
-                    <div style="font-size:12px; font-weight:600; color:#10b981;">Elite Active</div>
+                    <div style="font-size:12px; font-weight:600; color:#10b981; display:flex; align-items:center; gap:8px;">
+                        Elite Active
+                        ${planLabel ? `<span style="font-size:9px; padding:1px 6px; border-radius:3px; background:rgba(139,92,246,0.12); color:#a78bfa; font-weight:700;">${planLabel}</span>` : ""}
+                    </div>
+                    ${hasLicense ? `
+                    <div style="font-size:11px; color:#64748b; margin-top:6px; display:flex; flex-direction:column; gap:3px;">
+                        <div>License: <span style="color:#94a3b8; font-family:monospace;">${ls.maskedKey}</span></div>
+                        ${ls.lastVerified ? `<div>Verified: ${new Date(ls.lastVerified).toLocaleDateString()}</div>` : ""}
+                        ${ls.expiresAt ? `<div>Renews: ${new Date(ls.expiresAt).toLocaleDateString()}</div>` : ""}
+                        ${ls.plan === "founders" ? `<div style="color:#a78bfa;">Lifetime access</div>` : ""}
+                    </div>
+                    <div style="display:flex; gap:8px; margin-top:10px;">
+                        <button data-setting-act="manageMembership" class="settings-action-btn" style="font-size:11px; padding:5px 10px;">Manage on Whop</button>
+                        <button data-setting-act="deactivateLicense" class="settings-action-btn danger" style="font-size:11px; padding:5px 10px;">Deactivate</button>
+                    </div>
+                    ` : `
                     <div style="font-size:11px; color:#64748b; margin-top:4px;">All advanced insights and behavioral analytics are unlocked.</div>
-                </div>
-                ` : `
+                    `}
+                </div>`;
+      })() : `
                 <div style="font-size:11px; color:#64748b; margin-bottom:12px; line-height:1.5;">
                     Unlock cross-session context and behavioral analytics.
                 </div>
                 <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:16px;">
                     ${TEASED_FEATURES.ELITE.map((f) => renderEliteLockedCard(f.name, f.desc)).join("")}
                 </div>
+                <button data-setting-act="showUpgradeModal" style="width:100%; background:linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color:white; border:none; padding:10px 16px; border-radius:8px; font-weight:700; font-size:13px; cursor:pointer; margin-bottom:8px;">
+                    Upgrade to Elite
+                </button>
                 `}
 
                 <div style="margin-top:20px; text-align:center; font-size:11px; color:#64748b;">
@@ -8030,13 +8139,11 @@ canvas#equity-canvas {
     _bind(overlay) {
       const close = () => {
         overlay.remove();
-        if (window.ZeroHUD && window.ZeroHUD.updateAll)
-          window.ZeroHUD.updateAll();
+        if (window.ZeroHUD && window.ZeroHUD.updateAll) window.ZeroHUD.updateAll();
       };
       overlay.querySelector(".settings-close").onclick = close;
       overlay.addEventListener("click", (e) => {
-        if (e.target === overlay)
-          close();
+        if (e.target === overlay) close();
       });
       const modeRadios = overlay.querySelectorAll('input[name="tradingMode"]');
       modeRadios.forEach((radio) => {
@@ -8045,8 +8152,7 @@ canvas#equity-canvas {
           const success = await ModeManager.setMode(newMode);
           if (!success) {
             const currentRadio = overlay.querySelector(`input[name="tradingMode"][value="${ModeManager.getMode()}"]`);
-            if (currentRadio)
-              currentRadio.checked = true;
+            if (currentRadio) currentRadio.checked = true;
             return;
           }
           overlay.querySelectorAll(".mode-option").forEach((opt) => {
@@ -8057,8 +8163,7 @@ canvas#equity-canvas {
             opt.style.borderColor = isActive ? `rgba(${c},0.3)` : "rgba(255,255,255,0.06)";
             opt.style.background = isActive ? `rgba(${c},0.06)` : "transparent";
           });
-          if (window.ZeroHUD && window.ZeroHUD.renderAll)
-            window.ZeroHUD.renderAll();
+          if (window.ZeroHUD && window.ZeroHUD.renderAll) window.ZeroHUD.renderAll();
         };
       });
       const autoSendToggle = overlay.querySelector('[data-setting="autoSend"]');
@@ -8102,12 +8207,21 @@ canvas#equity-canvas {
         if (act === "deleteLocal") {
           this._showDeleteConfirm(overlay);
         }
+        if (act === "showUpgradeModal") {
+          overlay.remove();
+          Paywall.showUpgradeModal();
+        }
+        if (act === "manageMembership") {
+          window.open("https://whop.com/orders/", "_blank");
+        }
+        if (act === "deactivateLicense") {
+          this._showDeactivateConfirm(overlay);
+        }
       });
     },
     _refreshDiagStatus(overlay, isEnabled) {
       const statusEl = overlay.querySelector(".diag-status");
-      if (!statusEl)
-        return;
+      if (!statusEl) return;
       const diagState = DiagnosticsStore.state || {};
       const lastUpload = diagState.settings?.diagnostics?.lastUploadedEventTs || 0;
       const lastError = diagState.upload?.lastError || null;
@@ -8179,8 +8293,7 @@ canvas#equity-canvas {
       parent.appendChild(modal);
       modal.querySelector(".cancel").onclick = () => modal.remove();
       modal.addEventListener("click", (e) => {
-        if (e.target === modal)
-          modal.remove();
+        if (e.target === modal) modal.remove();
       });
     },
     _showSamplePayload(parent) {
@@ -8214,8 +8327,7 @@ canvas#equity-canvas {
       parent.appendChild(modal);
       modal.querySelector(".cancel").onclick = () => modal.remove();
       modal.addEventListener("click", (e) => {
-        if (e.target === modal)
-          modal.remove();
+        if (e.target === modal) modal.remove();
       });
     },
     _showDeleteConfirm(parent) {
@@ -8239,8 +8351,33 @@ canvas#equity-canvas {
         modal.remove();
       };
       modal.addEventListener("click", (e) => {
-        if (e.target === modal)
-          modal.remove();
+        if (e.target === modal) modal.remove();
+      });
+    },
+    _showDeactivateConfirm(parent) {
+      const modal = document.createElement("div");
+      modal.className = "confirm-modal-overlay";
+      modal.style.zIndex = "2147483648";
+      modal.innerHTML = `
+            <div class="confirm-modal">
+                <h3>Deactivate Elite?</h3>
+                <p>This will remove your license key from this browser and revert to the Free tier. You can re-activate anytime with your license key.</p>
+                <div class="confirm-modal-buttons">
+                    <button class="confirm-modal-btn cancel">Cancel</button>
+                    <button class="confirm-modal-btn confirm">Deactivate</button>
+                </div>
+            </div>
+        `;
+      parent.appendChild(modal);
+      modal.querySelector(".cancel").onclick = () => modal.remove();
+      modal.querySelector(".confirm").onclick = async () => {
+        await License.deactivate();
+        modal.remove();
+        parent.remove();
+        this.show();
+      };
+      modal.addEventListener("click", (e) => {
+        if (e.target === modal) modal.remove();
       });
     },
     _logFeatureClick(featureId) {
@@ -8262,12 +8399,10 @@ canvas#equity-canvas {
       const rootId = IDS.pnlHud;
       let root = container.querySelector("#" + rootId);
       if (!Store.state.settings.enabled) {
-        if (root)
-          root.style.display = "none";
+        if (root) root.style.display = "none";
         return;
       }
-      if (root)
-        root.style.display = "";
+      if (root) root.style.display = "";
       let isNew = false;
       if (!root) {
         isNew = true;
@@ -8361,29 +8496,24 @@ canvas#equity-canvas {
     },
     bindPnlDrag(root, makeDraggable) {
       const header = root.querySelector(".header");
-      if (!header || !makeDraggable)
-        return;
+      if (!header || !makeDraggable) return;
       makeDraggable(header, (dx, dy) => {
-        if (Store.state.settings.pnlDocked)
-          return;
+        if (Store.state.settings.pnlDocked) return;
         const s = Store.state.settings;
         s.pnlPos.x = clamp(s.pnlPos.x + dx, 0, window.innerWidth - 40);
         s.pnlPos.y = clamp(s.pnlPos.y + dy, 34, window.innerHeight - 40);
         root.style.left = px(s.pnlPos.x);
         root.style.top = px(s.pnlPos.y);
       }, async () => {
-        if (!Store.state.settings.pnlDocked)
-          await Store.save();
+        if (!Store.state.settings.pnlDocked) await Store.save();
       });
     },
     bindPnlEvents(root) {
       root.addEventListener("click", async (e) => {
         const t = e.target;
-        if (t.matches("input, label"))
-          return;
+        if (t.matches("input, label")) return;
         const actEl = t.closest("[data-act]");
-        if (!actEl)
-          return;
+        if (!actEl) return;
         const act = actEl.getAttribute("data-act");
         e.preventDefault();
         e.stopPropagation();
@@ -8443,13 +8573,11 @@ canvas#equity-canvas {
     },
     async updatePnlHud() {
       const root = OverlayManager.getContainer().querySelector("#" + IDS.pnlHud);
-      if (!root || !Store.state)
-        return;
+      if (!root || !Store.state) return;
       const s = Store.state;
       const shareFlags = FeatureManager.resolveFlags(s, "SHARE_TO_X");
       const shareBtn = root.querySelector("#pnl-share-btn");
-      if (shareBtn)
-        shareBtn.style.display = shareFlags.visible && !shareFlags.gated ? "" : "none";
+      if (shareBtn) shareBtn.style.display = shareFlags.visible && !shareFlags.gated ? "" : "none";
       if (!Store.state.settings.enabled) {
         root.style.display = "none";
         return;
@@ -8468,8 +8596,7 @@ canvas#equity-canvas {
       const currentToken = TokenDetector.getCurrentToken();
       const unrealized = Trading.getUnrealizedPnl(s, currentToken.mint);
       const inp = root.querySelector(".startSolInput");
-      if (document.activeElement !== inp)
-        inp.value = s.settings.startSol;
+      if (document.activeElement !== inp) inp.value = s.settings.startSol;
       root.querySelector('[data-k="balance"]').textContent = `${Trading.fmtSol(s.session.balance)} SOL`;
       const currentMC = Market.marketCap || 0;
       let unrealizedPct = 0;
@@ -8605,8 +8732,7 @@ canvas#equity-canvas {
       OverlayManager.getContainer().appendChild(overlay);
       overlay.querySelector(".cancel").onclick = () => overlay.remove();
       overlay.addEventListener("click", (e) => {
-        if (e.target === overlay)
-          overlay.remove();
+        if (e.target === overlay) overlay.remove();
       });
     },
     showSettingsModal() {
@@ -8712,25 +8838,17 @@ canvas#equity-canvas {
       }).join("");
     },
     formatQty(n) {
-      if (!n || n <= 0)
-        return "0";
-      if (n >= 1e9)
-        return (n / 1e9).toFixed(2) + "B";
-      if (n >= 1e6)
-        return (n / 1e6).toFixed(2) + "M";
-      if (n >= 1e3)
-        return (n / 1e3).toFixed(2) + "K";
-      if (n >= 1)
-        return n.toFixed(2);
+      if (!n || n <= 0) return "0";
+      if (n >= 1e9) return (n / 1e9).toFixed(2) + "B";
+      if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
+      if (n >= 1e3) return (n / 1e3).toFixed(2) + "K";
+      if (n >= 1) return n.toFixed(2);
       return n.toFixed(6);
     },
     formatPrice(p) {
-      if (!p || p <= 0)
-        return "0.00";
-      if (p >= 1)
-        return p.toFixed(4);
-      if (p >= 1e-4)
-        return p.toFixed(6);
+      if (!p || p <= 0) return "0.00";
+      if (p >= 1) return p.toFixed(4);
+      if (p >= 1e-4) return p.toFixed(6);
       const leadingZeros = Math.floor(-Math.log10(p));
       return p.toFixed(leadingZeros + 3);
     },
@@ -8783,19 +8901,16 @@ canvas#equity-canvas {
     // State for reuse
     makeDraggableRef: null,
     mountBuyHud(makeDraggable, force = false) {
-      if (makeDraggable)
-        this.makeDraggableRef = makeDraggable;
+      if (makeDraggable) this.makeDraggableRef = makeDraggable;
       const dragger = makeDraggable || this.makeDraggableRef;
       const container = OverlayManager.getContainer();
       const rootId = IDS.buyHud;
       let root = container.querySelector("#" + rootId);
       if (!Store.state.settings.enabled) {
-        if (root)
-          root.style.display = "none";
+        if (root) root.style.display = "none";
         return;
       }
-      if (root)
-        root.style.display = "";
+      if (root) root.style.display = "";
       if (!root) {
         root = document.createElement("div");
         root.id = rootId;
@@ -8875,11 +8990,9 @@ canvas#equity-canvas {
     },
     bindHeaderDrag(root, makeDraggable) {
       const header = root.querySelector(".panelHeader");
-      if (!header || !makeDraggable)
-        return;
+      if (!header || !makeDraggable) return;
       makeDraggable(header, (dx, dy) => {
-        if (Store.state.settings.buyHudDocked)
-          return;
+        if (Store.state.settings.buyHudDocked) return;
         const s = Store.state.settings;
         if (!s.buyHudPos) {
           const rect = root.getBoundingClientRect();
@@ -8891,18 +9004,15 @@ canvas#equity-canvas {
         root.style.setProperty("top", px2(s.buyHudPos.y), "important");
         root.style.setProperty("right", "auto", "important");
       }, async () => {
-        if (!Store.state.settings.buyHudDocked)
-          await Store.save();
+        if (!Store.state.settings.buyHudDocked) await Store.save();
       });
     },
     setupBuyHudInteractions(root) {
       root.addEventListener("click", async (e) => {
         const t = e.target;
-        if (t.matches("input") || t.matches("select"))
-          return;
+        if (t.matches("input") || t.matches("select")) return;
         const actEl = t.closest("[data-act]");
-        if (!actEl)
-          return;
+        if (!actEl) return;
         const act = actEl.getAttribute("data-act");
         e.preventDefault();
         if (act === "dock") {
@@ -8944,15 +9054,12 @@ canvas#equity-canvas {
     },
     showEmotionSelector(tradeId) {
       const emoFlags = FeatureManager.resolveFlags(Store.state, "EMOTION_TRACKING");
-      if (!emoFlags.enabled || Store.state.settings.showJournal === false)
-        return;
-      if (!tradeId || tradeId === this.lastEmotionTradeId)
-        return;
+      if (!emoFlags.enabled || Store.state.settings.showJournal === false) return;
+      if (!tradeId || tradeId === this.lastEmotionTradeId) return;
       this.lastEmotionTradeId = tradeId;
       const container = OverlayManager.getContainer();
       const existing = container.querySelector(".emotion-modal-overlay");
-      if (existing)
-        existing.remove();
+      if (existing) existing.remove();
       const overlay = document.createElement("div");
       overlay.className = "emotion-modal-overlay";
       overlay.style.position = "fixed";
@@ -9021,8 +9128,7 @@ canvas#equity-canvas {
     },
     updateBuyHud() {
       const root = OverlayManager.getContainer().querySelector("#" + IDS.buyHud);
-      if (!root || !Store.state)
-        return;
+      if (!root || !Store.state) return;
       if (!Store.state.settings.enabled) {
         root.style.display = "none";
         return;
@@ -9050,11 +9156,9 @@ canvas#equity-canvas {
       }
     },
     renderMarketContext() {
-      if (!Store.state)
-        return "";
+      if (!Store.state) return "";
       const flags = FeatureManager.resolveFlags(Store.state, "MARKET_CONTEXT");
-      if (!flags.visible)
-        return "";
+      if (!flags.visible) return "";
       const ctx = Market.context;
       const isGated = flags.gated;
       let content = "";
@@ -9086,11 +9190,9 @@ canvas#equity-canvas {
         `;
     },
     renderTradePlanFields() {
-      if (!Store.state)
-        return "";
+      if (!Store.state) return "";
       const flags = FeatureManager.resolveFlags(Store.state, "TRADE_PLAN");
-      if (!flags.visible)
-        return "";
+      if (!flags.visible) return "";
       const isGated = flags.gated;
       const isExpanded = this.tradePlanExpanded;
       const plan = Store.state.pendingPlan || {};
@@ -9189,12 +9291,9 @@ canvas#equity-canvas {
       const stopEl = root.querySelector('[data-k="stopLoss"]');
       const targetEl = root.querySelector('[data-k="target"]');
       const thesisEl = root.querySelector('[data-k="thesis"]');
-      if (stopEl)
-        stopEl.value = "";
-      if (targetEl)
-        targetEl.value = "";
-      if (thesisEl)
-        thesisEl.value = "";
+      if (stopEl) stopEl.value = "";
+      if (targetEl) targetEl.value = "";
+      if (thesisEl) thesisEl.value = "";
     },
     async executeTrade(root) {
       const field2 = root.querySelector('input[data-k="field"]');
@@ -9203,8 +9302,7 @@ canvas#equity-canvas {
       const strategyEl = root.querySelector('select[data-k="strategy"]');
       const strategy = strategyEl ? strategyEl.value : "Trend";
       if (val <= 0) {
-        if (status)
-          status.textContent = "Invalid amount";
+        if (status) status.textContent = "Invalid amount";
         return;
       }
       status.textContent = "Executing...";
@@ -9282,8 +9380,7 @@ canvas#equity-canvas {
   var _cache = {};
   var _inflight = {};
   async function fetchContext({ ca, existingDexInfo }) {
-    if (!ca)
-      return _emptyResponse("");
+    if (!ca) return _emptyResponse("");
     const cached = _cache[ca];
     if (cached && Date.now() - cached.fetchedTs < CACHE_TTL_MS) {
       return cached.response;
@@ -9308,10 +9405,8 @@ canvas#equity-canvas {
           /** @type {ContextResponseV1} */
           response.data
         );
-        if (!ctx.schemaVersion)
-          ctx.schemaVersion = SCHEMA_VERSION2;
-        if (!ctx.fetchedAt)
-          ctx.fetchedAt = (/* @__PURE__ */ new Date()).toISOString();
+        if (!ctx.schemaVersion) ctx.schemaVersion = SCHEMA_VERSION2;
+        if (!ctx.fetchedAt) ctx.fetchedAt = (/* @__PURE__ */ new Date()).toISOString();
         _cacheAndPersist(ca, ctx);
         console.log("[MarketContext] context loaded", ca.slice(0, 8));
         return ctx;
@@ -9409,8 +9504,7 @@ canvas#equity-canvas {
   }
   function _persistToStorage(ca, response) {
     try {
-      if (typeof chrome === "undefined" || !chrome.storage?.local)
-        return;
+      if (typeof chrome === "undefined" || !chrome.storage?.local) return;
       const key = STORAGE_PREFIX + ca.slice(0, 12);
       chrome.storage.local.set({ [key]: { response, ts: Date.now() } });
     } catch (_) {
@@ -9418,8 +9512,7 @@ canvas#equity-canvas {
   }
   async function _rehydrateFromStorage(ca) {
     try {
-      if (typeof chrome === "undefined" || !chrome.storage?.local)
-        return null;
+      if (typeof chrome === "undefined" || !chrome.storage?.local) return null;
       const key = STORAGE_PREFIX + ca.slice(0, 12);
       return new Promise((resolve) => {
         chrome.storage.local.get([key], (res) => {
@@ -9443,13 +9536,11 @@ canvas#equity-canvas {
 
   // src/services/socialx/observed-adapter.js
   function parseXHandle(url) {
-    if (!url || typeof url !== "string")
-      return null;
+    if (!url || typeof url !== "string") return null;
     try {
       const cleaned = url.trim().replace(/\/+$/, "").split("?")[0].split("#")[0];
       const match = cleaned.match(/(?:twitter\.com|x\.com)\/([A-Za-z0-9_]{1,15})$/i);
-      if (match)
-        return match[1].toLowerCase();
+      if (match) return match[1].toLowerCase();
     } catch (_) {
     }
     return null;
@@ -9489,6 +9580,7 @@ canvas#equity-canvas {
     switch (status) {
       case FIELD_STATUS.OK:
         return "";
+      // Caller uses the actual value
       case FIELD_STATUS.MISSING_IDENTIFIER:
         return "Not detected";
       case FIELD_STATUS.NOT_SUPPORTED:
@@ -9523,17 +9615,13 @@ canvas#equity-canvas {
     }
   }
   function truncateAddress(addr) {
-    if (!addr || addr.length < 12)
-      return addr || "";
+    if (!addr || addr.length < 12) return addr || "";
     return addr.slice(0, 6) + "\u2026" + addr.slice(-4);
   }
   function formatCount(n) {
-    if (n == null)
-      return "";
-    if (n >= 1e6)
-      return (n / 1e6).toFixed(1) + "M";
-    if (n >= 1e3)
-      return (n / 1e3).toFixed(1) + "K";
+    if (n == null) return "";
+    if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
+    if (n >= 1e3) return (n / 1e3).toFixed(1) + "K";
     return String(n);
   }
   function buildMarketContextViewModel(context, social) {
@@ -9767,13 +9855,11 @@ canvas#equity-canvas {
       }
     },
     init() {
-      if (this.initialized)
-        return;
+      if (this.initialized) return;
       this.initialized = true;
       Market.subscribe(() => {
         const mint = Market.currentMint;
-        if (!mint)
-          return;
+        if (!mint) return;
         if (mint !== this.currentMint || this.data.score === null) {
           this.fetchForMint(mint);
         }
@@ -9811,8 +9897,7 @@ canvas#equity-canvas {
      * No longer requires DexScreener info — the live API handles everything.
      */
     async fetchForMint(mint) {
-      if (!mint)
-        return;
+      if (!mint) return;
       this.currentMint = mint;
       this.loading = true;
       this._setEmptyState(mint);
@@ -9996,8 +10081,7 @@ canvas#equity-canvas {
         }
       ];
       rules.forEach((rule) => {
-        if (!rule.available)
-          return;
+        if (!rule.available) return;
         possible += rule.weight;
         checked++;
         if (rule.passes) {
@@ -10026,13 +10110,10 @@ canvas#equity-canvas {
     }
   };
   function _countDetectedLinks(context) {
-    if (!context?.links)
-      return 0;
+    if (!context?.links) return 0;
     let count = 0;
-    if (context.links.x?.status === FIELD_STATUS.OK)
-      count++;
-    if (context.links.website?.status === FIELD_STATUS.OK)
-      count++;
+    if (context.links.x?.status === FIELD_STATUS.OK) count++;
+    if (context.links.website?.status === FIELD_STATUS.OK) count++;
     return count;
   }
 
@@ -10045,10 +10126,8 @@ canvas#equity-canvas {
      * Add a new note for the current session and token.
      */
     async addNote(text) {
-      if (!Store.state?.shadow)
-        return null;
-      if (!text || !text.trim())
-        return null;
+      if (!Store.state?.shadow) return null;
+      if (!text || !text.trim()) return null;
       const trimmed = text.trim().slice(0, MAX_NOTE_LENGTH);
       const note = {
         id: `note_${Date.now()}_${Math.floor(Math.random() * 1e4)}`,
@@ -10073,14 +10152,11 @@ canvas#equity-canvas {
      * Edit an existing note by ID.
      */
     async editNote(noteId, text) {
-      if (!Store.state?.shadow)
-        return false;
-      if (!text || !text.trim())
-        return false;
+      if (!Store.state?.shadow) return false;
+      if (!text || !text.trim()) return false;
       const notes = Store.state.shadow.notes || [];
       const note = notes.find((n) => n.id === noteId);
-      if (!note)
-        return false;
+      if (!note) return false;
       note.text = text.trim().slice(0, MAX_NOTE_LENGTH);
       note.edited = true;
       note.editedTs = Date.now();
@@ -10091,12 +10167,10 @@ canvas#equity-canvas {
      * Delete a note by ID.
      */
     async deleteNote(noteId) {
-      if (!Store.state?.shadow)
-        return false;
+      if (!Store.state?.shadow) return false;
       const notes = Store.state.shadow.notes || [];
       const idx = notes.findIndex((n) => n.id === noteId);
-      if (idx === -1)
-        return false;
+      if (idx === -1) return false;
       notes.splice(idx, 1);
       await Store.save();
       return true;
@@ -10105,19 +10179,16 @@ canvas#equity-canvas {
      * Get notes for the current session.
      */
     getSessionNotes() {
-      if (!Store.state?.shadow)
-        return [];
+      if (!Store.state?.shadow) return [];
       const sessionId = Store.state.session?.id;
-      if (!sessionId)
-        return [];
+      if (!sessionId) return [];
       return (Store.state.shadow.notes || []).filter((n) => n.sessionId === sessionId).sort((a, b) => b.ts - a.ts);
     },
     /**
      * Get notes tagged with a specific token mint.
      */
     getNotesForMint(mint) {
-      if (!Store.state?.shadow || !mint)
-        return [];
+      if (!Store.state?.shadow || !mint) return [];
       return (Store.state.shadow.notes || []).filter((n) => n.mint === mint).sort((a, b) => b.ts - a.ts);
     }
   };
@@ -10139,17 +10210,14 @@ canvas#equity-canvas {
     makeDraggableRef: null,
     // ==================== Lifecycle ====================
     mountShadowHud(makeDraggable) {
-      if (makeDraggable)
-        this.makeDraggableRef = makeDraggable;
+      if (makeDraggable) this.makeDraggableRef = makeDraggable;
       const dragger = makeDraggable || this.makeDraggableRef;
       const container = OverlayManager.getContainer();
-      if (!container)
-        return;
+      if (!container) return;
       const rootId = IDS.shadowHud;
       let root = container.querySelector("#" + rootId);
       if (!Store.state?.settings?.enabled) {
-        if (root)
-          root.style.display = "none";
+        if (root) root.style.display = "none";
         return;
       }
       if (root) {
@@ -10174,19 +10242,15 @@ canvas#equity-canvas {
     },
     removeShadowHud() {
       const container = OverlayManager.getContainer();
-      if (!container)
-        return;
+      if (!container) return;
       const root = container.querySelector("#" + IDS.shadowHud);
-      if (root)
-        root.remove();
+      if (root) root.remove();
     },
     updateShadowHud() {
       const container = OverlayManager.getContainer();
-      if (!container)
-        return;
+      if (!container) return;
       const root = container.querySelector("#" + IDS.shadowHud);
-      if (!root || !Store.state)
-        return;
+      if (!root || !Store.state) return;
       if (!Store.state.settings.enabled) {
         root.style.display = "none";
         return;
@@ -10370,8 +10434,7 @@ canvas#equity-canvas {
       }
     },
     _renderXAccountTab(x) {
-      if (!x)
-        return "";
+      if (!x) return "";
       const enrichedRows = [
         { label: "Age", f: x.age },
         { label: "Followers", f: x.followers },
@@ -10383,10 +10446,8 @@ canvas#equity-canvas {
       if (comm && comm.status === "ok" && comm.items.length > 0) {
         const itemsHtml = comm.items.map((item) => {
           const meta = [];
-          if (item.memberCount != null)
-            meta.push(`${item.memberCount} members`);
-          if (item.activityLevel && item.activityLevel !== "unknown")
-            meta.push(item.activityLevel);
+          if (item.memberCount != null) meta.push(`${item.memberCount} members`);
+          if (item.activityLevel && item.activityLevel !== "unknown") meta.push(item.activityLevel);
           const metaStr = meta.length > 0 ? ` <span style="opacity:0.6; font-size:10px;">(${meta.join(" \xB7 ")})</span>` : "";
           return `<div class="nt-community-item"><a href="${item.url}" target="_blank" rel="noopener" style="color:#a78bfa; text-decoration:none;">${this._escapeHtml(item.name)}</a>${metaStr}</div>`;
         }).join("");
@@ -10411,8 +10472,7 @@ canvas#equity-canvas {
         `;
     },
     _renderWebsiteTab(w) {
-      if (!w)
-        return "";
+      if (!w) return "";
       return `
             ${this._field("Domain", w.domain)}
             ${this._field("URL", w.url)}
@@ -10422,8 +10482,7 @@ canvas#equity-canvas {
         `;
     },
     _renderDeveloperTab(d) {
-      if (!d)
-        return "";
+      if (!d) return "";
       return `
             ${this._field("Deployer", d.knownLaunches)}
             ${this._field("Mint Auth", d.mintAuthority)}
@@ -10487,8 +10546,7 @@ canvas#equity-canvas {
     },
     // ==================== Partial Updates ====================
     _updateMarketContext(root) {
-      if (!root)
-        return;
+      if (!root) return;
       const summaryEl = root.querySelector(".sh-trust-summary");
       if (summaryEl) {
         summaryEl.outerHTML = this._renderTrustSummary();
@@ -10505,8 +10563,7 @@ canvas#equity-canvas {
       }
     },
     _updateNotesList(root) {
-      if (!root)
-        return;
+      if (!root) return;
       const listEl = root.querySelector("[data-notes-list]");
       if (listEl) {
         listEl.innerHTML = this._renderNotesList();
@@ -10516,11 +10573,9 @@ canvas#equity-canvas {
     bindEvents(root) {
       root.addEventListener("click", async (e) => {
         const t = e.target;
-        if (t.matches("input, select, textarea, option"))
-          return;
+        if (t.matches("input, select, textarea, option")) return;
         const actEl = t.closest("[data-act]");
-        if (!actEl)
-          return;
+        if (!actEl) return;
         const act = actEl.getAttribute("data-act");
         e.preventDefault();
         e.stopPropagation();
@@ -10552,8 +10607,7 @@ canvas#equity-canvas {
             textarea.value = "";
             this._updateNotesList(root);
             const charCount = root.querySelector("[data-char-count]");
-            if (charCount)
-              charCount.textContent = "";
+            if (charCount) charCount.textContent = "";
           }
         }
         if (act === "delete-note") {
@@ -10566,8 +10620,7 @@ canvas#equity-canvas {
       });
       root.addEventListener("change", async (e) => {
         if (e.target.matches(".sh-strategy-select")) {
-          if (!Store.state.shadow)
-            Store.state.shadow = {};
+          if (!Store.state.shadow) Store.state.shadow = {};
           Store.state.shadow.declaredStrategy = e.target.value;
           await Store.save();
         }
@@ -10583,12 +10636,9 @@ canvas#equity-canvas {
       });
     },
     _toggleSection(root, section) {
-      if (section === "marketContext")
-        this.marketContextExpanded = !this.marketContextExpanded;
-      if (section === "strategy")
-        this.strategyExpanded = !this.strategyExpanded;
-      if (section === "notes")
-        this.notesExpanded = !this.notesExpanded;
+      if (section === "marketContext") this.marketContextExpanded = !this.marketContextExpanded;
+      if (section === "strategy") this.strategyExpanded = !this.strategyExpanded;
+      if (section === "notes") this.notesExpanded = !this.notesExpanded;
       const body = root.querySelector(`[data-body="${section}"]`);
       if (body) {
         body.classList.toggle("collapsed");
@@ -10596,8 +10646,7 @@ canvas#equity-canvas {
       const header = root.querySelector(`[data-target="${section}"]`);
       if (header) {
         const chevron = header.querySelector(".sh-section-chevron");
-        if (chevron)
-          chevron.classList.toggle("expanded");
+        if (chevron) chevron.classList.toggle("expanded");
       }
     },
     _switchTab(root, tab) {
@@ -10613,11 +10662,9 @@ canvas#equity-canvas {
     // ==================== Drag ====================
     bindDrag(root, makeDraggable) {
       const header = root.querySelector(".sh-header");
-      if (!header || !makeDraggable)
-        return;
+      if (!header || !makeDraggable) return;
       makeDraggable(header, (dx, dy) => {
-        if (!Store.state.shadow || Store.state.shadow.hudDocked)
-          return;
+        if (!Store.state.shadow || Store.state.shadow.hudDocked) return;
         const pos = Store.state.shadow.hudPos || { x: 20, y: 400 };
         pos.x = clamp3(pos.x + dx, 0, window.innerWidth - 40);
         pos.y = clamp3(pos.y + dy, 34, window.innerHeight - 40);
@@ -10660,8 +10707,7 @@ canvas#equity-canvas {
       ModesUI.showSessionBanner();
     },
     scheduleRender() {
-      if (this.renderScheduled)
-        return;
+      if (this.renderScheduled) return;
       this.renderScheduled = true;
       requestAnimationFrame(() => {
         this.renderAll();
@@ -10670,8 +10716,7 @@ canvas#equity-canvas {
       });
     },
     renderAll() {
-      if (!Store.state)
-        return;
+      if (!Store.state) return;
       Banner.mountBanner();
       PnlHud.mountPnlHud(this.makeDraggable.bind(this));
       if (ModeManager.shouldShowBuyHud()) {
@@ -10679,8 +10724,7 @@ canvas#equity-canvas {
       } else {
         const container = OverlayManager.getContainer();
         const buyRoot = container.querySelector("#" + IDS.buyHud);
-        if (buyRoot)
-          buyRoot.remove();
+        if (buyRoot) buyRoot.remove();
       }
       if (ModeManager.shouldShowShadowHud()) {
         ShadowHud.mountShadowHud(this.makeDraggable.bind(this));
@@ -10702,13 +10746,11 @@ canvas#equity-canvas {
     },
     // Shared utility for making elements draggable
     makeDraggable(handle, onMove, onStop) {
-      if (!handle)
-        return;
+      if (!handle) return;
       let dragging = false;
       let startX = 0, startY = 0;
       const down = (e) => {
-        if (e.button !== 0)
-          return;
+        if (e.button !== 0) return;
         dragging = true;
         startX = e.clientX;
         startY = e.clientY;
@@ -10717,8 +10759,7 @@ canvas#equity-canvas {
         window.addEventListener("mouseup", up);
       };
       const move = (e) => {
-        if (!dragging)
-          return;
+        if (!dragging) return;
         const dx = e.clientX - startX;
         const dy = e.clientY - startY;
         startX = e.clientX;
@@ -10730,8 +10771,7 @@ canvas#equity-canvas {
         dragging = false;
         window.removeEventListener("mousemove", move);
         window.removeEventListener("mouseup", up);
-        if (onStop)
-          onStop();
+        if (onStop) onStop();
       };
       handle.addEventListener("mousedown", down);
     }
@@ -10739,44 +10779,6 @@ canvas#equity-canvas {
 
   // src/platforms/axiom/boot.axiom.js
   init_diagnostics_store();
-
-  // src/modules/logger.js
-  var Logger = {
-    isProduction: false,
-    // Set to true in prod builds
-    info(msg, ...args) {
-      if (this.isProduction)
-        return;
-      console.log(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
-    },
-    warn(msg, ...args) {
-      console.warn(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
-    },
-    error(msg, ...args) {
-      console.error(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
-    },
-    cleanArgs(args) {
-      return args.map((arg) => {
-        if (arg instanceof Error) {
-          return { name: arg.name, message: arg.message, stack: arg.stack };
-        }
-        if (typeof DOMException !== "undefined" && arg instanceof DOMException) {
-          return { name: arg.name, message: arg.message, code: arg.code };
-        }
-        if (typeof arg === "object" && arg !== null) {
-          const clean = { ...arg };
-          ["key", "secret", "token", "auth", "password"].forEach((k) => {
-            if (k in clean)
-              clean[k] = "***REDACTED***";
-          });
-          return clean;
-        }
-        return arg;
-      });
-    }
-  };
-
-  // src/platforms/axiom/boot.axiom.js
   (async () => {
     "use strict";
     const PLATFORM = "Axiom";
@@ -10785,8 +10787,7 @@ canvas#equity-canvas {
     try {
       Logger.info("Loading Store...");
       const state = await Store.load();
-      if (!state)
-        throw new Error("Store state is null");
+      if (!state) throw new Error("Store state is null");
       if (!state.settings.enabled) {
         Logger.info("Force-enabling for Beta test...");
         state.settings.enabled = true;
@@ -10795,6 +10796,14 @@ canvas#equity-canvas {
       Logger.info("Store loaded:", state.settings?.enabled ? "Enabled" : "Disabled");
     } catch (e) {
       Logger.error("Store Load Failed:", e);
+    }
+    try {
+      if (License.needsRevalidation()) {
+        Logger.info("License revalidation needed...");
+        await License.revalidate();
+      }
+    } catch (e) {
+      Logger.error("License revalidation failed:", e);
     }
     try {
       Logger.info("Loading DiagnosticsStore...");
@@ -10837,8 +10846,7 @@ canvas#equity-canvas {
       Logger.error("HUD Init Failed:", e);
     }
     window.addEventListener("message", async (e) => {
-      if (e.source !== window || !e.data?.__paper_cmd)
-        return;
+      if (e.source !== window || !e.data?.__paper_cmd) return;
       const { type, val } = e.data;
       if (type === "SET_TIER") {
         const state = Store.state;

@@ -1,6 +1,7 @@
 import { Store } from '../store.js';
 import { OverlayManager } from './overlay.js';
 import { FeatureManager } from '../featureManager.js';
+import { License } from '../license.js';
 import { ICONS } from './icons.js';
 
 export const Paywall = {
@@ -93,27 +94,89 @@ export const Paywall = {
                     </div>
                 </div>
 
-                <div class="paywall-actions">
-                    <button class="paywall-btn secondary" data-act="demo">
-                        <span>Unlock Elite (Dev)</span>
+                <div class="paywall-pricing" style="text-align:center; margin:16px 0 8px; font-size:12px; color:#94a3b8; line-height:1.6;">
+                    <span style="color:#f8fafc; font-weight:600;">$19/mo</span> &middot;
+                    <span style="color:#f8fafc; font-weight:600;">$149/yr</span> &middot;
+                    <span style="color:#a78bfa; font-weight:600;">$299 Founders Lifetime</span>
+                </div>
+
+                <div class="paywall-actions" style="display:flex; flex-direction:column; gap:8px;">
+                    <button class="paywall-btn primary" data-act="purchase" style="background:linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color:white; border:none; padding:12px 20px; border-radius:8px; font-weight:700; font-size:14px; cursor:pointer;">
+                        Get Elite on Whop
+                    </button>
+                    <button class="paywall-btn text" data-act="show-key-input" style="background:none; border:none; color:#8b5cf6; font-size:12px; cursor:pointer; padding:6px;">
+                        I have a license key
                     </button>
                 </div>
 
+                <div class="paywall-key-section" style="display:none; margin-top:12px;">
+                    <div style="display:flex; gap:8px;">
+                        <input type="text" class="paywall-license-input" placeholder="Enter license key (mem_xxx...)" maxlength="64"
+                            style="flex:1; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:6px; padding:10px 12px; color:#f8fafc; font-size:13px; outline:none;">
+                        <button class="paywall-btn" data-act="activate" style="background:rgba(139,92,246,0.15); border:1px solid rgba(139,92,246,0.3); color:#a78bfa; padding:10px 16px; border-radius:6px; font-weight:600; font-size:13px; cursor:pointer; white-space:nowrap;">
+                            Activate
+                        </button>
+                    </div>
+                    <div class="paywall-key-status" style="margin-top:8px; font-size:12px; min-height:18px;"></div>
+                </div>
+
                 <div class="paywall-footer">
-                    <p style="font-size:11px; color:#475569;">Available in Elite</p>
+                    <p style="font-size:11px; color:#475569; margin-top:12px;">Manage your membership at whop.com/orders</p>
                 </div>
             </div>
         `;
 
         // Event handlers
-        overlay.addEventListener('click', (e) => {
+        overlay.addEventListener('click', async (e) => {
             if (e.target === overlay || e.target.closest('[data-act="close"]')) {
                 overlay.remove();
             }
 
-            if (e.target.closest('[data-act="demo"]')) {
-                this.unlockDemo('elite');
-                overlay.remove();
+            if (e.target.closest('[data-act="purchase"]')) {
+                License.openPurchasePage();
+            }
+
+            if (e.target.closest('[data-act="show-key-input"]')) {
+                const keySection = overlay.querySelector('.paywall-key-section');
+                if (keySection) {
+                    keySection.style.display = keySection.style.display === 'none' ? 'block' : 'none';
+                    const input = keySection.querySelector('.paywall-license-input');
+                    if (input) input.focus();
+                }
+            }
+
+            if (e.target.closest('[data-act="activate"]')) {
+                const input = overlay.querySelector('.paywall-license-input');
+                const statusEl = overlay.querySelector('.paywall-key-status');
+                const key = input?.value?.trim();
+                if (!key) {
+                    if (statusEl) { statusEl.textContent = 'Please enter a license key'; statusEl.style.color = '#f59e0b'; }
+                    return;
+                }
+
+                // Show loading state
+                const btn = e.target.closest('[data-act="activate"]');
+                const origText = btn.textContent;
+                btn.textContent = 'Verifying...';
+                btn.disabled = true;
+                if (statusEl) { statusEl.textContent = 'Verifying your license...'; statusEl.style.color = '#94a3b8'; }
+
+                const result = await License.activate(key);
+
+                btn.textContent = origText;
+                btn.disabled = false;
+
+                if (result.ok) {
+                    if (statusEl) { statusEl.textContent = 'Elite activated!'; statusEl.style.color = '#10b981'; }
+                    this._showSuccessToast(License.getPlanLabel());
+                    setTimeout(() => overlay.remove(), 1500);
+                } else {
+                    const errorMsg = result.error === 'invalid_key' ? 'Invalid license key'
+                        : result.error === 'invalid_product' ? 'Key not for this product'
+                        : result.error === 'membership_inactive' ? 'Membership is not active'
+                        : 'Verification failed — try again';
+                    if (statusEl) { statusEl.textContent = errorMsg; statusEl.style.color = '#ef4444'; }
+                }
             }
         });
 
@@ -121,21 +184,14 @@ export const Paywall = {
     },
 
     handleUpgrade() {
-        window.open('https://zero-trading.com/elite', '_blank');
-        console.log('[Paywall] Redirecting to Elite upgrade page');
+        License.openPurchasePage();
     },
 
-    unlockDemo(tier = 'elite') {
-        // Dev mode: Unlock tier for testing
-        Store.state.settings.tier = 'elite';
-        Store.save();
-        console.log(`[Paywall] Demo mode unlocked - ${tier.toUpperCase()} tier activated`);
-
-        // Show success message
+    _showSuccessToast(planLabel = '') {
         const root = OverlayManager.getShadowRoot();
         const toast = document.createElement('div');
         toast.className = 'paywall-toast';
-        toast.textContent = `✓ ${tier.toUpperCase()} Demo Unlocked`;
+        toast.textContent = planLabel ? `Elite Activated (${planLabel})` : 'Elite Activated';
         toast.style.cssText = `
             position: fixed;
             top: 80px;
@@ -149,10 +205,9 @@ export const Paywall = {
             font-size: 14px;
             z-index: 2147483647;
             pointer-events: none;
-            animation: slideDown 0.3s cubic-bezier(0.16, 1, 0.3, 1);
         `;
         root.appendChild(toast);
-        setTimeout(() => toast.remove(), 2000);
+        setTimeout(() => toast.remove(), 3000);
     },
 
     isFeatureLocked(featureName) {
