@@ -9,7 +9,7 @@
  * Data flow:
  *   1. Check Cache API (6h TTL)
  *   2. Fetch DexScreener token pairs → extract links (X, website)
- *   3. If website URL found, fetch HTML → parse for X Community links
+ *   3. If website URL found, fetch metadata (title, status, TLS) + parse for X Community links
  *   4. (Feature-flagged) Fetch twitter154 enrichment → account age, CA mentions
  *   5. (Feature-flagged) Track handle renames via KV
  *   6. Build ContextResponseV1 with x.profile + x.communities
@@ -19,7 +19,8 @@
 const SCHEMA_VERSION = '1.0';
 const CACHE_TTL_SECONDS = 6 * 60 * 60; // 6 hours
 const FETCH_TIMEOUT_MS = 8000;
-const TWITTER154_CACHE_TTL_SECONDS = 3600; // 1 hour for twitter154 data
+const TWITTER154_CACHE_TTL_SECONDS = 6 * 60 * 60; // 6 hours (increased from 1h)
+const TWITTER154_COOLDOWN_SECONDS = 10 * 60; // 10 minutes cooldown on 429
 const TWITTER154_HOST = 'twitter154.p.rapidapi.com';
 
 // FieldStatus constants (mirrors extension types)
@@ -144,7 +145,103 @@ async function fetchDexScreener(ca) {
 }
 
 // ---------------------------------------------------------------------------
-// X Communities Parser
+// Website Metadata Fetching (Phase 1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch website metadata: title, meta description, status code, TLS, redirects.
+ * @param {string} websiteUrl
+ * @returns {Promise<{ title: string|null, metaDescription: string|null, statusCode: number|null, tls: boolean|null, redirects: number, status: string, lastFetched: string }>}
+ */
+async function fetchWebsiteMetadata(websiteUrl) {
+    const result = {
+        title: null,
+        metaDescription: null,
+        statusCode: null,
+        tls: null,
+        redirects: 0,
+        status: STATUS.PROVIDER_ERROR,
+        lastFetched: new Date().toISOString(),
+    };
+
+    if (!websiteUrl) {
+        result.status = STATUS.MISSING_IDENTIFIER;
+        return result;
+    }
+
+    try {
+        const parsedUrl = new URL(websiteUrl);
+        result.tls = parsedUrl.protocol === 'https:';
+
+        const res = await fetchWithTimeout(websiteUrl, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (compatible; ZeroBot/1.0)',
+                'Accept': 'text/html',
+            },
+            redirect: 'follow',
+        }, 8000);
+
+        result.statusCode = res.status;
+        result.redirects = res.redirected ? 1 : 0; // CF Workers don't expose redirect count, estimate
+
+        if (!res.ok) {
+            result.status = STATUS.PROVIDER_ERROR;
+            return result;
+        }
+
+        const contentType = res.headers.get('content-type') || '';
+        if (!contentType.includes('text/html')) {
+            result.status = STATUS.PROVIDER_ERROR;
+            return result;
+        }
+
+        // Read first 512KB
+        const reader = res.body.getReader();
+        const chunks = [];
+        let totalBytes = 0;
+        const maxBytes = 512 * 1024;
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
+            totalBytes += value.length;
+            if (totalBytes >= maxBytes) break;
+        }
+
+        const decoder = new TextDecoder('utf-8', { fatal: false });
+        const html = decoder.decode(
+            chunks.reduce((acc, chunk) => {
+                const merged = new Uint8Array(acc.length + chunk.length);
+                merged.set(acc);
+                merged.set(chunk, acc.length);
+                return merged;
+            }, new Uint8Array(0))
+        );
+
+        // Parse <title>
+        const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+        if (titleMatch && titleMatch[1]) {
+            result.title = titleMatch[1].replace(/<[^>]*>/g, '').trim().substring(0, 200);
+        }
+
+        // Parse <meta name="description">
+        const metaDescMatch = html.match(/<meta\s+name=["']description["']\s+content=["']([^"']*)["']/i);
+        if (metaDescMatch && metaDescMatch[1]) {
+            result.metaDescription = metaDescMatch[1].trim().substring(0, 300);
+        }
+
+        result.status = STATUS.OK;
+        return result;
+    } catch (e) {
+        console.warn('[Context] Website metadata fetch failed:', e?.message || e);
+        result.status = STATUS.PROVIDER_ERROR;
+        return result;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// X Communities Parser (Phase 1)
 // ---------------------------------------------------------------------------
 
 /**
@@ -211,10 +308,18 @@ function parseXCommunities(html) {
 /**
  * Fetch website HTML and parse for X Community links.
  * @param {string} websiteUrl
- * @returns {Promise<Array<{ name: string, url: string, memberCount?: number|null, activityLevel?: string, evidence?: string[] }>>}
+ * @returns {Promise<{ items: Array, status: string, lastFetched: string }>}
  */
 async function fetchAndParseXCommunities(websiteUrl) {
-    if (!websiteUrl) return [];
+    const result = {
+        items: [],
+        status: STATUS.MISSING_IDENTIFIER,
+        lastFetched: new Date().toISOString(),
+    };
+
+    if (!websiteUrl) {
+        return result;
+    }
 
     try {
         const res = await fetchWithTimeout(websiteUrl, {
@@ -224,10 +329,16 @@ async function fetchAndParseXCommunities(websiteUrl) {
             },
         }, 6000);
 
-        if (!res.ok) return [];
+        if (!res.ok) {
+            result.status = STATUS.PROVIDER_ERROR;
+            return result;
+        }
 
         const contentType = res.headers.get('content-type') || '';
-        if (!contentType.includes('text/html')) return [];
+        if (!contentType.includes('text/html')) {
+            result.status = STATUS.PROVIDER_ERROR;
+            return result;
+        }
 
         // Read only first 512KB to avoid memory issues
         const reader = res.body.getReader();
@@ -253,15 +364,18 @@ async function fetchAndParseXCommunities(websiteUrl) {
             }, new Uint8Array(0))
         );
 
-        return parseXCommunities(html);
+        result.items = parseXCommunities(html);
+        result.status = STATUS.OK; // OK even if items is empty - successful search
+        return result;
     } catch (e) {
-        console.warn('[Context] Website fetch failed:', e?.message || e);
-        return [];
+        console.warn('[Context] X communities fetch failed:', e?.message || e);
+        result.status = STATUS.PROVIDER_ERROR;
+        return result;
     }
 }
 
 // ---------------------------------------------------------------------------
-// Twitter154 Provider (Feature-Flagged)
+// Twitter154 Provider (Feature-Flagged with Rate Limit Protection)
 // ---------------------------------------------------------------------------
 
 /**
@@ -271,6 +385,86 @@ async function fetchAndParseXCommunities(websiteUrl) {
  */
 function isTwitter154Enabled(env) {
     return env?.TWITTER154_ENABLED === 'true' && !!env?.TWITTER154_API_KEY;
+}
+
+/**
+ * Get cached twitter154 enrichment data (per-handle caching).
+ * @param {string} handle
+ * @returns {Promise<object|null>}
+ */
+async function getTwitter154Cache(handle) {
+    try {
+        const cache = caches.default;
+        const cacheKey = new Request(`https://twitter154-cache.internal/handle/${handle}`);
+        const cached = await cache.match(cacheKey);
+        if (!cached) return null;
+        return await cached.json();
+    } catch (_) {
+        return null;
+    }
+}
+
+/**
+ * Set twitter154 enrichment cache (per-handle).
+ * @param {string} handle
+ * @param {object} data
+ * @param {number} ttlSeconds
+ */
+async function setTwitter154Cache(handle, data, ttlSeconds) {
+    try {
+        const cache = caches.default;
+        const cacheKey = new Request(`https://twitter154-cache.internal/handle/${handle}`);
+        const response = new Response(JSON.stringify(data), {
+            headers: {
+                'Content-Type': 'application/json',
+                'Cache-Control': `public, max-age=${ttlSeconds}`,
+            },
+        });
+        await cache.put(cacheKey, response);
+    } catch (_) { /* non-critical */ }
+}
+
+/**
+ * Get rate limit cooldown status for a handle.
+ * Returns cooldown expiry timestamp or null if not in cooldown.
+ * @param {string} handle
+ * @returns {Promise<number|null>}
+ */
+async function getRateLimitCooldown(handle) {
+    try {
+        const cache = caches.default;
+        const cacheKey = new Request(`https://twitter154-cooldown.internal/handle/${handle}`);
+        const cached = await cache.match(cacheKey);
+        if (!cached) return null;
+        const data = await cached.json();
+        const cooldownUntil = data?.cooldownUntil || 0;
+        if (Date.now() < cooldownUntil) {
+            return cooldownUntil;
+        }
+        return null;
+    } catch (_) {
+        return null;
+    }
+}
+
+/**
+ * Set rate limit cooldown for a handle (10 minute cooldown).
+ * @param {string} handle
+ */
+async function setRateLimitCooldown(handle) {
+    try {
+        const cooldownUntil = Date.now() + (TWITTER154_COOLDOWN_SECONDS * 1000);
+        const cache = caches.default;
+        const cacheKey = new Request(`https://twitter154-cooldown.internal/handle/${handle}`);
+        const response = new Response(JSON.stringify({ cooldownUntil }), {
+            headers: {
+                'Content-Type': 'application/json',
+                'Cache-Control': `public, max-age=${TWITTER154_COOLDOWN_SECONDS}`,
+            },
+        });
+        await cache.put(cacheKey, response);
+        console.log(`[Twitter154] Set cooldown for @${handle} until ${new Date(cooldownUntil).toISOString()}`);
+    } catch (_) { /* non-critical */ }
 }
 
 /**
@@ -292,7 +486,7 @@ async function fetchTwitter154Profile(handle, env) {
         }, 6000);
 
         if (res.status === 429) {
-            console.warn('[Twitter154] Rate limited');
+            console.warn('[Twitter154] Rate limited on profile fetch');
             return { _error: STATUS.RATE_LIMITED };
         }
 
@@ -310,6 +504,7 @@ async function fetchTwitter154Profile(handle, env) {
 
 /**
  * Fetch recent tweets for a user and count mentions of a CA.
+ * Only called if profile fetch succeeded and not rate limited.
  * @param {string} handle - X handle without @
  * @param {string} ca - Token contract address to search for
  * @param {object} env
@@ -327,7 +522,11 @@ async function fetchCaMentionCount(handle, ca, env) {
             },
         }, 8000);
 
-        if (res.status === 429) return null;
+        if (res.status === 429) {
+            console.warn('[Twitter154] Rate limited on tweets fetch');
+            return null; // Don't fail the whole enrichment if tweets are rate limited
+        }
+
         if (!res.ok) return null;
 
         const data = await res.json();
@@ -396,50 +595,9 @@ function buildTwitter154Enrichment(profile, caData) {
     };
 }
 
-// ---------------------------------------------------------------------------
-// Twitter154 Cache (CF Cache API, separate TTL)
-// ---------------------------------------------------------------------------
-
 /**
- * Get cached twitter154 enrichment data.
- * @param {string} handle
- * @param {string} ca
- * @returns {Promise<object|null>}
- */
-async function getTwitter154Cache(handle, ca) {
-    try {
-        const cache = caches.default;
-        const cacheKey = new Request(`https://twitter154-cache.internal/${handle}/${ca.slice(0, 12)}`);
-        const cached = await cache.match(cacheKey);
-        if (!cached) return null;
-        return await cached.json();
-    } catch (_) {
-        return null;
-    }
-}
-
-/**
- * Set twitter154 enrichment cache.
- * @param {string} handle
- * @param {string} ca
- * @param {object} data
- */
-async function setTwitter154Cache(handle, ca, data) {
-    try {
-        const cache = caches.default;
-        const cacheKey = new Request(`https://twitter154-cache.internal/${handle}/${ca.slice(0, 12)}`);
-        const response = new Response(JSON.stringify(data), {
-            headers: {
-                'Content-Type': 'application/json',
-                'Cache-Control': `public, max-age=${TWITTER154_CACHE_TTL_SECONDS}`,
-            },
-        });
-        await cache.put(cacheKey, response);
-    } catch (_) { /* non-critical */ }
-}
-
-/**
- * Fetch twitter154 enrichment with cache + stale_cached fallback.
+ * Fetch twitter154 enrichment with per-handle caching and rate limit protection.
+ * Optimized: fetch profile first, only fetch tweets if profile succeeded.
  * @param {string} handle - X handle without @
  * @param {string} ca
  * @param {object} env
@@ -458,27 +616,82 @@ async function fetchTwitter154WithCache(handle, ca, env) {
         };
     }
 
-    // Check cache first
-    const cached = await getTwitter154Cache(handle, ca);
+    // Check if in rate limit cooldown
+    const cooldownUntil = await getRateLimitCooldown(handle);
+    if (cooldownUntil) {
+        console.log(`[Twitter154] Skipping API call for @${handle}, in cooldown until ${new Date(cooldownUntil).toISOString()}`);
+        // Try to return cached data
+        const cached = await getTwitter154Cache(handle);
+        if (cached) {
+            // Return cached data with rate_limited status
+            return {
+                ...cached,
+                enrichmentStatus: STATUS.RATE_LIMITED,
+            };
+        }
+        // No cached data, return rate_limited status
+        return {
+            accountAgeDays: null,
+            followerCount: null,
+            verified: null,
+            caMentionCount: null,
+            displayName: null,
+            userId: null,
+            enrichmentStatus: STATUS.RATE_LIMITED,
+        };
+    }
+
+    // Check cache first (per-handle cache)
+    const cached = await getTwitter154Cache(handle);
     if (cached && cached.enrichmentStatus === STATUS.OK) {
+        console.log(`[Twitter154] Using cached data for @${handle}`);
         return cached;
     }
 
-    // Fetch fresh data
-    const [profile, caData] = await Promise.all([
-        fetchTwitter154Profile(handle, env),
-        fetchCaMentionCount(handle, ca, env),
-    ]);
+    // Fetch profile first (optimized: don't fetch tweets if profile fails)
+    const profile = await fetchTwitter154Profile(handle, env);
+
+    // If rate limited, set cooldown and return
+    if (profile?._error === STATUS.RATE_LIMITED) {
+        await setRateLimitCooldown(handle);
+        // Try to return stale cached data
+        if (cached) {
+            return {
+                ...cached,
+                enrichmentStatus: STATUS.RATE_LIMITED,
+            };
+        }
+        return {
+            accountAgeDays: null,
+            followerCount: null,
+            verified: null,
+            caMentionCount: null,
+            displayName: null,
+            userId: null,
+            enrichmentStatus: STATUS.RATE_LIMITED,
+        };
+    }
+
+    // If profile failed with other error, return cached or error status
+    if (profile?._error) {
+        if (cached) {
+            return {
+                ...cached,
+                enrichmentStatus: STATUS.STALE_CACHED,
+            };
+        }
+        return buildTwitter154Enrichment(profile, null);
+    }
+
+    // Profile succeeded - now fetch tweets (only if profile is OK)
+    const caData = await fetchCaMentionCount(handle, ca, env);
 
     const enrichment = buildTwitter154Enrichment(profile, caData);
 
+    // Cache successful enrichment (6 hour TTL)
     if (enrichment.enrichmentStatus === STATUS.OK) {
-        // Cache successful enrichment
-        await setTwitter154Cache(handle, ca, enrichment);
-    } else if (cached) {
-        // Stale_cached fallback: return old data with stale status
-        cached.enrichmentStatus = STATUS.STALE_CACHED;
-        return cached;
+        await setTwitter154Cache(handle, enrichment, TWITTER154_CACHE_TTL_SECONDS);
+        console.log(`[Twitter154] Cached enrichment for @${handle} (6h TTL)`);
     }
 
     return enrichment;
@@ -558,23 +771,26 @@ async function buildContext(ca, env) {
     // 1. Fetch DexScreener data
     const dex = await fetchDexScreener(ca);
 
-    // 2. Fetch X Communities from website (if available)
-    const communities = await fetchAndParseXCommunities(dex.websiteUrl);
+    // 2. Fetch website metadata (Phase 1: always attempt if URL exists)
+    const websiteMeta = await fetchWebsiteMetadata(dex.websiteUrl);
 
-    // 3. Parse X handle
+    // 3. Fetch X Communities from website (Phase 1: always attempt if URL exists)
+    const xCommunities = await fetchAndParseXCommunities(dex.websiteUrl);
+
+    // 4. Parse X handle
     const handle = parseXHandle(dex.xUrl);
     const handleClean = handle ? handle.replace(/^@/, '') : null;
 
-    // 4. Twitter154 enrichment (feature-flagged, runs in parallel with nothing)
+    // 5. Twitter154 enrichment (feature-flagged, with caching and rate limit protection)
     const enrichment = await fetchTwitter154WithCache(handleClean, ca, env);
 
-    // 5. KV rename tracking (feature-flagged via KV binding presence)
+    // 6. KV rename tracking (feature-flagged via KV binding presence)
     let renameData = null;
     if (enrichment.userId && handleClean) {
         renameData = await trackHandleRename(enrichment.userId, handleClean, env);
     }
 
-    // 6. Build X profile
+    // 7. Build X profile
     const xProfile = {
         url: dex.xUrl,
         handle: handle,
@@ -587,17 +803,6 @@ async function buildContext(ca, env) {
         displayName: enrichment.displayName,
         renameCount: renameData?.renameCount ?? null,
         enrichmentStatus: enrichment.enrichmentStatus,
-    };
-
-    // 7. Build X Communities section
-    const xCommunities = {
-        items: communities,
-        status: !dex.xUrl && communities.length === 0
-            ? STATUS.MISSING_IDENTIFIER
-            : communities.length > 0
-                ? STATUS.OK
-                : STATUS.NOT_SUPPORTED,
-        lastFetched: new Date().toISOString(),
     };
 
     // 8. Build full response
@@ -626,14 +831,14 @@ async function buildContext(ca, env) {
         website: {
             url: dex.websiteUrl,
             domain: dex.websiteDomain,
-            title: null,
-            metaDescription: null,
-            domainAgeDays: null,
-            statusCode: null,
-            tls: null,
-            redirects: null,
-            lastFetched: dex.websiteUrl ? new Date().toISOString() : null,
-            status: dex.websiteUrl ? STATUS.NOT_SUPPORTED : STATUS.MISSING_IDENTIFIER,
+            title: websiteMeta.title,
+            metaDescription: websiteMeta.metaDescription,
+            domainAgeDays: null, // Not implemented yet
+            statusCode: websiteMeta.statusCode,
+            tls: websiteMeta.tls,
+            redirects: websiteMeta.redirects,
+            lastFetched: websiteMeta.lastFetched,
+            status: websiteMeta.status,
         },
         dev: {
             mintAgeDays: null,
@@ -713,7 +918,7 @@ async function handleContext(request, env) {
 // ---------------------------------------------------------------------------
 
 export default {
-    async fetch(request, env, ctx) {
+    async fetch(request, env) {
         // Handle CORS preflight
         if (request.method === 'OPTIONS') {
             return new Response(null, { status: 204, headers: corsHeaders(request) });
