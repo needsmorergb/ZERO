@@ -107,6 +107,56 @@
       });
     }
   }
+  var SOL_MINTS = [
+    "So11111111111111111111111111111111111111112",
+    // Wrapped SOL
+    "So11111111111111111111111111111111111111111"
+    // Native SOL (rare in swap responses)
+  ];
+  var isSolMint = (mint) => SOL_MINTS.some((m) => mint === m);
+  var SWAP_URL_PATTERNS = /swap|execute|submit|send-?tx|confirm-?tx|transaction\/send|order\/place/i;
+  function tryHandleSwap(url, json, ctx) {
+    if (!json || typeof json !== "object")
+      return;
+    const data = json.data || json.result || json;
+    const txid = data.txid || data.signature || data.txSignature || data.transactionId || data.tx || data.hash;
+    if (!txid || typeof txid !== "string" || txid.length < 30)
+      return;
+    const inputMint = data.inputMint || data.fromMint || data.tokenIn || data.sourceMint;
+    const outputMint = data.outputMint || data.toMint || data.tokenOut || data.destMint;
+    if (!inputMint || !outputMint) {
+      console.log(`[ZER\xD8] Swap response has txid but missing mints \u2014 url=${url}`);
+      return;
+    }
+    const isSolInput = isSolMint(inputMint);
+    const isSolOutput = isSolMint(outputMint);
+    if (!isSolInput && !isSolOutput) {
+      console.log(`[ZER\xD8] Swap has no SOL side \u2014 skipping (${inputMint} \u2192 ${outputMint})`);
+      return;
+    }
+    const side = isSolInput ? "BUY" : "SELL";
+    const mint = isSolInput ? outputMint : inputMint;
+    const inAmount = parseFloat(data.inAmount || data.inputAmount || data.amountIn || 0);
+    const outAmount = parseFloat(data.outAmount || data.outputAmount || data.amountOut || 0);
+    const solLamports = isSolInput ? inAmount : outAmount;
+    const tokenRaw = isSolInput ? outAmount : inAmount;
+    const solAmount = solLamports > 1e3 ? solLamports / 1e9 : solLamports;
+    const priceUsd = parseFloat(data.priceUsd || data.price || data.tokenPriceUsd || 0);
+    const symbol = data.symbol || data.outputSymbol || data.inputSymbol || ctx.symbol || null;
+    console.log(`[ZER\xD8] Swap Detected: ${side} ${symbol || mint.slice(0, 8)} \u2014 ${solAmount.toFixed(4)} SOL, tx=${txid.slice(0, 12)}...`);
+    send({
+      type: "SHADOW_TRADE_DETECTED",
+      side,
+      mint,
+      symbol,
+      solAmount,
+      tokenAmount: tokenRaw,
+      priceUsd,
+      signature: txid,
+      url,
+      ts: Date.now()
+    });
+  }
   var findTV = () => {
     if (window.tvWidget && typeof window.tvWidget.activeChart === "function")
       return window.tvWidget;
@@ -413,6 +463,11 @@
           clone.json().then((json) => tryHandleJson(url, json, ctx)).catch(() => {
           });
         }
+        if (SWAP_URL_PATTERNS.test(url)) {
+          const clone2 = res.clone();
+          clone2.json().then((json) => tryHandleSwap(url, json, ctx)).catch(() => {
+          });
+        }
       } catch {
       }
       return res;
@@ -427,12 +482,16 @@
       this.addEventListener("load", function() {
         try {
           const url = this.__paper_url || "";
+          const ct = (this.getResponseHeader("content-type") || "").toLowerCase();
           if (/quote|price|ticker|market|candles|kline|chart|pair|swap|route/i.test(url)) {
-            const ct = (this.getResponseHeader("content-type") || "").toLowerCase();
             if (ct.includes("json")) {
               const json = JSON.parse(this.responseText);
               tryHandleJson(url, json, ctx);
             }
+          }
+          if (SWAP_URL_PATTERNS.test(url) && ct.includes("json")) {
+            const json = JSON.parse(this.responseText);
+            tryHandleSwap(url, json, ctx);
           }
         } catch {
         }

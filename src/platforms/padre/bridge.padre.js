@@ -8,7 +8,7 @@ import {
     CHANNEL, MAX_SCAN_CHARS, safe, send,
     createContext, throttleEmit, looksRelatedByString,
     extractPriceUsd, tryHandleJson, findTV,
-    setupMessageListener
+    setupMessageListener, tryHandleSwap, SWAP_URL_PATTERNS
 } from '../shared/bridge-utils.js';
 
 (() => {
@@ -173,6 +173,11 @@ import {
                 if (/quote|price|ticker|market|candles|kline|chart|pair|swap|route/i.test(url)) {
                     const clone = res.clone();
                     clone.json().then(json => tryHandleJson(url, json, ctx)).catch(() => { });
+                }
+                // Shadow mode: detect swap/trade submissions
+                if (SWAP_URL_PATTERNS.test(url)) {
+                    const clone2 = res.clone();
+                    clone2.json().then(json => tryHandleSwap(url, json, ctx)).catch(() => { });
                 }
             } catch { }
             return res;

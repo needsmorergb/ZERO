@@ -178,6 +178,44 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return;
     }
 
+    // Wallet Balance (Shadow Mode auto-detect)
+    if (msg?.type === "GET_WALLET_BALANCE") {
+      try {
+        // Get wallet address from connected wallet (stored in state)
+        const storeData = await chrome.storage.local.get('sol_paper_trader_v1');
+        const state = storeData?.sol_paper_trader_v1;
+        const walletAddress = state?.shadow?.walletAddress;
+
+        if (!walletAddress) {
+          sendResponse({ ok: false, error: 'No wallet address stored' });
+          return;
+        }
+
+        // Helius RPC getBalance
+        const rpcUrl = 'https://mainnet.helius-rpc.com/?api-key=public';
+        const r = await fetch(rpcUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'getBalance',
+            params: [walletAddress]
+          })
+        });
+
+        const data = await r.json();
+        const lamports = data?.result?.value || 0;
+        const balance = lamports / 1e9; // lamports to SOL
+
+        sendResponse({ ok: true, balance });
+      } catch (e) {
+        console.error('[BG] GET_WALLET_BALANCE failed:', e);
+        sendResponse({ ok: false, error: e.toString() });
+      }
+      return;
+    }
+
     sendResponse({ ok: false });
   })();
   return true;

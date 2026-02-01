@@ -89,7 +89,41 @@ const DEFAULTS = {
     // Persistent Event Log (up to 100 events)
     eventLog: [], // { ts, type, category, message, data }
     // Categories: TRADE, ALERT, DISCIPLINE, SYSTEM, MILESTONE
-    schemaVersion: 2,
+
+    // --- Shadow Mode Session State (separate from paper) ---
+    shadowSession: {
+        id: null,
+        startTime: 0,
+        endTime: null,
+        balance: 0,            // Auto-detected from wallet on first trade
+        equity: 0,
+        realized: 0,
+        trades: [],
+        equityHistory: [],
+        winStreak: 0,
+        lossStreak: 0,
+        tradeCount: 0,
+        disciplineScore: 100,
+        activeAlerts: [],
+        status: 'active',
+        notes: ''
+    },
+    shadowSessionHistory: [],  // Uncapped — real sessions can be long
+    shadowTrades: {},
+    shadowPositions: {},
+    shadowBehavior: {
+        tiltFrequency: 0,
+        panicSells: 0,
+        fomoTrades: 0,
+        sunkCostFrequency: 0,
+        overtradingFrequency: 0,
+        profitNeglectFrequency: 0,
+        strategyDriftFrequency: 0,
+        profile: 'Disciplined'
+    },
+    shadowEventLog: [],
+
+    schemaVersion: 3,
     version: '1.11.8'
 };
 
@@ -117,6 +151,35 @@ function isChromeStorageAvailable() {
 
 export const Store = {
     state: null,
+
+    // --- Mode-aware accessors ---
+    isShadowMode() {
+        return this.state?.settings?.tradingMode === 'shadow';
+    },
+
+    getActiveSession() {
+        return this.isShadowMode() ? this.state.shadowSession : this.state.session;
+    },
+
+    getActivePositions() {
+        return this.isShadowMode() ? this.state.shadowPositions : this.state.positions;
+    },
+
+    getActiveTrades() {
+        return this.isShadowMode() ? this.state.shadowTrades : this.state.trades;
+    },
+
+    getActiveBehavior() {
+        return this.isShadowMode() ? this.state.shadowBehavior : this.state.behavior;
+    },
+
+    getActiveEventLog() {
+        return this.isShadowMode() ? this.state.shadowEventLog : this.state.eventLog;
+    },
+
+    getActiveSessionHistory() {
+        return this.isShadowMode() ? this.state.shadowSessionHistory : this.state.sessionHistory;
+    },
 
     async load() {
         // Safety timeout to prevent hanging forever if storage callback dies
@@ -154,6 +217,12 @@ export const Store = {
                         this.save();
                     } else {
                         this.state = deepMerge(DEFAULTS, saved);
+                        // v2 -> v3: shadow state fields (deepMerge handles missing keys via DEFAULTS)
+                        if (this.state.schemaVersion < 3) {
+                            console.log('[ZERØ] Migrating storage schema v2 -> v3 (shadow state)');
+                            this.state.schemaVersion = 3;
+                            this.save();
+                        }
                     }
 
                     this.validateState();
@@ -303,6 +372,12 @@ export const Store = {
                 this.state.session.id = this.generateSessionId();
                 this.state.session.startTime = Date.now();
             }
+
+            // Ensure shadow session has an ID when in shadow mode
+            if (this.state.settings.tradingMode === 'shadow' && this.state.shadowSession && !this.state.shadowSession.id) {
+                this.state.shadowSession.id = this.generateSessionId();
+                this.state.shadowSession.startTime = Date.now();
+            }
         }
     },
 
@@ -311,31 +386,36 @@ export const Store = {
     },
 
     // Start a new session (archive current if it has trades)
-    async startNewSession() {
-        const currentSession = this.state.session;
+    // options.shadow: force shadow session reset (otherwise uses current mode)
+    async startNewSession(options = {}) {
+        const isShadow = options.shadow !== undefined ? options.shadow : this.isShadowMode();
+        const sessionKey = isShadow ? 'shadowSession' : 'session';
+        const historyKey = isShadow ? 'shadowSessionHistory' : 'sessionHistory';
+
+        const currentSession = this.state[sessionKey];
 
         // Archive current session if it has trades
-        if (currentSession.trades && currentSession.trades.length > 0) {
+        if (currentSession && currentSession.trades && currentSession.trades.length > 0) {
             currentSession.endTime = Date.now();
             currentSession.status = 'completed';
 
-            if (!this.state.sessionHistory) this.state.sessionHistory = [];
-            this.state.sessionHistory.push({ ...currentSession });
+            if (!this.state[historyKey]) this.state[historyKey] = [];
+            this.state[historyKey].push({ ...currentSession });
 
-            // Keep only last 10 sessions
-            if (this.state.sessionHistory.length > 10) {
-                this.state.sessionHistory = this.state.sessionHistory.slice(-10);
+            // Paper: keep last 10 sessions. Shadow: uncapped.
+            if (!isShadow && this.state[historyKey].length > 10) {
+                this.state[historyKey] = this.state[historyKey].slice(-10);
             }
         }
 
         // Create fresh session
-        const startSol = this.state.settings.startSol || 10;
-        this.state.session = {
+        const startBalance = isShadow ? 0 : (this.state.settings.startSol || 10);
+        this.state[sessionKey] = {
             id: this.generateSessionId(),
             startTime: Date.now(),
             endTime: null,
-            balance: startSol,
-            equity: startSol,
+            balance: startBalance,
+            equity: startBalance,
             realized: 0,
             trades: [],
             equityHistory: [],
@@ -344,35 +424,43 @@ export const Store = {
             tradeCount: 0,
             disciplineScore: 100,
             activeAlerts: [],
-            status: 'active'
+            status: 'active',
+            notes: ''
         };
 
-        // Don't clear trades/positions - they're still valid for history
-        // But clear milestone flags
-        delete this.state._milestone_2x;
-        delete this.state._milestone_3x;
-        delete this.state._milestone_5x;
+        // Clear milestone flags
+        const prefix = isShadow ? '_shadow_milestone_' : '_milestone_';
+        delete this.state[prefix + '2x'];
+        delete this.state[prefix + '3x'];
+        delete this.state[prefix + '5x'];
+        // Also clean legacy paper milestone keys
+        if (!isShadow) {
+            delete this.state._milestone_2x;
+            delete this.state._milestone_3x;
+            delete this.state._milestone_5x;
+        }
 
         await this.save();
-        return this.state.session;
+        return this.state[sessionKey];
     },
 
-    // Get current session duration in minutes
+    // Get current session duration in minutes (mode-aware)
     getSessionDuration() {
-        const session = this.state?.session;
+        const session = this.getActiveSession();
         if (!session || !session.startTime) return 0;
         const endTime = session.endTime || Date.now();
         return Math.floor((endTime - session.startTime) / 60000);
     },
 
-    // Get session summary
+    // Get session summary (mode-aware)
     getSessionSummary() {
-        const session = this.state?.session;
+        const session = this.getActiveSession();
+        const tradesMap = this.getActiveTrades();
         if (!session) return null;
 
-        const trades = session.trades || [];
-        const sellTrades = trades
-            .map(id => this.state.trades[id])
+        const tradeIds = session.trades || [];
+        const sellTrades = tradeIds
+            .map(id => tradesMap[id])
             .filter(t => t && t.side === 'SELL');
 
         const wins = sellTrades.filter(t => (t.realizedPnlSol || 0) > 0).length;
@@ -382,7 +470,7 @@ export const Store = {
         return {
             id: session.id,
             duration: this.getSessionDuration(),
-            tradeCount: trades.length,
+            tradeCount: tradeIds.length,
             wins,
             losses,
             winRate,

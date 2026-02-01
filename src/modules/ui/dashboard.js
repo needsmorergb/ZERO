@@ -26,9 +26,11 @@ export const Dashboard = {
     },
 
     computeSessionStats(state) {
-        const sessionTradeIds = state.session.trades || [];
+        const session = Store.getActiveSession();
+        const tradesMap = Store.getActiveTrades();
+        const sessionTradeIds = session.trades || [];
         const allSessionTrades = sessionTradeIds
-            .map(id => state.trades[id])
+            .map(id => tradesMap[id])
             .filter(Boolean)
             .sort((a, b) => a.ts - b.ts);
 
@@ -84,13 +86,17 @@ export const Dashboard = {
             : 0;
 
         // Session P&L
-        const sessionPnl = state.session.realized || 0;
-        const startSol = state.settings.startSol || 10;
+        const sessionPnl = session.realized || 0;
+        const isShadow = Store.isShadowMode();
+        // Shadow: use total invested as denominator. Paper: use startSol.
+        const positions = Store.getActivePositions();
+        const totalInvestedSol = Object.values(positions || {}).reduce((sum, pos) => sum + (pos.totalSolSpent || 0), 0);
+        const startSol = isShadow ? (totalInvestedSol || session.balance || 1) : (state.settings.startSol || 10);
         const sessionPnlPct = startSol > 0 ? (sessionPnl / startSol) * 100 : 0;
 
         // Duration
-        const startTime = state.session.startTime || Date.now();
-        const endTime = state.session.endTime || Date.now();
+        const startTime = session.startTime || Date.now();
+        const endTime = session.endTime || Date.now();
         const durationMs = endTime - startTime;
         const durationMin = Math.floor(durationMs / 60000);
         const durationHr = Math.floor(durationMin / 60);
@@ -144,8 +150,10 @@ export const Dashboard = {
         }
 
         const state = Store.state;
+        const session = Store.getActiveSession();
+        const behavior = Store.getActiveBehavior();
         const stats = this.computeSessionStats(state);
-        const hasEquityData = (state.session.equityHistory || []).length >= 2;
+        const hasEquityData = (session.equityHistory || []).length >= 2;
 
         // Formatting helpers
         const pnlSign = stats.sessionPnl >= 0 ? '+' : '';
@@ -168,7 +176,7 @@ export const Dashboard = {
 
         // Subtext based on trading mode
         const subtext = state.settings.tradingMode === 'shadow'
-            ? 'Observed session results'
+            ? 'Real trades analyzed'
             : 'Paper session results';
 
         overlay.innerHTML = `
@@ -245,9 +253,9 @@ export const Dashboard = {
                         </div>
                         <div class="dash-card dash-notes">
                             <div class="dash-section-label">SESSION NOTES</div>
-                            <textarea class="dash-notes-input" id="dash-session-notes" maxlength="280" placeholder="Add a note about this session...">${state.session.notes || ''}</textarea>
+                            <textarea class="dash-notes-input" id="dash-session-notes" maxlength="280" placeholder="Add a note about this session...">${session.notes || ''}</textarea>
                             <div class="dash-notes-footer">
-                                <span class="dash-notes-count" id="dash-notes-count">${(state.session.notes || '').length}/280</span>
+                                <span class="dash-notes-count" id="dash-notes-count">${(session.notes || '').length}/280</span>
                                 <button class="dash-notes-save" id="dash-notes-save">Save note</button>
                             </div>
                         </div>
@@ -274,7 +282,7 @@ export const Dashboard = {
                             <div class="dash-elite-grid">
                                 <div class="dash-metric-card">
                                     <div class="dash-metric-k">Discipline Score</div>
-                                    <div class="dash-metric-v" style="color:#8b5cf6;">${state.session.disciplineScore || 100}</div>
+                                    <div class="dash-metric-v" style="color:#8b5cf6;">${session.disciplineScore || 100}</div>
                                 </div>
                                 <div class="dash-metric-card">
                                     <div class="dash-metric-k">Consistency</div>
@@ -282,7 +290,7 @@ export const Dashboard = {
                                 </div>
                                 <div class="dash-metric-card">
                                     <div class="dash-metric-k">Behavior Profile</div>
-                                    <div class="dash-metric-v" style="color:#8b5cf6;">${state.behavior?.profile || 'Disciplined'}</div>
+                                    <div class="dash-metric-v" style="color:#8b5cf6;">${behavior?.profile || 'Disciplined'}</div>
                                 </div>
                             </div>
                             ` : `
@@ -337,7 +345,7 @@ export const Dashboard = {
             });
 
             notesInput.addEventListener('blur', async () => {
-                state.session.notes = notesInput.value.slice(0, 280);
+                session.notes = notesInput.value.slice(0, 280);
                 await Store.save();
             });
         }
@@ -346,7 +354,7 @@ export const Dashboard = {
             notesSave.addEventListener('click', async (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                state.session.notes = notesInput.value.slice(0, 280);
+                session.notes = notesInput.value.slice(0, 280);
                 await Store.save();
                 notesSave.textContent = 'Saved';
                 notesSave.style.color = '#10b981';
@@ -382,7 +390,8 @@ export const Dashboard = {
         if (!canvas) return;
 
         const ctx = canvas.getContext('2d');
-        const history = state.session.equityHistory || [];
+        const session = Store.getActiveSession();
+        const history = session.equityHistory || [];
         if (history.length < 2) return;
 
         // Resize for DPI

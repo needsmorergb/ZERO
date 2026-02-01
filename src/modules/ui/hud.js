@@ -9,6 +9,7 @@ import { ModesUI } from './modes-ui.js';
 import { IDS } from './ids.js';
 import { ShadowHud } from './shadow-hud.js';
 import { NarrativeTrust } from '../core/narrative-trust.js';
+import { ShadowTradeIngestion } from '../core/shadow-trade-ingestion.js';
 
 export const HUD = {
     renderScheduled: false,
@@ -39,9 +40,10 @@ export const HUD = {
             this.scheduleRender();
         });
 
-        // Initialize Narrative Trust service for Shadow Mode
+        // Initialize Shadow Mode services
         if (ModeManager.getMode() === MODES.SHADOW) {
             NarrativeTrust.init();
+            ShadowTradeIngestion.init();
         }
 
         // Show mode session banner (once per session for Analysis/Shadow)

@@ -18,9 +18,13 @@ export const PositionPriceManager = {
 
     async updateAllPositionPrices() {
         const state = Store.state;
-        if (!state || !state.positions) return;
+        if (!state) return;
 
-        const mints = Object.keys(state.positions);
+        // Use mode-aware positions
+        const positions = Store.getActivePositions();
+        if (!positions) return;
+
+        const mints = Object.keys(positions);
         if (mints.length === 0) return;
 
         console.log(`[PositionPrices] Updating ${mints.length} position(s)...`);
@@ -29,13 +33,13 @@ export const PositionPriceManager = {
         const batchSize = 30;
         for (let i = 0; i < mints.length; i += batchSize) {
             const batch = mints.slice(i, i + batchSize);
-            await this.fetchBatchPrices(batch, state);
+            await this.fetchBatchPrices(batch, positions);
         }
 
         this.lastUpdate = Date.now();
     },
 
-    async fetchBatchPrices(mints, state) {
+    async fetchBatchPrices(mints, positions) {
         try {
             // DexScreener batch API: /tokens/:mint1,:mint2,:mint3
             const mintsStr = mints.join(',');
@@ -51,7 +55,7 @@ export const PositionPriceManager = {
 
             // Update each position with fresh price
             mints.forEach(mint => {
-                const position = state.positions[mint];
+                const position = positions[mint];
                 if (!position) return;
 
                 // Find the most liquid pair for this token

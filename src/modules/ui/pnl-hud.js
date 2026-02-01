@@ -117,12 +117,21 @@ export const PnlHud = {
         // Re-bind input change because input is new
         const inp = root.querySelector('.startSolInput');
         if (inp) {
+            // Shadow mode: disable start SOL input (auto-detected from wallet)
+            if (Store.isShadowMode()) {
+                inp.disabled = true;
+                inp.style.opacity = '0.4';
+                inp.placeholder = 'Auto';
+            }
+
             inp.addEventListener('change', async () => {
+                if (Store.isShadowMode()) return; // Shadow mode uses auto-detected balance
                 const v = parseFloat(inp.value);
                 if (v > 0) {
-                    if ((Store.state.session.trades || []).length === 0) {
-                        Store.state.session.balance = v;
-                        Store.state.session.equity = v;
+                    const session = Store.getActiveSession();
+                    if ((session.trades || []).length === 0) {
+                        session.balance = v;
+                        session.equity = v;
                     }
                     Store.state.settings.startSol = v;
                     await Store.save();
@@ -245,20 +254,33 @@ export const PnlHud = {
         }
 
         const solUsd = Trading.getSolPrice();
+        const isShadow = Store.isShadowMode();
+        const session = Store.getActiveSession();
+        const positions = Store.getActivePositions();
 
         // Detect current token to update its position price in real-time
         const currentToken = TokenDetector.getCurrentToken();
         const unrealized = Trading.getUnrealizedPnl(s, currentToken.mint);
 
         const inp = root.querySelector('.startSolInput');
-        if (document.activeElement !== inp) inp.value = s.settings.startSol;
+        if (isShadow) {
+            inp.disabled = true;
+            inp.style.opacity = '0.4';
+            inp.placeholder = 'Auto';
+            inp.value = session.balance > 0 ? Trading.fmtSol(session.balance) : 'Auto';
+        } else {
+            inp.disabled = false;
+            inp.style.opacity = '';
+            inp.placeholder = '';
+            if (document.activeElement !== inp) inp.value = s.settings.startSol;
+        }
 
-        root.querySelector('[data-k="balance"]').textContent = `${Trading.fmtSol(s.session.balance)} SOL`;
+        root.querySelector('[data-k="balance"]').textContent = `${Trading.fmtSol(session.balance)} SOL`;
 
         // Calculate unrealized percentage using MC ratio (matches Padre logic)
         const currentMC = Market.marketCap || 0;
         let unrealizedPct = 0;
-        for (const p of Object.values(s.positions || {})) {
+        for (const p of Object.values(positions || {})) {
             if (p && p.qtyTokens > 0 && p.entryMarketCapUsdReference > 0 && currentMC > 0) {
                 unrealizedPct = ((currentMC / p.entryMarketCapUsdReference) - 1) * 100;
                 break;
@@ -266,8 +288,8 @@ export const PnlHud = {
         }
         // Fallback to invested-based percentage if MC not available
         if (unrealizedPct === 0 && unrealized !== 0) {
-            const positions = Object.values(s.positions || {});
-            const totalInvested = positions.reduce((sum, pos) => sum + (pos.totalSolSpent || 0), 0);
+            const posArr = Object.values(positions || {});
+            const totalInvested = posArr.reduce((sum, pos) => sum + (pos.totalSolSpent || 0), 0);
             unrealizedPct = totalInvested > 0 ? (unrealized / totalInvested) * 100 : 0;
         }
 
@@ -287,9 +309,12 @@ export const PnlHud = {
             tokenValueEl.style.color = unrealized >= 0 ? "#10b981" : "#ef4444";
         }
 
-        const realized = s.session.realized || 0;
+        const realized = session.realized || 0;
         const totalPnl = realized + unrealized;
-        const startBalance = s.settings.startSol || 10;
+        // Shadow mode: use total invested as denominator (no startSol). Paper: use startSol.
+        const posArr2 = Object.values(positions || {});
+        const totalInvestedSol = posArr2.reduce((sum, pos) => sum + (pos.totalSolSpent || 0), 0);
+        const startBalance = isShadow ? (totalInvestedSol || session.balance || 1) : (s.settings.startSol || 10);
         const sessionPct = ((totalPnl / startBalance) * 100);
 
         const pnlEl = root.querySelector('[data-k="pnl"]');
@@ -308,8 +333,8 @@ export const PnlHud = {
         }
 
         const streakEl = root.querySelector('[data-k="streak"]');
-        const winStreak = s.session.winStreak || 0;
-        const lossStreak = s.session.lossStreak || 0;
+        const winStreak = session.winStreak || 0;
+        const lossStreak = session.lossStreak || 0;
 
         if (lossStreak > 0) {
             streakEl.textContent = "-" + lossStreak;
@@ -341,13 +366,19 @@ export const PnlHud = {
     showResetModal() {
         const overlay = document.createElement('div');
         overlay.className = 'confirm-modal-overlay';
+        const isShadow = Store.isShadowMode();
         const duration = Store.getSessionDuration();
         const summary = Store.getSessionSummary();
 
+        const title = isShadow ? 'Reset Shadow session?' : 'Reset current session?';
+        const desc = isShadow
+            ? 'This will clear your shadow session stats and start fresh.<br>Your real trade history and past sessions will not be deleted.'
+            : 'This will clear current session stats and start a fresh run.<br>Your trade history and past sessions will not be deleted.';
+
         overlay.innerHTML = `
             <div class="confirm-modal">
-                <h3>Reset current session?</h3>
-                <p>This will clear current session stats and start a fresh run.<br>Your trade history and past sessions will not be deleted.</p>
+                <h3>${title}</h3>
+                <p>${desc}</p>
                 ${summary && summary.tradeCount > 0 ? `
                     <div style="background:rgba(20,184,166,0.1); border:1px solid rgba(20,184,166,0.2); border-radius:8px; padding:10px; margin:12px 0; font-size:11px;">
                         <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
@@ -378,10 +409,15 @@ export const PnlHud = {
 
         overlay.querySelector('.cancel').onclick = () => overlay.remove();
         overlay.querySelector('.confirm').onclick = async () => {
-            // Use the new session management
-            await Store.startNewSession();
+            // Use the new session management (mode-aware)
+            await Store.startNewSession({ shadow: isShadow });
 
-            Store.state.positions = {};
+            // Clear positions for the active mode
+            if (isShadow) {
+                Store.state.shadowPositions = {};
+            } else {
+                Store.state.positions = {};
+            }
             await Store.save();
 
             // Clear markers from chart
@@ -421,8 +457,10 @@ export const PnlHud = {
     },
 
     updateTradeList(container) {
-        const trades = Store.state.session.trades || [];
-        const tradeObjs = trades.map(id => Store.state.trades[id]).filter(t => t).reverse();
+        const session = Store.getActiveSession();
+        const tradesMap = Store.getActiveTrades();
+        const trades = session.trades || [];
+        const tradeObjs = trades.map(id => tradesMap[id]).filter(t => t).reverse();
 
         let html = '';
         tradeObjs.forEach(t => {
@@ -472,8 +510,8 @@ export const PnlHud = {
     },
 
     updatePositionsPanel(root) {
-        const s = Store.state;
-        const positions = Object.values(s.positions || {}).filter(p => p.qtyTokens > 0);
+        const activePositions = Store.getActivePositions();
+        const positions = Object.values(activePositions || {}).filter(p => p.qtyTokens > 0);
         const listEl = root.querySelector('[data-k="positionsList"]');
         const toggleIcon = root.querySelector('.positionsToggle');
         const countEl = root.querySelector('[data-k="positionCount"]');
@@ -559,7 +597,8 @@ export const PnlHud = {
     },
 
     async executeQuickSell(mint, pct) {
-        const pos = Store.state.positions[mint];
+        const positions = Store.getActivePositions();
+        const pos = positions[mint];
         if (!pos) {
             console.error('[PnlHud] Position not found for mint:', mint);
             return;
@@ -576,8 +615,9 @@ export const PnlHud = {
 
             // Draw SELL marker on chart
             if (result.trade && result.trade.id) {
-                const fullTrade = (Store.state.trades && Store.state.trades[result.trade.id])
-                    ? Store.state.trades[result.trade.id]
+                const activeTrades = Store.getActiveTrades();
+                const fullTrade = (activeTrades && activeTrades[result.trade.id])
+                    ? activeTrades[result.trade.id]
                     : (Store.state.fills ? Store.state.fills.find(f => f.id === result.trade.id) : null);
                 if (fullTrade) {
                     const bridgeTrade = {

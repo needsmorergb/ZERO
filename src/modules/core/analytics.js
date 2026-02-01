@@ -12,12 +12,27 @@ export const EVENT_CATEGORIES = {
 };
 
 export const Analytics = {
+
+    // --- Mode-aware state resolver ---
+    _resolve(state) {
+        const isShadow = state.settings?.tradingMode === 'shadow';
+        return {
+            session: isShadow ? state.shadowSession : state.session,
+            trades: isShadow ? state.shadowTrades : state.trades,
+            positions: isShadow ? state.shadowPositions : state.positions,
+            behavior: isShadow ? state.shadowBehavior : state.behavior,
+            eventLog: isShadow ? state.shadowEventLog : state.eventLog,
+            isShadow
+        };
+    },
+
     // ==========================================
     // PERSISTENT EVENT LOGGING
     // ==========================================
 
     logEvent(state, type, category, message, data = {}) {
-        if (!state.eventLog) state.eventLog = [];
+        const { eventLog } = this._resolve(state);
+        if (!eventLog) return;
 
         const event = {
             id: `evt_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
@@ -28,11 +43,11 @@ export const Analytics = {
             data
         };
 
-        state.eventLog.push(event);
+        eventLog.push(event);
 
         // Keep only last 100 events
-        if (state.eventLog.length > 100) {
-            state.eventLog = state.eventLog.slice(-100);
+        if (eventLog.length > 100) {
+            eventLog.splice(0, eventLog.length - 100);
         }
 
         console.log(`[EVENT LOG] [${category}] ${type}: ${message}`);
@@ -78,7 +93,8 @@ export const Analytics = {
 
     getEventLog(state, options = {}) {
         const { category, limit = 50, offset = 0 } = options;
-        let events = state.eventLog || [];
+        const { eventLog } = this._resolve(state);
+        let events = eventLog || [];
 
         if (category) {
             events = events.filter(e => e.category === category);
@@ -91,7 +107,8 @@ export const Analytics = {
     },
 
     getEventStats(state) {
-        const events = state.eventLog || [];
+        const { eventLog } = this._resolve(state);
+        const events = eventLog || [];
         const stats = {
             total: events.length,
             trades: events.filter(e => e.category === EVENT_CATEGORIES.TRADE).length,
@@ -103,7 +120,8 @@ export const Analytics = {
     },
 
     analyzeRecentTrades(state) {
-        const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+        const { trades: tradesMap } = this._resolve(state);
+        const trades = Object.values(tradesMap || {}).sort((a, b) => a.ts - b.ts);
         if (trades.length === 0) return null;
 
         const recentTrades = trades.slice(-10);
@@ -154,12 +172,13 @@ export const Analytics = {
     },
 
     calculateDiscipline(trade, state) {
+        const { session, trades: tradesMap } = this._resolve(state);
         const flags = FeatureManager.resolveFlags(state, 'DISCIPLINE_SCORING');
-        if (!flags.enabled) return { score: state.session.disciplineScore || 100, penalty: 0, reasons: [] };
+        if (!flags.enabled) return { score: session.disciplineScore || 100, penalty: 0, reasons: [] };
 
         // Base score: 100
         // Penalties are cumulative
-        const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+        const trades = Object.values(tradesMap || {}).sort((a, b) => a.ts - b.ts);
         const prevTrade = trades.length > 1 ? trades[trades.length - 2] : null;
 
         let penalty = 0;
@@ -179,7 +198,7 @@ export const Analytics = {
 
         // 3. Oversize Check (> 50% of Balance)
         if (trade.side === "BUY") {
-            const currentBal = state.session.balance + trade.solSize;
+            const currentBal = session.balance + trade.solSize;
             if (trade.solSize > (currentBal * 0.5)) {
                 penalty += 20;
                 reasons.push("Oversizing (>50%)");
@@ -203,9 +222,9 @@ export const Analytics = {
         }
 
         // Apply
-        let score = (state.session.disciplineScore !== undefined) ? state.session.disciplineScore : 100;
+        let score = (session.disciplineScore !== undefined) ? session.disciplineScore : 100;
         score = Math.max(0, score - penalty);
-        state.session.disciplineScore = score;
+        session.disciplineScore = score;
 
         if (penalty > 0) {
             console.log(`[DISCIPLINE] Score -${penalty} (${reasons.join(', ')})`);
@@ -221,7 +240,8 @@ export const Analytics = {
         const reasons = [];
 
         // Find the corresponding BUY trade for this position
-        const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+        const { trades: tradesMap } = this._resolve(state);
+        const trades = Object.values(tradesMap || {}).sort((a, b) => a.ts - b.ts);
         const buyTrade = trades.find(t =>
             t.side === 'BUY' &&
             t.mint === sellTrade.mint &&
@@ -271,7 +291,8 @@ export const Analytics = {
 
     // Calculate R-Multiple for a trade (requires defined risk)
     calculateRMultiple(sellTrade, state) {
-        const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+        const { trades: tradesMap } = this._resolve(state);
+        const trades = Object.values(tradesMap || {}).sort((a, b) => a.ts - b.ts);
         const buyTrade = trades.find(t =>
             t.side === 'BUY' &&
             t.mint === sellTrade.mint &&
@@ -309,27 +330,28 @@ export const Analytics = {
         // Only update streaks on SELL trades
         if (trade.side !== 'SELL') return;
 
+        const { session } = this._resolve(state);
         const pnl = trade.realizedPnlSol || 0;
 
         if (pnl > 0) {
             // Win
-            state.session.winStreak = (state.session.winStreak || 0) + 1;
-            state.session.lossStreak = 0;
-            console.log(`[ZERØ] Win! +${pnl.toFixed(4)} SOL. Win streak: ${state.session.winStreak}`);
+            session.winStreak = (session.winStreak || 0) + 1;
+            session.lossStreak = 0;
+            console.log(`[ZERØ] Win! +${pnl.toFixed(4)} SOL. Win streak: ${session.winStreak}`);
         } else if (pnl < 0) {
             // Loss
-            state.session.lossStreak = (state.session.lossStreak || 0) + 1;
-            state.session.winStreak = 0;
-            console.log(`[ZERØ] Loss. ${pnl.toFixed(4)} SOL. Loss streak: ${state.session.lossStreak}`);
+            session.lossStreak = (session.lossStreak || 0) + 1;
+            session.winStreak = 0;
+            console.log(`[ZERØ] Loss. ${pnl.toFixed(4)} SOL. Loss streak: ${session.lossStreak}`);
         }
 
         // Equity Snapshot
-        if (!state.session.equityHistory) state.session.equityHistory = [];
-        state.session.equityHistory.push({
+        if (!session.equityHistory) session.equityHistory = [];
+        session.equityHistory.push({
             ts: Date.now(),
-            equity: state.session.balance + (state.session.realized || 0)
+            equity: session.balance + (session.realized || 0)
         });
-        if (state.session.equityHistory.length > 50) state.session.equityHistory.shift();
+        if (session.equityHistory.length > 50) session.equityHistory.shift();
 
         this.detectTilt(trade, state);
         this.detectFomo(trade, state);
@@ -367,10 +389,11 @@ export const Analytics = {
         const flags = FeatureManager.resolveFlags(state, 'TILT_DETECTION');
         if (!flags.enabled) return;
 
-        const lossStreak = state.session.lossStreak || 0;
+        const { session, behavior } = this._resolve(state);
+        const lossStreak = session.lossStreak || 0;
         if (lossStreak >= 3) {
             this.addAlert(state, 'TILT', `TILT DETECTED: ${lossStreak} Losses in a row. Take a break.`);
-            state.behavior.tiltFrequency = (state.behavior.tiltFrequency || 0) + 1;
+            behavior.tiltFrequency = (behavior.tiltFrequency || 0) + 1;
         }
     },
 
@@ -379,10 +402,11 @@ export const Analytics = {
         const flags = FeatureManager.resolveFlags(state, 'TILT_DETECTION');
         if (!flags.enabled) return;
 
-        const pos = state.positions[trade.mint];
+        const { positions, behavior } = this._resolve(state);
+        const pos = positions[trade.mint];
         if (pos && (pos.pnlSol || 0) < 0) {
             this.addAlert(state, 'SUNK_COST', "SUNK COST: Averaging down into a losing position increases risk.");
-            state.behavior.sunkCostFrequency = (state.behavior.sunkCostFrequency || 0) + 1;
+            behavior.sunkCostFrequency = (behavior.sunkCostFrequency || 0) + 1;
         }
     },
 
@@ -390,18 +414,17 @@ export const Analytics = {
         const flags = FeatureManager.resolveFlags(state, 'TILT_DETECTION');
         if (!flags.enabled) return;
 
+        const { session, trades: tradesMap, behavior } = this._resolve(state);
+
         // RATE LIMIT: Check if we alerted recently (60s cooldown)
-        // Use activeAlerts history to be robust against state resets
-        if (state.session?.activeAlerts) {
-            const lastAlert = state.session.activeAlerts.slice().reverse().find(a => a.type === 'VELOCITY');
+        if (session?.activeAlerts) {
+            const lastAlert = session.activeAlerts.slice().reverse().find(a => a.type === 'VELOCITY');
             if (lastAlert && (Date.now() - lastAlert.ts < 60000)) {
                 return; // Suppressed by rate limit
             }
         }
 
-        const trades = Object.values(state.trades || {})
-            .filter(t => t.mode === (state.settings.tradingMode || 'paper'))
-            .sort((a, b) => a.ts - b.ts);
+        const trades = Object.values(tradesMap || {}).sort((a, b) => a.ts - b.ts);
 
         if (trades.length < 5) return;
 
@@ -414,7 +437,7 @@ export const Analytics = {
         if (timeSpan < 300000 && timeSinceLast < 300000) {
             console.log(`[ZERØ ALERT] Overtrading Detected: 5 trades in ${(timeSpan / 1000).toFixed(1)}s`, last5.map(t => t.id));
             this.addAlert(state, 'VELOCITY', "OVERTRADING: You're trading too fast. Stop and evaluate setups.");
-            state.behavior.overtradingFrequency = (state.behavior.overtradingFrequency || 0) + 1;
+            behavior.overtradingFrequency = (behavior.overtradingFrequency || 0) + 1;
             state.lastOvertradingAlert = Date.now();
         }
     },
@@ -423,7 +446,9 @@ export const Analytics = {
         const flags = FeatureManager.resolveFlags(state, 'TILT_DETECTION');
         if (!flags.enabled) return;
 
-        Object.values(state.positions).forEach(pos => {
+        const { positions, behavior } = this._resolve(state);
+
+        Object.values(positions).forEach(pos => {
             const pnlPct = pos.pnlPct || 0;
             const peakPct = (pos.peakPnlPct !== undefined) ? pos.peakPnlPct : 0;
 
@@ -432,7 +457,7 @@ export const Analytics = {
                 if (!pos.alertedGreenToRed) {
                     this.addAlert(state, 'PROFIT_NEGLECT', `GREEN-TO-RED: ${pos.symbol} was up 10%+. Don't let winners die.`);
                     pos.alertedGreenToRed = true;
-                    state.behavior.profitNeglectFrequency = (state.behavior.profitNeglectFrequency || 0) + 1;
+                    behavior.profitNeglectFrequency = (behavior.profitNeglectFrequency || 0) + 1;
                 }
             }
         });
@@ -443,15 +468,17 @@ export const Analytics = {
         const flags = FeatureManager.resolveFlags(state, 'TILT_DETECTION');
         if (!flags.enabled) return;
 
+        const { trades: tradesMap, behavior } = this._resolve(state);
+
         if (trade.strategy === 'Unknown' || trade.strategy === 'Other') {
-            const trades = Object.values(state.trades || {});
+            const trades = Object.values(tradesMap || {});
             const profitableStrategies = trades
                 .filter(t => (t.realizedPnlSol || 0) > 0 && t.strategy !== 'Unknown')
                 .map(t => t.strategy);
 
             if (profitableStrategies.length >= 3) {
                 this.addAlert(state, 'DRIFT', "STRATEGY DRIFT: Playing 'Unknown' instead of your winning setups.");
-                state.behavior.strategyDriftFrequency = (state.behavior.strategyDriftFrequency || 0) + 1;
+                behavior.strategyDriftFrequency = (behavior.strategyDriftFrequency || 0) + 1;
             }
         }
     },
@@ -461,13 +488,14 @@ export const Analytics = {
         const flags = FeatureManager.resolveFlags(state, 'TILT_DETECTION'); // Use Tilt Detection as proxy for behavioral
         if (!flags.enabled) return;
 
-        const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+        const { trades: tradesMap, behavior } = this._resolve(state);
+        const trades = Object.values(tradesMap || {}).sort((a, b) => a.ts - b.ts);
         const prevTrade = trades.length > 1 ? trades[trades.length - 2] : null;
 
         // FOMO: Rapid buy after a loss or without strategy at potentially high MC
         if (prevTrade && (trade.ts - prevTrade.ts < 30000) && prevTrade.side === 'SELL' && (prevTrade.realizedPnlSol || 0) < 0) {
             this.addAlert(state, 'FOMO', "FOMO ALERT: Revenge trading detected.");
-            state.behavior.fomoTrades = (state.behavior.fomoTrades || 0) + 1;
+            behavior.fomoTrades = (behavior.fomoTrades || 0) + 1;
         }
     },
 
@@ -476,21 +504,24 @@ export const Analytics = {
         const flags = FeatureManager.resolveFlags(state, 'TILT_DETECTION');
         if (!flags.enabled) return;
 
+        const { behavior } = this._resolve(state);
+
         // Panic Sell: Sell shortly after a price dip if not at target
         // For now, simple time-based check after entry
         if (trade.entryTs && (trade.ts - trade.entryTs < 45000) && (trade.realizedPnlSol || 0) < 0) {
             this.addAlert(state, 'PANIC', "PANIC SELL: You're cutting too early. Trust your stops.");
-            state.behavior.panicSells = (state.behavior.panicSells || 0) + 1;
+            behavior.panicSells = (behavior.panicSells || 0) + 1;
         }
     },
 
     addAlert(state, type, message) {
-        if (!state.session.activeAlerts) state.session.activeAlerts = [];
+        const { session } = this._resolve(state);
+        if (!session.activeAlerts) session.activeAlerts = [];
         const alert = { type, message, ts: Date.now() };
-        state.session.activeAlerts.push(alert);
+        session.activeAlerts.push(alert);
 
         // Keep only last 3 alerts (for active display)
-        if (state.session.activeAlerts.length > 3) state.session.activeAlerts.shift();
+        if (session.activeAlerts.length > 3) session.activeAlerts.shift();
 
         // Log to persistent event log
         this.logAlertEvent(state, type, message);
@@ -499,7 +530,7 @@ export const Analytics = {
     },
 
     updateProfile(state) {
-        const b = state.behavior;
+        const { behavior: b } = this._resolve(state);
         const totalMistakes = (b.tiltFrequency || 0) + (b.fomoTrades || 0) + (b.panicSells || 0);
 
         if (totalMistakes === 0) b.profile = 'Disciplined';
@@ -510,7 +541,8 @@ export const Analytics = {
     },
 
     getProfessorDebrief(state) {
-        const score = state.session.disciplineScore !== undefined ? state.session.disciplineScore : 100;
+        const { session } = this._resolve(state);
+        const score = session.disciplineScore !== undefined ? session.disciplineScore : 100;
         const stats = this.analyzeRecentTrades(state) || { winRate: 0, style: 'balanced' };
 
         let critique = "Keep your discipline score high to trade like a pro.";
@@ -530,19 +562,20 @@ export const Analytics = {
 
     generateXShareText(state) {
         const mode = state.settings?.tradingMode || 'paper';
-        const trades = Object.values(state.trades || {});
+        const { trades: tradesMap, session } = this._resolve(state);
+        const trades = Object.values(tradesMap || {});
         const sellTrades = trades.filter(t => t.side === 'SELL');
 
         // Calculate stats
         const wins = sellTrades.filter(t => (t.realizedPnlSol || 0) > 0).length;
         const losses = sellTrades.filter(t => (t.realizedPnlSol || 0) < 0).length;
-        const totalPnl = state.session.realized || 0;
+        const totalPnl = session.realized || 0;
         const winRate = sellTrades.length > 0 ? ((wins / sellTrades.length) * 100).toFixed(0) : 0;
-        const disciplineScore = state.session.disciplineScore || 100;
+        const disciplineScore = session.disciplineScore || 100;
 
         // Get streak info
-        const winStreak = state.session.winStreak || 0;
-        const lossStreak = state.session.lossStreak || 0;
+        const winStreak = session.winStreak || 0;
+        const lossStreak = session.lossStreak || 0;
         const currentStreak = winStreak > 0 ? `${winStreak}W` : (lossStreak > 0 ? `${lossStreak}L` : '0');
 
         // Format PNL
@@ -577,7 +610,8 @@ export const Analytics = {
      * source: 'paper' | 'real' | 'all'
      */
     analyzeTradesBySource(state, source) {
-        const allTrades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+        const { trades: tradesMap } = this._resolve(state);
+        const allTrades = Object.values(tradesMap || {}).sort((a, b) => a.ts - b.ts);
         let trades;
         if (source === 'paper') {
             trades = allTrades.filter(t => t.mode === 'paper' || !t.mode);
@@ -630,7 +664,8 @@ export const Analytics = {
     // ==========================================
 
     exportToCSV(state) {
-        const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+        const { trades: tradesMap } = this._resolve(state);
+        const trades = Object.values(tradesMap || {}).sort((a, b) => a.ts - b.ts);
         if (trades.length === 0) return null;
 
         // CSV Header
@@ -683,9 +718,8 @@ export const Analytics = {
     },
 
     exportToJSON(state) {
-        const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
-        const session = state.session || {};
-        const behavior = state.behavior || {};
+        const { trades: tradesMap, session, behavior } = this._resolve(state);
+        const trades = Object.values(tradesMap || {}).sort((a, b) => a.ts - b.ts);
 
         const exportData = {
             exportedAt: new Date().toISOString(),
@@ -787,7 +821,8 @@ export const Analytics = {
      * Analyzes: Best strategies, worst conditions, optimal session length, best time of day
      */
     generateTraderProfile(state) {
-        const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+        const { trades: tradesMap } = this._resolve(state);
+        const trades = Object.values(tradesMap || {}).sort((a, b) => a.ts - b.ts);
 
         if (trades.length < 10) {
             return {
@@ -1097,7 +1132,8 @@ export const Analytics = {
     _analyzeRiskProfile(buyTrades, state) {
         if (buyTrades.length < 3) return { profile: 'Unknown', avgRisk: 0 };
 
-        const startSol = state.settings?.startSol || 10;
+        const { session } = this._resolve(state);
+        const startSol = session.balance || state.settings?.startSol || 10;
         const riskPcts = buyTrades.map(t => (t.solAmount / startSol) * 100);
         const avgRisk = riskPcts.reduce((a, b) => a + b, 0) / riskPcts.length;
         const maxRisk = Math.max(...riskPcts);
@@ -1120,7 +1156,7 @@ export const Analytics = {
     },
 
     _analyzeEmotionalPatterns(trades, state) {
-        const behavior = state.behavior || {};
+        const { behavior } = this._resolve(state);
         const patterns = [];
 
         if ((behavior.fomoTrades || 0) > 2) {
@@ -1161,7 +1197,8 @@ export const Analytics = {
     },
 
     calculateConsistencyScore(state) {
-        const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+        const { trades: tradesMap } = this._resolve(state);
+        const trades = Object.values(tradesMap || {}).sort((a, b) => a.ts - b.ts);
         if (trades.length < 5) {
             return { score: null, message: 'Need 5+ trades for consistency score', breakdown: null };
         }

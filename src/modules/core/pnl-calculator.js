@@ -92,7 +92,8 @@ export const PnlCalculator = {
         let priceWasUpdated = false;
         let totalUnrealizedUsd = 0;
 
-        const positions = Object.values(state.positions || {});
+        const isShadow = state.settings?.tradingMode === 'shadow';
+        const positions = Object.values(isShadow ? (state.shadowPositions || {}) : (state.positions || {}));
         const currentSymbol = (Market.currentSymbol || "").toUpperCase();
 
         const currentMC = Market.marketCap || 0;

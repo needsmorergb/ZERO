@@ -8,7 +8,7 @@ import {
     CHANNEL, MAX_SCAN_CHARS, safe, send,
     createContext, throttleEmit, looksRelatedByString,
     extractPriceUsd, tryHandleJson, findTV,
-    setupMessageListener
+    setupMessageListener, tryHandleSwap, SWAP_URL_PATTERNS
 } from '../shared/bridge-utils.js';
 
 (() => {
@@ -189,6 +189,11 @@ import {
                 const clone = res.clone();
                 clone.json().then(json => tryHandleJson(url, json, ctx)).catch(() => { });
             }
+            // Shadow mode: detect swap/trade submissions
+            if (SWAP_URL_PATTERNS.test(url)) {
+                const clone2 = res.clone();
+                clone2.json().then(json => tryHandleSwap(url, json, ctx)).catch(() => { });
+            }
         } catch { }
         return res;
     };
@@ -204,12 +209,17 @@ import {
         this.addEventListener("load", function () {
             try {
                 const url = this.__paper_url || "";
+                const ct = (this.getResponseHeader("content-type") || "").toLowerCase();
                 if (/quote|price|ticker|market|candles|kline|chart|pair|swap|route/i.test(url)) {
-                    const ct = (this.getResponseHeader("content-type") || "").toLowerCase();
                     if (ct.includes("json")) {
                         const json = JSON.parse(this.responseText);
                         tryHandleJson(url, json, ctx);
                     }
+                }
+                // Shadow mode: detect swap/trade submissions
+                if (SWAP_URL_PATTERNS.test(url) && ct.includes("json")) {
+                    const json = JSON.parse(this.responseText);
+                    tryHandleSwap(url, json, ctx);
                 }
             } catch { }
         });

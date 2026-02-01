@@ -145,11 +145,67 @@
         eventLog: [],
         // { ts, type, category, message, data }
         // Categories: TRADE, ALERT, DISCIPLINE, SYSTEM, MILESTONE
-        schemaVersion: 2,
+        // --- Shadow Mode Session State (separate from paper) ---
+        shadowSession: {
+          id: null,
+          startTime: 0,
+          endTime: null,
+          balance: 0,
+          // Auto-detected from wallet on first trade
+          equity: 0,
+          realized: 0,
+          trades: [],
+          equityHistory: [],
+          winStreak: 0,
+          lossStreak: 0,
+          tradeCount: 0,
+          disciplineScore: 100,
+          activeAlerts: [],
+          status: "active",
+          notes: ""
+        },
+        shadowSessionHistory: [],
+        // Uncapped — real sessions can be long
+        shadowTrades: {},
+        shadowPositions: {},
+        shadowBehavior: {
+          tiltFrequency: 0,
+          panicSells: 0,
+          fomoTrades: 0,
+          sunkCostFrequency: 0,
+          overtradingFrequency: 0,
+          profitNeglectFrequency: 0,
+          strategyDriftFrequency: 0,
+          profile: "Disciplined"
+        },
+        shadowEventLog: [],
+        schemaVersion: 3,
         version: "1.11.8"
       };
       Store = {
         state: null,
+        // --- Mode-aware accessors ---
+        isShadowMode() {
+          return this.state?.settings?.tradingMode === "shadow";
+        },
+        getActiveSession() {
+          return this.isShadowMode() ? this.state.shadowSession : this.state.session;
+        },
+        getActivePositions() {
+          return this.isShadowMode() ? this.state.shadowPositions : this.state.positions;
+        },
+        getActiveTrades() {
+          return this.isShadowMode() ? this.state.shadowTrades : this.state.trades;
+        },
+        getActiveBehavior() {
+          return this.isShadowMode() ? this.state.shadowBehavior : this.state.behavior;
+        },
+        getActiveEventLog() {
+          return this.isShadowMode() ? this.state.shadowEventLog : this.state.eventLog;
+        },
+        getActiveSessionHistory() {
+          return this.isShadowMode() ? this.state.shadowSessionHistory : this.state.sessionHistory;
+        },
         async load() {
           let timeoutId;
           const loadLogic = new Promise((resolve) => {
@@ -182,6 +238,11 @@
                   this.save();
                 } else {
                   this.state = deepMerge(DEFAULTS, saved);
+                  if (this.state.schemaVersion < 3) {
+                    console.log("[ZER\xD8] Migrating storage schema v2 -> v3 (shadow state)");
+                    this.state.schemaVersion = 3;
+                    this.save();
+                  }
                 }
                 this.validateState();
                 resolve(this.state);
@@ -309,31 +370,39 @@
               this.state.session.id = this.generateSessionId();
               this.state.session.startTime = Date.now();
             }
+            if (this.state.settings.tradingMode === "shadow" && this.state.shadowSession && !this.state.shadowSession.id) {
+              this.state.shadowSession.id = this.generateSessionId();
+              this.state.shadowSession.startTime = Date.now();
+            }
           }
         },
         generateSessionId() {
           return `session_${Date.now()}_${Math.floor(Math.random() * 1e4)}`;
         },
         // Start a new session (archive current if it has trades)
-        async startNewSession() {
-          const currentSession = this.state.session;
-          if (currentSession.trades && currentSession.trades.length > 0) {
+        // options.shadow: force shadow session reset (otherwise uses current mode)
+        async startNewSession(options = {}) {
+          const isShadow = options.shadow !== void 0 ? options.shadow : this.isShadowMode();
+          const sessionKey = isShadow ? "shadowSession" : "session";
+          const historyKey = isShadow ? "shadowSessionHistory" : "sessionHistory";
+          const currentSession = this.state[sessionKey];
+          if (currentSession && currentSession.trades && currentSession.trades.length > 0) {
             currentSession.endTime = Date.now();
             currentSession.status = "completed";
-            if (!this.state.sessionHistory)
-              this.state.sessionHistory = [];
-            this.state.sessionHistory.push({ ...currentSession });
-            if (this.state.sessionHistory.length > 10) {
-              this.state.sessionHistory = this.state.sessionHistory.slice(-10);
+            if (!this.state[historyKey])
+              this.state[historyKey] = [];
+            this.state[historyKey].push({ ...currentSession });
+            if (!isShadow && this.state[historyKey].length > 10) {
+              this.state[historyKey] = this.state[historyKey].slice(-10);
             }
           }
-          const startSol = this.state.settings.startSol || 10;
-          this.state.session = {
+          const startBalance = isShadow ? 0 : this.state.settings.startSol || 10;
+          this.state[sessionKey] = {
             id: this.generateSessionId(),
             startTime: Date.now(),
             endTime: null,
-            balance: startSol,
-            equity: startSol,
+            balance: startBalance,
+            equity: startBalance,
             realized: 0,
             trades: [],
             equityHistory: [],
@@ -342,36 +411,44 @@
             tradeCount: 0,
             disciplineScore: 100,
             activeAlerts: [],
-            status: "active"
+            status: "active",
+            notes: ""
           };
-          delete this.state._milestone_2x;
-          delete this.state._milestone_3x;
-          delete this.state._milestone_5x;
+          const prefix = isShadow ? "_shadow_milestone_" : "_milestone_";
+          delete this.state[prefix + "2x"];
+          delete this.state[prefix + "3x"];
+          delete this.state[prefix + "5x"];
+          if (!isShadow) {
+            delete this.state._milestone_2x;
+            delete this.state._milestone_3x;
+            delete this.state._milestone_5x;
+          }
           await this.save();
-          return this.state.session;
+          return this.state[sessionKey];
         },
-        // Get current session duration in minutes
+        // Get current session duration in minutes (mode-aware)
         getSessionDuration() {
-          const session = this.state?.session;
+          const session = this.getActiveSession();
           if (!session || !session.startTime)
             return 0;
           const endTime = session.endTime || Date.now();
           return Math.floor((endTime - session.startTime) / 6e4);
         },
-        // Get session summary
+        // Get session summary (mode-aware)
         getSessionSummary() {
-          const session = this.state?.session;
+          const session = this.getActiveSession();
+          const tradesMap = this.getActiveTrades();
           if (!session)
             return null;
-          const trades = session.trades || [];
-          const sellTrades = trades.map((id) => this.state.trades[id]).filter((t) => t && t.side === "SELL");
+          const tradeIds = session.trades || [];
+          const sellTrades = tradeIds.map((id) => tradesMap[id]).filter((t) => t && t.side === "SELL");
           const wins = sellTrades.filter((t) => (t.realizedPnlSol || 0) > 0).length;
           const losses = sellTrades.filter((t) => (t.realizedPnlSol || 0) < 0).length;
           const winRate = sellTrades.length > 0 ? (wins / sellTrades.length * 100).toFixed(1) : 0;
           return {
             id: session.id,
             duration: this.getSessionDuration(),
-            tradeCount: trades.length,
+            tradeCount: tradeIds.length,
             wins,
             losses,
             winRate,
@@ -4905,6 +4982,15 @@ input:checked + .slider:before {
         return false;
       }
       Store.state.settings.tradingMode = mode;
+      if (mode === MODES.SHADOW) {
+        const ss = Store.state.shadowSession;
+        if (!ss.id) {
+          ss.id = "shadow_" + Date.now();
+          ss.startTime = Date.now();
+          ss.status = "active";
+          console.log("[ModeManager] Shadow session initialized:", ss.id);
+        }
+      }
       await Store.save();
       return true;
     },
@@ -5294,12 +5380,25 @@ input:checked + .slider:before {
     MILESTONE: "MILESTONE"
   };
   var Analytics = {
+    // --- Mode-aware state resolver ---
+    _resolve(state) {
+      const isShadow = state.settings?.tradingMode === "shadow";
+      return {
+        session: isShadow ? state.shadowSession : state.session,
+        trades: isShadow ? state.shadowTrades : state.trades,
+        positions: isShadow ? state.shadowPositions : state.positions,
+        behavior: isShadow ? state.shadowBehavior : state.behavior,
+        eventLog: isShadow ? state.shadowEventLog : state.eventLog,
+        isShadow
+      };
+    },
     // ==========================================
     // PERSISTENT EVENT LOGGING
     // ==========================================
     logEvent(state, type, category, message, data = {}) {
-      if (!state.eventLog)
-        state.eventLog = [];
+      const { eventLog } = this._resolve(state);
+      if (!eventLog)
+        return;
       const event = {
         id: `evt_${Date.now()}_${Math.floor(Math.random() * 1e3)}`,
         ts: Date.now(),
@@ -5308,9 +5407,9 @@ input:checked + .slider:before {
         message,
         data
       };
-      state.eventLog.push(event);
-      if (state.eventLog.length > 100) {
-        state.eventLog = state.eventLog.slice(-100);
+      eventLog.push(event);
+      if (eventLog.length > 100) {
+        eventLog.splice(0, eventLog.length - 100);
       }
       console.log(`[EVENT LOG] [${category}] ${type}: ${message}`);
       return event;
@@ -5346,7 +5445,8 @@ input:checked + .slider:before {
     },
     getEventLog(state, options = {}) {
       const { category, limit = 50, offset = 0 } = options;
-      let events = state.eventLog || [];
+      const { eventLog } = this._resolve(state);
+      let events = eventLog || [];
       if (category) {
         events = events.filter((e) => e.category === category);
       }
@@ -5354,7 +5454,8 @@ input:checked + .slider:before {
       return events.slice(offset, offset + limit);
     },
     getEventStats(state) {
-      const events = state.eventLog || [];
+      const { eventLog } = this._resolve(state);
+      const events = eventLog || [];
       const stats = {
         total: events.length,
         trades: events.filter((e) => e.category === EVENT_CATEGORIES.TRADE).length,
@@ -5365,7 +5466,8 @@ input:checked + .slider:before {
       return stats;
     },
     analyzeRecentTrades(state) {
-      const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+      const { trades: tradesMap } = this._resolve(state);
+      const trades = Object.values(tradesMap || {}).sort((a, b) => a.ts - b.ts);
       if (trades.length === 0)
         return null;
       const recentTrades = trades.slice(-10);
@@ -5412,10 +5514,11 @@ input:checked + .slider:before {
       };
     },
     calculateDiscipline(trade, state) {
+      const { session, trades: tradesMap } = this._resolve(state);
       const flags = FeatureManager.resolveFlags(state, "DISCIPLINE_SCORING");
       if (!flags.enabled)
-        return { score: state.session.disciplineScore || 100, penalty: 0, reasons: [] };
-      const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+        return { score: session.disciplineScore || 100, penalty: 0, reasons: [] };
+      const trades = Object.values(tradesMap || {}).sort((a, b) => a.ts - b.ts);
       const prevTrade = trades.length > 1 ? trades[trades.length - 2] : null;
       let penalty = 0;
       let reasons = [];
@@ -5428,7 +5531,7 @@ input:checked + .slider:before {
         reasons.push("No Strategy");
       }
       if (trade.side === "BUY") {
-        const currentBal = state.session.balance + trade.solSize;
+        const currentBal = session.balance + trade.solSize;
         if (trade.solSize > currentBal * 0.5) {
           penalty += 20;
           reasons.push("Oversizing (>50%)");
@@ -5446,9 +5549,9 @@ input:checked + .slider:before {
           reasons.push(...result.reasons);
         }
       }
-      let score = state.session.disciplineScore !== void 0 ? state.session.disciplineScore : 100;
+      let score = session.disciplineScore !== void 0 ? session.disciplineScore : 100;
       score = Math.max(0, score - penalty);
-      state.session.disciplineScore = score;
+      session.disciplineScore = score;
       if (penalty > 0) {
         console.log(`[DISCIPLINE] Score -${penalty} (${reasons.join(", ")})`);
         this.logDisciplineEvent(state, score, penalty, reasons);
@@ -5459,7 +5562,8 @@ input:checked + .slider:before {
     checkPlanAdherence(sellTrade, state) {
       let penalty = 0;
       const reasons = [];
-      const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+      const { trades: tradesMap } = this._resolve(state);
+      const trades = Object.values(tradesMap || {}).sort((a, b) => a.ts - b.ts);
       const buyTrade = trades.find(
         (t) => t.side === "BUY" && t.mint === sellTrade.mint && t.ts < sellTrade.ts && t.riskDefined
       );
@@ -5494,7 +5598,8 @@ input:checked + .slider:before {
     },
     // Calculate R-Multiple for a trade (requires defined risk)
     calculateRMultiple(sellTrade, state) {
-      const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+      const { trades: tradesMap } = this._resolve(state);
+      const trades = Object.values(tradesMap || {}).sort((a, b) => a.ts - b.ts);
       const buyTrade = trades.find(
         (t) => t.side === "BUY" && t.mint === sellTrade.mint && t.ts < sellTrade.ts && t.riskDefined
       );
@@ -5520,24 +5625,25 @@ input:checked + .slider:before {
     updateStreaks(trade, state) {
       if (trade.side !== "SELL")
         return;
+      const { session } = this._resolve(state);
       const pnl = trade.realizedPnlSol || 0;
       if (pnl > 0) {
-        state.session.winStreak = (state.session.winStreak || 0) + 1;
-        state.session.lossStreak = 0;
-        console.log(`[ZER\xD8] Win! +${pnl.toFixed(4)} SOL. Win streak: ${state.session.winStreak}`);
+        session.winStreak = (session.winStreak || 0) + 1;
+        session.lossStreak = 0;
+        console.log(`[ZER\xD8] Win! +${pnl.toFixed(4)} SOL. Win streak: ${session.winStreak}`);
       } else if (pnl < 0) {
-        state.session.lossStreak = (state.session.lossStreak || 0) + 1;
-        state.session.winStreak = 0;
-        console.log(`[ZER\xD8] Loss. ${pnl.toFixed(4)} SOL. Loss streak: ${state.session.lossStreak}`);
+        session.lossStreak = (session.lossStreak || 0) + 1;
+        session.winStreak = 0;
+        console.log(`[ZER\xD8] Loss. ${pnl.toFixed(4)} SOL. Loss streak: ${session.lossStreak}`);
       }
-      if (!state.session.equityHistory)
-        state.session.equityHistory = [];
-      state.session.equityHistory.push({
+      if (!session.equityHistory)
+        session.equityHistory = [];
+      session.equityHistory.push({
         ts: Date.now(),
-        equity: state.session.balance + (state.session.realized || 0)
+        equity: session.balance + (session.realized || 0)
       });
-      if (state.session.equityHistory.length > 50)
-        state.session.equityHistory.shift();
+      if (session.equityHistory.length > 50)
+        session.equityHistory.shift();
       this.detectTilt(trade, state);
       this.detectFomo(trade, state);
       this.detectPanicSell(trade, state);
@@ -5568,10 +5674,11 @@ input:checked + .slider:before {
       const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
       if (!flags.enabled)
         return;
-      const lossStreak = state.session.lossStreak || 0;
+      const { session, behavior } = this._resolve(state);
+      const lossStreak = session.lossStreak || 0;
       if (lossStreak >= 3) {
         this.addAlert(state, "TILT", `TILT DETECTED: ${lossStreak} Losses in a row. Take a break.`);
-        state.behavior.tiltFrequency = (state.behavior.tiltFrequency || 0) + 1;
+        behavior.tiltFrequency = (behavior.tiltFrequency || 0) + 1;
       }
     },
     detectSunkCost(trade, state) {
@@ -5580,23 +5687,25 @@ input:checked + .slider:before {
       const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
       if (!flags.enabled)
         return;
-      const pos = state.positions[trade.mint];
+      const { positions, behavior } = this._resolve(state);
+      const pos = positions[trade.mint];
       if (pos && (pos.pnlSol || 0) < 0) {
         this.addAlert(state, "SUNK_COST", "SUNK COST: Averaging down into a losing position increases risk.");
-        state.behavior.sunkCostFrequency = (state.behavior.sunkCostFrequency || 0) + 1;
+        behavior.sunkCostFrequency = (behavior.sunkCostFrequency || 0) + 1;
       }
     },
     detectOvertrading(state) {
       const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
       if (!flags.enabled)
         return;
-      if (state.session?.activeAlerts) {
-        const lastAlert = state.session.activeAlerts.slice().reverse().find((a) => a.type === "VELOCITY");
+      const { session, trades: tradesMap, behavior } = this._resolve(state);
+      if (session?.activeAlerts) {
+        const lastAlert = session.activeAlerts.slice().reverse().find((a) => a.type === "VELOCITY");
         if (lastAlert && Date.now() - lastAlert.ts < 6e4) {
           return;
         }
       }
-      const trades = Object.values(state.trades || {}).filter((t) => t.mode === (state.settings.tradingMode || "paper")).sort((a, b) => a.ts - b.ts);
+      const trades = Object.values(tradesMap || {}).sort((a, b) => a.ts - b.ts);
       if (trades.length < 5)
         return;
       const last5 = trades.slice(-5);
@@ -5605,7 +5714,7 @@ input:checked + .slider:before {
       if (timeSpan < 3e5 && timeSinceLast < 3e5) {
         console.log(`[ZER\xD8 ALERT] Overtrading Detected: 5 trades in ${(timeSpan / 1e3).toFixed(1)}s`, last5.map((t) => t.id));
         this.addAlert(state, "VELOCITY", "OVERTRADING: You're trading too fast. Stop and evaluate setups.");
-        state.behavior.overtradingFrequency = (state.behavior.overtradingFrequency || 0) + 1;
+        behavior.overtradingFrequency = (behavior.overtradingFrequency || 0) + 1;
         state.lastOvertradingAlert = Date.now();
       }
     },
@@ -5613,14 +5722,15 @@ input:checked + .slider:before {
       const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
       if (!flags.enabled)
         return;
-      Object.values(state.positions).forEach((pos) => {
+      const { positions, behavior } = this._resolve(state);
+      Object.values(positions).forEach((pos) => {
         const pnlPct = pos.pnlPct || 0;
         const peakPct = pos.peakPnlPct !== void 0 ? pos.peakPnlPct : 0;
         if (peakPct > 10 && pnlPct < 0) {
           if (!pos.alertedGreenToRed) {
             this.addAlert(state, "PROFIT_NEGLECT", `GREEN-TO-RED: ${pos.symbol} was up 10%+. Don't let winners die.`);
             pos.alertedGreenToRed = true;
-            state.behavior.profitNeglectFrequency = (state.behavior.profitNeglectFrequency || 0) + 1;
+            behavior.profitNeglectFrequency = (behavior.profitNeglectFrequency || 0) + 1;
           }
         }
       });
@@ -5631,12 +5741,13 @@ input:checked + .slider:before {
       const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
       if (!flags.enabled)
         return;
+      const { trades: tradesMap, behavior } = this._resolve(state);
       if (trade.strategy === "Unknown" || trade.strategy === "Other") {
-        const trades = Object.values(state.trades || {});
+        const trades = Object.values(tradesMap || {});
         const profitableStrategies = trades.filter((t) => (t.realizedPnlSol || 0) > 0 && t.strategy !== "Unknown").map((t) => t.strategy);
         if (profitableStrategies.length >= 3) {
           this.addAlert(state, "DRIFT", "STRATEGY DRIFT: Playing 'Unknown' instead of your winning setups.");
-          state.behavior.strategyDriftFrequency = (state.behavior.strategyDriftFrequency || 0) + 1;
+          behavior.strategyDriftFrequency = (behavior.strategyDriftFrequency || 0) + 1;
         }
       }
     },
@@ -5646,11 +5757,12 @@ input:checked + .slider:before {
       const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
       if (!flags.enabled)
         return;
-      const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+      const { trades: tradesMap, behavior } = this._resolve(state);
+      const trades = Object.values(tradesMap || {}).sort((a, b) => a.ts - b.ts);
       const prevTrade = trades.length > 1 ? trades[trades.length - 2] : null;
       if (prevTrade && trade.ts - prevTrade.ts < 3e4 && prevTrade.side === "SELL" && (prevTrade.realizedPnlSol || 0) < 0) {
         this.addAlert(state, "FOMO", "FOMO ALERT: Revenge trading detected.");
-        state.behavior.fomoTrades = (state.behavior.fomoTrades || 0) + 1;
+        behavior.fomoTrades = (behavior.fomoTrades || 0) + 1;
       }
     },
     detectPanicSell(trade, state) {
@@ -5659,23 +5771,25 @@ input:checked + .slider:before {
       const flags = FeatureManager.resolveFlags(state, "TILT_DETECTION");
       if (!flags.enabled)
         return;
+      const { behavior } = this._resolve(state);
       if (trade.entryTs && trade.ts - trade.entryTs < 45e3 && (trade.realizedPnlSol || 0) < 0) {
         this.addAlert(state, "PANIC", "PANIC SELL: You're cutting too early. Trust your stops.");
-        state.behavior.panicSells = (state.behavior.panicSells || 0) + 1;
+        behavior.panicSells = (behavior.panicSells || 0) + 1;
       }
     },
     addAlert(state, type, message) {
-      if (!state.session.activeAlerts)
-        state.session.activeAlerts = [];
+      const { session } = this._resolve(state);
+      if (!session.activeAlerts)
+        session.activeAlerts = [];
       const alert = { type, message, ts: Date.now() };
-      state.session.activeAlerts.push(alert);
-      if (state.session.activeAlerts.length > 3)
-        state.session.activeAlerts.shift();
+      session.activeAlerts.push(alert);
+      if (session.activeAlerts.length > 3)
+        session.activeAlerts.shift();
       this.logAlertEvent(state, type, message);
       console.log(`[ELITE ALERT] ${type}: ${message}`);
     },
     updateProfile(state) {
-      const b = state.behavior;
+      const { behavior: b } = this._resolve(state);
       const totalMistakes = (b.tiltFrequency || 0) + (b.fomoTrades || 0) + (b.panicSells || 0);
       if (totalMistakes === 0)
         b.profile = "Disciplined";
@@ -5689,7 +5803,8 @@ input:checked + .slider:before {
         b.profile = "Improving";
     },
     getProfessorDebrief(state) {
-      const score = state.session.disciplineScore !== void 0 ? state.session.disciplineScore : 100;
+      const { session } = this._resolve(state);
+      const score = session.disciplineScore !== void 0 ? session.disciplineScore : 100;
       const stats = this.analyzeRecentTrades(state) || { winRate: 0, style: "balanced" };
       let critique = "Keep your discipline score high to trade like a pro.";
       if (score < 70) {
@@ -5705,15 +5820,16 @@ input:checked + .slider:before {
     },
     generateXShareText(state) {
       const mode = state.settings?.tradingMode || "paper";
-      const trades = Object.values(state.trades || {});
+      const { trades: tradesMap, session } = this._resolve(state);
+      const trades = Object.values(tradesMap || {});
       const sellTrades = trades.filter((t) => t.side === "SELL");
       const wins = sellTrades.filter((t) => (t.realizedPnlSol || 0) > 0).length;
       const losses = sellTrades.filter((t) => (t.realizedPnlSol || 0) < 0).length;
-      const totalPnl = state.session.realized || 0;
+      const totalPnl = session.realized || 0;
       const winRate = sellTrades.length > 0 ? (wins / sellTrades.length * 100).toFixed(0) : 0;
-      const disciplineScore = state.session.disciplineScore || 100;
-      const winStreak = state.session.winStreak || 0;
-      const lossStreak = state.session.lossStreak || 0;
+      const disciplineScore = session.disciplineScore || 100;
+      const winStreak = session.winStreak || 0;
+      const lossStreak = session.lossStreak || 0;
       const currentStreak = winStreak > 0 ? `${winStreak}W` : lossStreak > 0 ? `${lossStreak}L` : "0";
       const pnlFormatted = totalPnl >= 0 ? `+${totalPnl.toFixed(3)}` : totalPnl.toFixed(3);
       const pnlTag = totalPnl >= 0 ? "[PROFIT]" : "[DRAWDOWN]";
@@ -5752,7 +5868,8 @@ input:checked + .slider:before {
      * source: 'paper' | 'real' | 'all'
      */
     analyzeTradesBySource(state, source) {
-      const allTrades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+      const { trades: tradesMap } = this._resolve(state);
+      const allTrades = Object.values(tradesMap || {}).sort((a, b) => a.ts - b.ts);
       let trades;
       if (source === "paper") {
         trades = allTrades.filter((t) => t.mode === "paper" || !t.mode);
@@ -5802,7 +5919,8 @@ input:checked + .slider:before {
     // EXPORT FUNCTIONALITY
     // ==========================================
     exportToCSV(state) {
-      const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+      const { trades: tradesMap } = this._resolve(state);
+      const trades = Object.values(tradesMap || {}).sort((a, b) => a.ts - b.ts);
       if (trades.length === 0)
         return null;
       const headers = [
@@ -5850,9 +5968,8 @@ input:checked + .slider:before {
       return csvContent;
     },
     exportToJSON(state) {
-      const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
-      const session = state.session || {};
-      const behavior = state.behavior || {};
+      const { trades: tradesMap, session, behavior } = this._resolve(state);
+      const trades = Object.values(tradesMap || {}).sort((a, b) => a.ts - b.ts);
       const exportData = {
         exportedAt: (/* @__PURE__ */ new Date()).toISOString(),
         version: state.version || "1.0.0",
@@ -5946,7 +6063,8 @@ input:checked + .slider:before {
      * Analyzes: Best strategies, worst conditions, optimal session length, best time of day
      */
     generateTraderProfile(state) {
-      const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+      const { trades: tradesMap } = this._resolve(state);
+      const trades = Object.values(tradesMap || {}).sort((a, b) => a.ts - b.ts);
       if (trades.length < 10) {
         return {
           ready: false,
@@ -6217,7 +6335,8 @@ input:checked + .slider:before {
     _analyzeRiskProfile(buyTrades, state) {
       if (buyTrades.length < 3)
         return { profile: "Unknown", avgRisk: 0 };
-      const startSol = state.settings?.startSol || 10;
+      const { session } = this._resolve(state);
+      const startSol = session.balance || state.settings?.startSol || 10;
       const riskPcts = buyTrades.map((t) => t.solAmount / startSol * 100);
       const avgRisk = riskPcts.reduce((a, b) => a + b, 0) / riskPcts.length;
       const maxRisk = Math.max(...riskPcts);
@@ -6241,7 +6360,7 @@ input:checked + .slider:before {
       };
     },
     _analyzeEmotionalPatterns(trades, state) {
-      const behavior = state.behavior || {};
+      const { behavior } = this._resolve(state);
       const patterns = [];
       if ((behavior.fomoTrades || 0) > 2) {
         patterns.push({ type: "FOMO", frequency: behavior.fomoTrades, advice: "Wait 60 seconds before entering after seeing green candles." });
@@ -6277,7 +6396,8 @@ input:checked + .slider:before {
       return sessions;
     },
     calculateConsistencyScore(state) {
-      const trades = Object.values(state.trades || {}).sort((a, b) => a.ts - b.ts);
+      const { trades: tradesMap } = this._resolve(state);
+      const trades = Object.values(tradesMap || {}).sort((a, b) => a.ts - b.ts);
       if (trades.length < 5) {
         return { score: null, message: "Need 5+ trades for consistency score", breakdown: null };
       }
@@ -6444,7 +6564,8 @@ input:checked + .slider:before {
       const solUsd = this.getSolPrice();
       let priceWasUpdated = false;
       let totalUnrealizedUsd = 0;
-      const positions = Object.values(state.positions || {});
+      const isShadow = state.settings?.tradingMode === "shadow";
+      const positions = Object.values(isShadow ? state.shadowPositions || {} : state.positions || {});
       const currentSymbol = (Market.currentSymbol || "").toUpperCase();
       const currentMC = Market.marketCap || 0;
       positions.forEach((pos) => {
@@ -7535,8 +7656,10 @@ canvas#equity-canvas {
         overlay.remove();
     },
     computeSessionStats(state) {
-      const sessionTradeIds = state.session.trades || [];
-      const allSessionTrades = sessionTradeIds.map((id) => state.trades[id]).filter(Boolean).sort((a, b) => a.ts - b.ts);
+      const session = Store.getActiveSession();
+      const tradesMap = Store.getActiveTrades();
+      const sessionTradeIds = session.trades || [];
+      const allSessionTrades = sessionTradeIds.map((id) => tradesMap[id]).filter(Boolean).sort((a, b) => a.ts - b.ts);
       const exits = allSessionTrades.filter(
         (t) => t.side === "SELL" || t.side === "EXIT" || t.realizedPnlSol !== void 0
       );
@@ -7578,11 +7701,14 @@ canvas#equity-canvas {
         }
       });
       const avgPnl = exits.length > 0 ? exits.reduce((sum, t) => sum + (t.realizedPnlSol || 0), 0) / exits.length : 0;
-      const sessionPnl = state.session.realized || 0;
-      const startSol = state.settings.startSol || 10;
+      const sessionPnl = session.realized || 0;
+      const isShadow = Store.isShadowMode();
+      const positions = Store.getActivePositions();
+      const totalInvestedSol = Object.values(positions || {}).reduce((sum, pos) => sum + (pos.totalSolSpent || 0), 0);
+      const startSol = isShadow ? totalInvestedSol || session.balance || 1 : state.settings.startSol || 10;
       const sessionPnlPct = startSol > 0 ? sessionPnl / startSol * 100 : 0;
-      const startTime = state.session.startTime || Date.now();
-      const endTime = state.session.endTime || Date.now();
+      const startTime = session.startTime || Date.now();
+      const endTime = session.endTime || Date.now();
       const durationMs = endTime - startTime;
       const durationMin = Math.floor(durationMs / 6e4);
       const durationHr = Math.floor(durationMin / 60);
@@ -7628,8 +7754,10 @@ canvas#equity-canvas {
         root.appendChild(overlay);
       }
       const state = Store.state;
+      const session = Store.getActiveSession();
+      const behavior = Store.getActiveBehavior();
       const stats = this.computeSessionStats(state);
-      const hasEquityData = (state.session.equityHistory || []).length >= 2;
+      const hasEquityData = (session.equityHistory || []).length >= 2;
       const pnlSign = stats.sessionPnl >= 0 ? "+" : "";
       const pnlClass = stats.sessionPnl >= 0 ? "win" : "loss";
       const pnlPctStr = `${stats.sessionPnlPct >= 0 ? "+" : ""}${stats.sessionPnlPct.toFixed(1)}%`;
@@ -7647,7 +7775,7 @@ canvas#equity-canvas {
       };
       const isEmpty = stats.totalTrades === 0;
       const isElite = FeatureManager.isElite(state);
-      const subtext = state.settings.tradingMode === "shadow" ? "Observed session results" : "Paper session results";
+      const subtext = state.settings.tradingMode === "shadow" ? "Real trades analyzed" : "Paper session results";
       overlay.innerHTML = `
             <div class="paper-dashboard-modal">
                 <div class="dash-header">
@@ -7719,9 +7847,9 @@ canvas#equity-canvas {
                         </div>
                         <div class="dash-card dash-notes">
                             <div class="dash-section-label">SESSION NOTES</div>
-                            <textarea class="dash-notes-input" id="dash-session-notes" maxlength="280" placeholder="Add a note about this session...">${state.session.notes || ""}</textarea>
+                            <textarea class="dash-notes-input" id="dash-session-notes" maxlength="280" placeholder="Add a note about this session...">${session.notes || ""}</textarea>
                             <div class="dash-notes-footer">
-                                <span class="dash-notes-count" id="dash-notes-count">${(state.session.notes || "").length}/280</span>
+                                <span class="dash-notes-count" id="dash-notes-count">${(session.notes || "").length}/280</span>
                                 <button class="dash-notes-save" id="dash-notes-save">Save note</button>
                             </div>
                         </div>
@@ -7748,7 +7876,7 @@ canvas#equity-canvas {
                             <div class="dash-elite-grid">
                                 <div class="dash-metric-card">
                                     <div class="dash-metric-k">Discipline Score</div>
-                                    <div class="dash-metric-v" style="color:#8b5cf6;">${state.session.disciplineScore || 100}</div>
+                                    <div class="dash-metric-v" style="color:#8b5cf6;">${session.disciplineScore || 100}</div>
                                 </div>
                                 <div class="dash-metric-card">
                                     <div class="dash-metric-k">Consistency</div>
@@ -7756,7 +7884,7 @@ canvas#equity-canvas {
                                 </div>
                                 <div class="dash-metric-card">
                                     <div class="dash-metric-k">Behavior Profile</div>
-                                    <div class="dash-metric-v" style="color:#8b5cf6;">${state.behavior?.profile || "Disciplined"}</div>
+                                    <div class="dash-metric-v" style="color:#8b5cf6;">${behavior?.profile || "Disciplined"}</div>
                                 </div>
                             </div>
                             ` : `
@@ -7803,7 +7931,7 @@ canvas#equity-canvas {
             notesCount.textContent = `${notesInput.value.length}/280`;
         });
         notesInput.addEventListener("blur", async () => {
-          state.session.notes = notesInput.value.slice(0, 280);
+          session.notes = notesInput.value.slice(0, 280);
           await Store.save();
         });
       }
@@ -7811,7 +7939,7 @@ canvas#equity-canvas {
         notesSave.addEventListener("click", async (e) => {
           e.preventDefault();
           e.stopPropagation();
-          state.session.notes = notesInput.value.slice(0, 280);
+          session.notes = notesInput.value.slice(0, 280);
           await Store.save();
           notesSave.textContent = "Saved";
           notesSave.style.color = "#10b981";
@@ -7843,7 +7971,8 @@ canvas#equity-canvas {
       if (!canvas)
         return;
       const ctx = canvas.getContext("2d");
-      const history = state.session.equityHistory || [];
+      const session = Store.getActiveSession();
+      const history = session.equityHistory || [];
       if (history.length < 2)
         return;
       const dpr = window.devicePixelRatio || 1;
@@ -8129,8 +8258,8 @@ canvas#equity-canvas {
       return html;
     },
     renderEliteContent(state) {
-      const session = state.session || {};
-      const behavior = state.behavior || {};
+      const session = Store.getActiveSession();
+      const behavior = Store.getActiveBehavior();
       return `
             <div class="insights-section-label">SESSION OVERVIEW</div>
             <div class="insights-grid">
@@ -8708,12 +8837,20 @@ canvas#equity-canvas {
       this.bindPnlDrag(root, makeDraggable);
       const inp = root.querySelector(".startSolInput");
       if (inp) {
+        if (Store.isShadowMode()) {
+          inp.disabled = true;
+          inp.style.opacity = "0.4";
+          inp.placeholder = "Auto";
+        }
         inp.addEventListener("change", async () => {
+          if (Store.isShadowMode())
+            return;
           const v = parseFloat(inp.value);
           if (v > 0) {
-            if ((Store.state.session.trades || []).length === 0) {
-              Store.state.session.balance = v;
-              Store.state.session.equity = v;
+            const session = Store.getActiveSession();
+            if ((session.trades || []).length === 0) {
+              session.balance = v;
+              session.equity = v;
             }
             Store.state.settings.startSol = v;
             await Store.save();
@@ -8828,23 +8965,36 @@ canvas#equity-canvas {
         root.style.top = "";
       }
       const solUsd = Trading.getSolPrice();
+      const isShadow = Store.isShadowMode();
+      const session = Store.getActiveSession();
+      const positions = Store.getActivePositions();
       const currentToken = TokenDetector.getCurrentToken();
       const unrealized = Trading.getUnrealizedPnl(s, currentToken.mint);
       const inp = root.querySelector(".startSolInput");
-      if (document.activeElement !== inp)
-        inp.value = s.settings.startSol;
-      root.querySelector('[data-k="balance"]').textContent = `${Trading.fmtSol(s.session.balance)} SOL`;
+      if (isShadow) {
+        inp.disabled = true;
+        inp.style.opacity = "0.4";
+        inp.placeholder = "Auto";
+        inp.value = session.balance > 0 ? Trading.fmtSol(session.balance) : "Auto";
+      } else {
+        inp.disabled = false;
+        inp.style.opacity = "";
+        inp.placeholder = "";
+        if (document.activeElement !== inp)
+          inp.value = s.settings.startSol;
+      }
+      root.querySelector('[data-k="balance"]').textContent = `${Trading.fmtSol(session.balance)} SOL`;
       const currentMC = Market.marketCap || 0;
       let unrealizedPct = 0;
-      for (const p of Object.values(s.positions || {})) {
+      for (const p of Object.values(positions || {})) {
         if (p && p.qtyTokens > 0 && p.entryMarketCapUsdReference > 0 && currentMC > 0) {
           unrealizedPct = (currentMC / p.entryMarketCapUsdReference - 1) * 100;
           break;
         }
       }
       if (unrealizedPct === 0 && unrealized !== 0) {
-        const positions = Object.values(s.positions || {});
-        const totalInvested = positions.reduce((sum, pos) => sum + (pos.totalSolSpent || 0), 0);
+        const posArr = Object.values(positions || {});
+        const totalInvested = posArr.reduce((sum, pos) => sum + (pos.totalSolSpent || 0), 0);
         unrealizedPct = totalInvested > 0 ? unrealized / totalInvested * 100 : 0;
       }
       const tokenValueEl = root.querySelector('[data-k="tokenValue"]');
@@ -8861,9 +9011,11 @@ canvas#equity-canvas {
         }
         tokenValueEl.style.color = unrealized >= 0 ? "#10b981" : "#ef4444";
       }
-      const realized = s.session.realized || 0;
+      const realized = session.realized || 0;
       const totalPnl = realized + unrealized;
-      const startBalance = s.settings.startSol || 10;
+      const posArr2 = Object.values(positions || {});
+      const totalInvestedSol = posArr2.reduce((sum, pos) => sum + (pos.totalSolSpent || 0), 0);
+      const startBalance = isShadow ? totalInvestedSol || session.balance || 1 : s.settings.startSol || 10;
       const sessionPct = totalPnl / startBalance * 100;
       const pnlEl = root.querySelector('[data-k="pnl"]');
       const pnlUnitEl = root.querySelector('[data-k="pnlUnit"]');
@@ -8880,8 +9032,8 @@ canvas#equity-canvas {
         pnlEl.style.color = totalPnl >= 0 ? "#10b981" : "#ef4444";
       }
       const streakEl = root.querySelector('[data-k="streak"]');
-      const winStreak = s.session.winStreak || 0;
-      const lossStreak = s.session.lossStreak || 0;
+      const winStreak = session.winStreak || 0;
+      const lossStreak = session.lossStreak || 0;
       if (lossStreak > 0) {
         streakEl.textContent = "-" + lossStreak;
         streakEl.parentElement.className = "stat streak loss";
@@ -8904,12 +9056,15 @@ canvas#equity-canvas {
     showResetModal() {
       const overlay = document.createElement("div");
       overlay.className = "confirm-modal-overlay";
+      const isShadow = Store.isShadowMode();
       const duration = Store.getSessionDuration();
       const summary = Store.getSessionSummary();
+      const title = isShadow ? "Reset Shadow session?" : "Reset current session?";
+      const desc = isShadow ? "This will clear your shadow session stats and start fresh.<br>Your real trade history and past sessions will not be deleted." : "This will clear current session stats and start a fresh run.<br>Your trade history and past sessions will not be deleted.";
       overlay.innerHTML = `
             <div class="confirm-modal">
-                <h3>Reset current session?</h3>
-                <p>This will clear current session stats and start a fresh run.<br>Your trade history and past sessions will not be deleted.</p>
+                <h3>${title}</h3>
+                <p>${desc}</p>
                 ${summary && summary.tradeCount > 0 ? `
                     <div style="background:rgba(20,184,166,0.1); border:1px solid rgba(20,184,166,0.2); border-radius:8px; padding:10px; margin:12px 0; font-size:11px;">
                         <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
@@ -8939,8 +9094,12 @@ canvas#equity-canvas {
       OverlayManager.getContainer().appendChild(overlay);
       overlay.querySelector(".cancel").onclick = () => overlay.remove();
       overlay.querySelector(".confirm").onclick = async () => {
-        await Store.startNewSession();
-        Store.state.positions = {};
+        await Store.startNewSession({ shadow: isShadow });
+        if (isShadow) {
+          Store.state.shadowPositions = {};
+        } else {
+          Store.state.positions = {};
+        }
         await Store.save();
         window.postMessage({ __paper: true, type: "PAPER_CLEAR_MARKERS" }, "*");
         if (window.ZeroHUD && window.ZeroHUD.updateAll) {
@@ -8976,8 +9135,10 @@ canvas#equity-canvas {
       SettingsPanel.show();
     },
     updateTradeList(container) {
-      const trades = Store.state.session.trades || [];
-      const tradeObjs = trades.map((id) => Store.state.trades[id]).filter((t) => t).reverse();
+      const session = Store.getActiveSession();
+      const tradesMap = Store.getActiveTrades();
+      const trades = session.trades || [];
+      const tradeObjs = trades.map((id) => tradesMap[id]).filter((t) => t).reverse();
       let html = "";
       tradeObjs.forEach((t) => {
         const side = t.side === "ENTRY" ? "BUY" : t.side === "EXIT" ? "SELL" : t.side;
@@ -9020,8 +9181,8 @@ canvas#equity-canvas {
       container.innerHTML = html || '<div style="padding:10px;color:#64748b;text-align:center;">No trades yet</div>';
     },
     updatePositionsPanel(root) {
-      const s = Store.state;
-      const positions = Object.values(s.positions || {}).filter((p) => p.qtyTokens > 0);
+      const activePositions = Store.getActivePositions();
+      const positions = Object.values(activePositions || {}).filter((p) => p.qtyTokens > 0);
       const listEl = root.querySelector('[data-k="positionsList"]');
       const toggleIcon = root.querySelector(".positionsToggle");
       const countEl = root.querySelector('[data-k="positionCount"]');
@@ -9098,7 +9259,8 @@ canvas#equity-canvas {
       return p.toFixed(leadingZeros + 3);
     },
     async executeQuickSell(mint, pct) {
-      const pos = Store.state.positions[mint];
+      const positions = Store.getActivePositions();
+      const pos = positions[mint];
       if (!pos) {
         console.error("[PnlHud] Position not found for mint:", mint);
         return;
@@ -9108,7 +9270,8 @@ canvas#equity-canvas {
       if (result.success) {
         console.log(`[PnlHud] Quick sell ${pct}% of ${pos.symbol} successful`);
         if (result.trade && result.trade.id) {
-          const fullTrade = Store.state.trades && Store.state.trades[result.trade.id] ? Store.state.trades[result.trade.id] : Store.state.fills ? Store.state.fills.find((f) => f.id === result.trade.id) : null;
+          const activeTrades = Store.getActiveTrades();
+          const fullTrade = activeTrades && activeTrades[result.trade.id] ? activeTrades[result.trade.id] : Store.state.fills ? Store.state.fills.find((f) => f.id === result.trade.id) : null;
           if (fullTrade) {
             const bridgeTrade = {
               ...fullTrade,
@@ -10995,6 +11158,246 @@ canvas#equity-canvas {
     }
   };
 
+  // src/modules/core/shadow-trade-ingestion.js
+  init_store();
+  var ShadowTradeIngestion = {
+    initialized: false,
+    walletBalanceFetched: false,
+    init() {
+      if (this.initialized)
+        return;
+      this.initialized = true;
+      window.addEventListener("message", (e) => {
+        if (e.source !== window)
+          return;
+        if (e.data?.type !== "SHADOW_TRADE_DETECTED")
+          return;
+        if (!e.data?.__paper)
+          return;
+        this.handleDetectedTrade(e.data);
+      });
+      console.log("[ShadowIngestion] Initialized \u2014 listening for swap events");
+    },
+    async handleDetectedTrade(data) {
+      if (!Store.isShadowMode()) {
+        console.log("[ShadowIngestion] Ignoring swap \u2014 not in shadow mode");
+        return;
+      }
+      const state = Store.state;
+      if (!state)
+        return;
+      const { side, mint, symbol, solAmount, tokenAmount, priceUsd, signature } = data;
+      if (!mint || !solAmount || solAmount <= 0) {
+        console.warn("[ShadowIngestion] Invalid swap data:", data);
+        return;
+      }
+      const existingTrade = Object.values(state.shadowTrades || {}).find((t) => t.signature === signature);
+      if (existingTrade) {
+        console.log(`[ShadowIngestion] Duplicate tx ${signature.slice(0, 12)}... \u2014 skipping`);
+        return;
+      }
+      console.log(`[ShadowIngestion] Processing ${side} \u2014 ${symbol || mint.slice(0, 8)}, ${solAmount.toFixed(4)} SOL`);
+      if (side === "BUY") {
+        await this.recordShadowBuy(state, data);
+      } else if (side === "SELL") {
+        await this.recordShadowSell(state, data);
+      }
+      await Store.save();
+      if (window.ZeroHUD && window.ZeroHUD.updateAll) {
+        window.ZeroHUD.updateAll();
+      }
+    },
+    async recordShadowBuy(state, data) {
+      const { mint, symbol, solAmount, tokenAmount, priceUsd, signature } = data;
+      const session = state.shadowSession;
+      if (!this.walletBalanceFetched && session.balance === 0) {
+        await this.fetchWalletBalance(session, solAmount);
+      }
+      const solUsd = PnlCalculator.getSolPrice();
+      const buyUsd = solAmount * solUsd;
+      let tokenPriceUsd = priceUsd;
+      if (!tokenPriceUsd || tokenPriceUsd <= 0) {
+        tokenPriceUsd = Market.price || 0;
+      }
+      let qtyDelta;
+      if (tokenPriceUsd > 0) {
+        qtyDelta = buyUsd / tokenPriceUsd;
+      } else if (tokenAmount > 0) {
+        qtyDelta = tokenAmount;
+        if (buyUsd > 0 && qtyDelta > 0) {
+          tokenPriceUsd = buyUsd / qtyDelta;
+        }
+      } else {
+        console.warn("[ShadowIngestion] Cannot determine token quantity \u2014 no price or amount");
+        return;
+      }
+      if (!state.shadowPositions[mint]) {
+        state.shadowPositions[mint] = {
+          mint,
+          symbol: symbol || Market.currentSymbol || "UNKNOWN",
+          qtyTokens: 0,
+          costBasisUsd: 0,
+          avgCostUsdPerToken: 0,
+          realizedPnlUsd: 0,
+          totalSolSpent: 0,
+          entryMarketCapUsdReference: null,
+          lastMarkPriceUsd: tokenPriceUsd,
+          ts: Date.now()
+        };
+      }
+      const pos = state.shadowPositions[mint];
+      pos.qtyTokens += qtyDelta;
+      pos.costBasisUsd += buyUsd;
+      pos.totalSolSpent += solAmount;
+      pos.avgCostUsdPerToken = pos.qtyTokens > 0 ? pos.costBasisUsd / pos.qtyTokens : 0;
+      pos.lastMarkPriceUsd = tokenPriceUsd;
+      if (pos.entryMarketCapUsdReference === null && Market.marketCap > 0) {
+        pos.entryMarketCapUsdReference = Market.marketCap;
+      }
+      const fillId = this.recordShadowFill(state, {
+        side: "BUY",
+        mint,
+        symbol: pos.symbol,
+        solAmount,
+        usdNotional: buyUsd,
+        qtyTokensDelta: qtyDelta,
+        fillPriceUsd: tokenPriceUsd,
+        marketCapUsdAtFill: Market.marketCap || 0,
+        priceSource: "shadow_swap",
+        strategy: "Real Trade",
+        signature,
+        mode: "shadow"
+      });
+      session.balance -= solAmount;
+      try {
+        const trade = state.shadowTrades[fillId];
+        if (trade) {
+          Analytics.calculateDiscipline(trade, state);
+          Analytics.logTradeEvent(state, trade);
+        }
+      } catch (e) {
+        console.warn("[ShadowIngestion] Analytics error:", e);
+      }
+      console.log(`[ShadowIngestion] BUY recorded: ${pos.symbol} +${qtyDelta.toFixed(2)} tokens, ${solAmount.toFixed(4)} SOL`);
+    },
+    async recordShadowSell(state, data) {
+      const { mint, symbol, solAmount, tokenAmount, priceUsd, signature } = data;
+      const session = state.shadowSession;
+      const pos = state.shadowPositions[mint];
+      if (!pos || pos.qtyTokens <= 0) {
+        console.warn(`[ShadowIngestion] SELL for unknown/empty position: ${mint.slice(0, 8)}`);
+        return;
+      }
+      const solUsd = PnlCalculator.getSolPrice();
+      let tokenPriceUsd = priceUsd;
+      if (!tokenPriceUsd || tokenPriceUsd <= 0) {
+        tokenPriceUsd = Market.price || pos.lastMarkPriceUsd || 0;
+      }
+      let qtyDelta;
+      if (tokenAmount > 0 && tokenAmount <= pos.qtyTokens * 1.01) {
+        qtyDelta = Math.min(tokenAmount, pos.qtyTokens);
+      } else if (solAmount > 0 && tokenPriceUsd > 0) {
+        const sellUsd = solAmount * solUsd;
+        qtyDelta = sellUsd / tokenPriceUsd;
+        qtyDelta = Math.min(qtyDelta, pos.qtyTokens);
+      } else {
+        console.warn("[ShadowIngestion] Cannot determine sell quantity");
+        return;
+      }
+      if (qtyDelta <= 0)
+        return;
+      const proceedsUsd = qtyDelta * tokenPriceUsd;
+      const costRemovedUsd = qtyDelta * pos.avgCostUsdPerToken;
+      const pnlEventUsd = proceedsUsd - costRemovedUsd;
+      pos.realizedPnlUsd += pnlEventUsd;
+      pos.qtyTokens -= qtyDelta;
+      pos.costBasisUsd -= costRemovedUsd;
+      pos.totalSolSpent -= costRemovedUsd / solUsd;
+      if (pos.qtyTokens < 1e-6) {
+        pos.qtyTokens = 0;
+        pos.costBasisUsd = 0;
+        pos.avgCostUsdPerToken = 0;
+        pos.entryMarketCapUsdReference = null;
+      }
+      const proceedsSol = proceedsUsd / solUsd;
+      const pnlEventSol = pnlEventUsd / solUsd;
+      const fillId = this.recordShadowFill(state, {
+        side: "SELL",
+        mint,
+        symbol: pos.symbol,
+        solAmount: proceedsSol,
+        qtyTokensDelta: -qtyDelta,
+        proceedsUsd,
+        fillPriceUsd: tokenPriceUsd,
+        marketCapUsdAtFill: Market.marketCap || 0,
+        priceSource: "shadow_swap",
+        strategy: "Real Trade",
+        signature,
+        realizedPnlSol: pnlEventSol,
+        mode: "shadow"
+      });
+      session.balance += proceedsSol;
+      session.realized = (session.realized || 0) + pnlEventSol;
+      try {
+        Analytics.updateStreaks({ side: "SELL", realizedPnlSol: pnlEventSol }, state);
+        const trade = state.shadowTrades[fillId];
+        if (trade) {
+          Analytics.calculateDiscipline(trade, state);
+          Analytics.logTradeEvent(state, trade);
+        }
+      } catch (e) {
+        console.warn("[ShadowIngestion] Analytics error:", e);
+      }
+      console.log(`[ShadowIngestion] SELL recorded: ${pos.symbol} -${qtyDelta.toFixed(2)} tokens, PnL: ${pnlEventSol.toFixed(4)} SOL`);
+    },
+    recordShadowFill(state, fillData) {
+      if (!state.shadowTrades)
+        state.shadowTrades = {};
+      const id = "sh_" + Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+      const fill = {
+        id,
+        ts: Date.now(),
+        ...fillData
+      };
+      state.shadowTrades[id] = fill;
+      if (state.shadowSession) {
+        if (!state.shadowSession.trades)
+          state.shadowSession.trades = [];
+        state.shadowSession.trades.push(id);
+        state.shadowSession.tradeCount = (state.shadowSession.tradeCount || 0) + 1;
+      }
+      return id;
+    },
+    async fetchWalletBalance(session, firstTradeAmount) {
+      this.walletBalanceFetched = true;
+      try {
+        const response = await new Promise((resolve, reject) => {
+          chrome.runtime.sendMessage({ type: "GET_WALLET_BALANCE" }, (resp) => {
+            if (chrome.runtime.lastError) {
+              reject(chrome.runtime.lastError);
+            } else {
+              resolve(resp);
+            }
+          });
+        });
+        if (response && response.balance > 0) {
+          session.balance = response.balance;
+          console.log(`[ShadowIngestion] Wallet balance detected: ${response.balance.toFixed(4)} SOL`);
+          return;
+        }
+      } catch (e) {
+        console.warn("[ShadowIngestion] Wallet balance fetch failed:", e);
+      }
+      session.balance = firstTradeAmount * 10;
+      console.log(`[ShadowIngestion] Wallet balance estimated: ~${session.balance.toFixed(4)} SOL`);
+    },
+    cleanup() {
+      this.initialized = false;
+      this.walletBalanceFetched = false;
+      console.log("[ShadowIngestion] Cleanup complete");
+    }
+  };
+
   // src/modules/ui/hud.js
   var HUD = {
     renderScheduled: false,
@@ -11019,6 +11422,7 @@ canvas#equity-canvas {
       });
       if (ModeManager.getMode() === MODES.SHADOW) {
         NarrativeTrust.init();
+        ShadowTradeIngestion.init();
       }
       ModesUI.showSessionBanner();
     },

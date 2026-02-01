@@ -361,7 +361,7 @@ export const SessionReplay = {
         const state = Store.state;
         const flags = FeatureManager.resolveFlags(state, 'SESSION_REPLAY');
         const eventStats = Analytics.getEventStats(state);
-        const session = state.session || {};
+        const session = Store.getActiveSession();
 
         if (flags.gated) {
             overlay.innerHTML = this.renderLockedState();

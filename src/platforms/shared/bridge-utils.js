@@ -118,6 +118,80 @@ export function tryHandleJson(url, json, ctx) {
     }
 }
 
+// --- Swap/Trade Detection for Shadow Mode ---
+
+const SOL_MINTS = [
+    'So11111111111111111111111111111111111111112',  // Wrapped SOL
+    'So11111111111111111111111111111111111111111',   // Native SOL (rare in swap responses)
+];
+
+const isSolMint = (mint) => SOL_MINTS.some(m => mint === m);
+
+export const SWAP_URL_PATTERNS = /swap|execute|submit|send-?tx|confirm-?tx|transaction\/send|order\/place/i;
+
+export function tryHandleSwap(url, json, ctx) {
+    if (!json || typeof json !== 'object') return;
+
+    // Unwrap common response wrappers
+    const data = json.data || json.result || json;
+
+    // Must have a transaction signature (proof of on-chain execution)
+    const txid = data.txid || data.signature || data.txSignature
+        || data.transactionId || data.tx || data.hash;
+    if (!txid || typeof txid !== 'string' || txid.length < 30) return;
+
+    // Look for mint info — Jupiter v6 pattern is most common
+    const inputMint = data.inputMint || data.fromMint || data.tokenIn || data.sourceMint;
+    const outputMint = data.outputMint || data.toMint || data.tokenOut || data.destMint;
+
+    if (!inputMint || !outputMint) {
+        console.log(`[ZERØ] Swap response has txid but missing mints — url=${url}`);
+        return;
+    }
+
+    // Determine side: SOL in = BUY token, SOL out = SELL token
+    const isSolInput = isSolMint(inputMint);
+    const isSolOutput = isSolMint(outputMint);
+
+    if (!isSolInput && !isSolOutput) {
+        console.log(`[ZERØ] Swap has no SOL side — skipping (${inputMint} → ${outputMint})`);
+        return;
+    }
+
+    const side = isSolInput ? 'BUY' : 'SELL';
+    const mint = isSolInput ? outputMint : inputMint;
+
+    // Amounts (typically in lamports / smallest token units)
+    const inAmount = parseFloat(data.inAmount || data.inputAmount || data.amountIn || 0);
+    const outAmount = parseFloat(data.outAmount || data.outputAmount || data.amountOut || 0);
+
+    // SOL amount: lamports → SOL (1 SOL = 1e9 lamports)
+    const solLamports = isSolInput ? inAmount : outAmount;
+    const tokenRaw = isSolInput ? outAmount : inAmount;
+    const solAmount = solLamports > 1000 ? solLamports / 1e9 : solLamports; // Auto-detect if already in SOL vs lamports
+
+    // Price info (optional — may be enriched later by content script)
+    const priceUsd = parseFloat(data.priceUsd || data.price || data.tokenPriceUsd || 0);
+
+    // Symbol (optional)
+    const symbol = data.symbol || data.outputSymbol || data.inputSymbol || ctx.symbol || null;
+
+    console.log(`[ZERØ] Swap Detected: ${side} ${symbol || mint.slice(0, 8)} — ${solAmount.toFixed(4)} SOL, tx=${txid.slice(0, 12)}...`);
+
+    send({
+        type: "SHADOW_TRADE_DETECTED",
+        side,
+        mint,
+        symbol,
+        solAmount,
+        tokenAmount: tokenRaw,
+        priceUsd,
+        signature: txid,
+        url,
+        ts: Date.now()
+    });
+}
+
 export const findTV = () => {
     // 1. Check main window (Standard & Padre)
     if (window.tvWidget && typeof window.tvWidget.activeChart === 'function') return window.tvWidget;

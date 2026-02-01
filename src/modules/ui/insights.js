@@ -262,8 +262,8 @@ export const Insights = {
     },
 
     renderEliteContent(state) {
-        const session = state.session || {};
-        const behavior = state.behavior || {};
+        const session = Store.getActiveSession();
+        const behavior = Store.getActiveBehavior();
 
         return `
             <div class="insights-section-label">SESSION OVERVIEW</div>
