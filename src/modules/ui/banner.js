@@ -55,7 +55,7 @@ export const Banner = {
                 <div class="state">ENABLED</div>
                 <div class="hint" style="margin-left:8px; opacity:0.5; font-size:11px;">${modeHint}</div>
             </div>
-            <div style="position:absolute; right:20px; font-size:10px; color:#334155; pointer-events:none;">v${Store.state?.version || "0.9.1"}</div>
+            <div style="position:absolute; right:20px; font-size:10px; color:#334155; pointer-events:none;">v${Store.state?.version || "2.0.0"}</div>
         `;
 
     bar.addEventListener("click", async () => {

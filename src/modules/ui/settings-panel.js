@@ -228,7 +228,7 @@ export const SettingsPanel = {
                 }
 
                 <div style="margin-top:20px; text-align:center; font-size:11px; color:#64748b;">
-                    ZERØ v${Store.state.version || "1.11.6"}
+                    ZERØ v${Store.state.version || "2.0.0"}
                 </div>
             </div>
         `;
@@ -442,7 +442,7 @@ export const SettingsPanel = {
       clientId: "<redacted>",
       createdAt: Date.now(),
       schemaVersion: 3,
-      extensionVersion: Store.state.version || "1.11.6",
+      extensionVersion: Store.state.version || "2.0.0",
       eventsDelta: [
         {
           eventId: "evt_sample1",

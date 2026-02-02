@@ -14,7 +14,7 @@ import { ShadowTradeIngestion } from "../../modules/core/shadow-trade-ingestion.
 (async () => {
   "use strict";
   const PLATFORM = "Padre";
-  Logger.info(`ZERØ v1.11.14 (${PLATFORM} Platform)`);
+  Logger.info(`ZERØ v2.0.0 (${PLATFORM} Platform)`);
   TokenContextResolver.init(PLATFORM);
 
   // Initialize Store

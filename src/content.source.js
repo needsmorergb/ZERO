@@ -18,7 +18,7 @@
 
   const EXT = {
     KEY: "sol_paper_trader_v1",
-    VERSION: "0.8.0",
+    VERSION: "2.0.0",
     DEBUG: true,
     PLATFORM: PLATFORM.name,
   };

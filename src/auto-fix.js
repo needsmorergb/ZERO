@@ -1,5 +1,5 @@
 // Paper Trader Auto-Fix - Chart Markers & Price Monitoring
-// Version: 0.8.0
+// Version: 2.0.0
 
 (function () {
   "use strict";
@@ -11,7 +11,7 @@
   }
   window.__ZER0_AUTO_FIX_LOADED = true;
 
-  const VERSION = "0.8.0";
+  const VERSION = "2.0.0";
 
   // Platform detection for dual-platform support
   const PLATFORM_NAME = window.location.hostname.includes("axiom.trade") ? "Axiom" : "Padre";

@@ -144,9 +144,56 @@ const SOL_MINTS = [
 const isSolMint = (mint) => SOL_MINTS.some((m) => mint === m);
 
 export const SWAP_URL_PATTERNS =
-  /swap|execute|submit|send-?tx|confirm-?tx|transaction\/send|order\/place/i;
+  /swap|execute|submit|send-?tx|confirm-?tx|transaction\/send|order\/place|\/trade|\/order|jup|jupiter|raydium/i;
 
-export function tryHandleSwap(url, json, ctx) {
+/**
+ * Safely extract JSON from a fetch request's body (args[1]?.body or args[0]?.body).
+ * Returns parsed object or null.
+ */
+export function parseRequestBody(args) {
+  try {
+    let raw = args?.[1]?.body;
+    if (!raw && args?.[0] && typeof args[0] === "object" && !(args[0] instanceof Response)) {
+      raw = args[0].body;
+    }
+    if (!raw) return null;
+    if (typeof raw === "string") return JSON.parse(raw);
+    if (typeof raw === "object" && !(raw instanceof ReadableStream) && !(raw instanceof FormData) && !(raw instanceof Blob) && !(raw instanceof ArrayBuffer) && !(raw instanceof URLSearchParams)) {
+      return raw;
+    }
+  } catch { /* not JSON */ }
+  return null;
+}
+
+/**
+ * Extract swap-related query parameters from a URL string.
+ */
+function parseSwapQueryParams(url) {
+  try {
+    const u = new URL(url, "https://placeholder.com");
+    const p = u.searchParams;
+    const result = {};
+    for (const k of ["inputMint", "fromMint", "tokenIn", "sourceMint", "input_mint"]) {
+      const v = p.get(k);
+      if (v && isLikelySolanaMint(v)) { result.inputMint = v; break; }
+    }
+    for (const k of ["outputMint", "toMint", "tokenOut", "destMint", "output_mint"]) {
+      const v = p.get(k);
+      if (v && isLikelySolanaMint(v)) { result.outputMint = v; break; }
+    }
+    for (const k of ["inAmount", "inputAmount", "amountIn", "amount"]) {
+      const v = p.get(k);
+      if (v && Number.isFinite(parseFloat(v))) { result.inAmount = v; break; }
+    }
+    for (const k of ["outAmount", "outputAmount", "amountOut"]) {
+      const v = p.get(k);
+      if (v && Number.isFinite(parseFloat(v))) { result.outAmount = v; break; }
+    }
+    return result;
+  } catch { return {}; }
+}
+
+export function tryHandleSwap(url, json, ctx, reqData) {
   if (!json || typeof json !== "object") return;
 
   // Unwrap common response wrappers
@@ -157,12 +204,21 @@ export function tryHandleSwap(url, json, ctx) {
     data.txid || data.signature || data.txSignature || data.transactionId || data.tx || data.hash;
   if (!txid || typeof txid !== "string" || txid.length < 30) return;
 
-  // Look for mint info — Jupiter v6 pattern is most common
-  const inputMint = data.inputMint || data.fromMint || data.tokenIn || data.sourceMint;
-  const outputMint = data.outputMint || data.toMint || data.tokenOut || data.destMint;
+  // Look for mint info — response first, then request body, then URL query params
+  const req = reqData ? (reqData.data || reqData.result || reqData) : {};
+  const qp = parseSwapQueryParams(url);
+
+  let inputMint =
+    data.inputMint || data.fromMint || data.tokenIn || data.sourceMint ||
+    req.inputMint || req.fromMint || req.tokenIn || req.sourceMint ||
+    qp.inputMint;
+  let outputMint =
+    data.outputMint || data.toMint || data.tokenOut || data.destMint ||
+    req.outputMint || req.toMint || req.tokenOut || req.destMint ||
+    qp.outputMint;
 
   if (!inputMint || !outputMint) {
-    console.log(`[ZERØ] Swap response has txid=${txid.slice(0, 12)} but missing mints — url=${url.slice(0, 80)}`);
+    console.log(`[ZERØ] Swap has txid=${txid.slice(0, 12)} but missing mints (checked response, request, URL) — url=${url.slice(0, 80)}`);
     console.log(`[ZERØ] Swap response keys: ${Object.keys(data).join(", ")}`);
     return;
   }
@@ -179,9 +235,17 @@ export function tryHandleSwap(url, json, ctx) {
   const side = isSolInput ? "BUY" : "SELL";
   const mint = isSolInput ? outputMint : inputMint;
 
-  // Amounts (typically in lamports / smallest token units)
-  const inAmount = parseFloat(data.inAmount || data.inputAmount || data.amountIn || 0);
-  const outAmount = parseFloat(data.outAmount || data.outputAmount || data.amountOut || 0);
+  // Amounts — response first, then request body, then URL query params
+  const inAmount = parseFloat(
+    data.inAmount || data.inputAmount || data.amountIn ||
+    req.inAmount || req.inputAmount || req.amountIn || req.amount ||
+    qp.inAmount || 0
+  );
+  const outAmount = parseFloat(
+    data.outAmount || data.outputAmount || data.amountOut ||
+    req.outAmount || req.outputAmount || req.amountOut ||
+    qp.outAmount || 0
+  );
 
   // SOL amount: lamports → SOL (1 SOL = 1e9 lamports)
   const solLamports = isSolInput ? inAmount : outAmount;

@@ -40,10 +40,12 @@ export const HUD = {
       this.scheduleRender();
     });
 
+    // Always listen for shadow trade messages — handler gates on mode
+    ShadowTradeIngestion.init();
+
     // Initialize Shadow Mode services
     if (ModeManager.getMode() === MODES.SHADOW) {
       NarrativeTrust.init();
-      ShadowTradeIngestion.init();
     }
 
     // Show mode session banner (once per session for Analysis/Shadow)

@@ -121,18 +121,75 @@
     // Native SOL (rare in swap responses)
   ];
   var isSolMint = (mint) => SOL_MINTS.some((m) => mint === m);
-  var SWAP_URL_PATTERNS = /swap|execute|submit|send-?tx|confirm-?tx|transaction\/send|order\/place/i;
-  function tryHandleSwap(url, json, ctx) {
+  var SWAP_URL_PATTERNS = /swap|execute|submit|send-?tx|confirm-?tx|transaction\/send|order\/place|\/trade|\/order|jup|jupiter|raydium/i;
+  function parseRequestBody(args) {
+    try {
+      let raw = args?.[1]?.body;
+      if (!raw && args?.[0] && typeof args[0] === "object" && !(args[0] instanceof Response)) {
+        raw = args[0].body;
+      }
+      if (!raw)
+        return null;
+      if (typeof raw === "string")
+        return JSON.parse(raw);
+      if (typeof raw === "object" && !(raw instanceof ReadableStream) && !(raw instanceof FormData) && !(raw instanceof Blob) && !(raw instanceof ArrayBuffer) && !(raw instanceof URLSearchParams)) {
+        return raw;
+      }
+    } catch {
+    }
+    return null;
+  }
+  function parseSwapQueryParams(url) {
+    try {
+      const u = new URL(url, "https://placeholder.com");
+      const p = u.searchParams;
+      const result = {};
+      for (const k of ["inputMint", "fromMint", "tokenIn", "sourceMint", "input_mint"]) {
+        const v = p.get(k);
+        if (v && isLikelySolanaMint(v)) {
+          result.inputMint = v;
+          break;
+        }
+      }
+      for (const k of ["outputMint", "toMint", "tokenOut", "destMint", "output_mint"]) {
+        const v = p.get(k);
+        if (v && isLikelySolanaMint(v)) {
+          result.outputMint = v;
+          break;
+        }
+      }
+      for (const k of ["inAmount", "inputAmount", "amountIn", "amount"]) {
+        const v = p.get(k);
+        if (v && Number.isFinite(parseFloat(v))) {
+          result.inAmount = v;
+          break;
+        }
+      }
+      for (const k of ["outAmount", "outputAmount", "amountOut"]) {
+        const v = p.get(k);
+        if (v && Number.isFinite(parseFloat(v))) {
+          result.outAmount = v;
+          break;
+        }
+      }
+      return result;
+    } catch {
+      return {};
+    }
+  }
+  function tryHandleSwap(url, json, ctx, reqData) {
     if (!json || typeof json !== "object")
       return;
     const data = json.data || json.result || json;
     const txid = data.txid || data.signature || data.txSignature || data.transactionId || data.tx || data.hash;
     if (!txid || typeof txid !== "string" || txid.length < 30)
       return;
-    const inputMint = data.inputMint || data.fromMint || data.tokenIn || data.sourceMint;
-    const outputMint = data.outputMint || data.toMint || data.tokenOut || data.destMint;
+    const req = reqData ? reqData.data || reqData.result || reqData : {};
+    const qp = parseSwapQueryParams(url);
+    let inputMint = data.inputMint || data.fromMint || data.tokenIn || data.sourceMint || req.inputMint || req.fromMint || req.tokenIn || req.sourceMint || qp.inputMint;
+    let outputMint = data.outputMint || data.toMint || data.tokenOut || data.destMint || req.outputMint || req.toMint || req.tokenOut || req.destMint || qp.outputMint;
     if (!inputMint || !outputMint) {
-      console.log(`[ZER\xD8] Swap response has txid=${txid.slice(0, 12)} but missing mints \u2014 url=${url.slice(0, 80)}`);
+      console.log(`[ZER\xD8] Swap has txid=${txid.slice(0, 12)} but missing mints (checked response, request, URL) \u2014 url=${url.slice(0, 80)}`);
       console.log(`[ZER\xD8] Swap response keys: ${Object.keys(data).join(", ")}`);
       return;
     }
@@ -144,8 +201,12 @@
     }
     const side = isSolInput ? "BUY" : "SELL";
     const mint = isSolInput ? outputMint : inputMint;
-    const inAmount = parseFloat(data.inAmount || data.inputAmount || data.amountIn || 0);
-    const outAmount = parseFloat(data.outAmount || data.outputAmount || data.amountOut || 0);
+    const inAmount = parseFloat(
+      data.inAmount || data.inputAmount || data.amountIn || req.inAmount || req.inputAmount || req.amountIn || req.amount || qp.inAmount || 0
+    );
+    const outAmount = parseFloat(
+      data.outAmount || data.outputAmount || data.amountOut || req.outAmount || req.outputAmount || req.amountOut || qp.outAmount || 0
+    );
     const solLamports = isSolInput ? inAmount : outAmount;
     const tokenRaw = isSolInput ? outAmount : inAmount;
     const solAmount = solLamports > 1e3 ? solLamports / 1e9 : solLamports;
@@ -740,10 +801,12 @@
             cacheSwapQuote(json, ctx);
             if (isApiUrl)
               tryHandleJson(url, json, ctx);
-            if (isSwapUrl)
-              tryHandleSwap(url, json, ctx);
-          }).catch(() => {
-          });
+            if (isSwapUrl) {
+              console.log(`[ZER\xD8] Swap URL matched: ${url}`);
+              const reqData = parseRequestBody(args);
+              tryHandleSwap(url, json, ctx, reqData);
+            }
+          }).catch((err) => console.warn("[ZER\xD8] Fetch parse error:", err.message, url));
         }
       } catch {
       }
@@ -755,7 +818,13 @@
       this.__paper_url = String(url || "");
       return XHROpen.call(this, method, url, ...rest);
     };
-    XMLHttpRequest.prototype.send = function(...args) {
+    XMLHttpRequest.prototype.send = function(...sendArgs) {
+      let xhrReqData = null;
+      try {
+        if (typeof sendArgs[0] === "string")
+          xhrReqData = JSON.parse(sendArgs[0]);
+      } catch {
+      }
       this.addEventListener("load", function() {
         try {
           const url = this.__paper_url || "";
@@ -766,13 +835,16 @@
             if (/quote|price|ticker|market|candles|kline|chart|pair|swap|route/i.test(url)) {
               tryHandleJson(url, json, ctx);
             }
-            if (SWAP_URL_PATTERNS.test(url))
-              tryHandleSwap(url, json, ctx);
+            if (SWAP_URL_PATTERNS.test(url)) {
+              console.log(`[ZER\xD8] Swap URL matched (XHR): ${url}`);
+              tryHandleSwap(url, json, ctx, xhrReqData);
+            }
           }
-        } catch {
+        } catch (err) {
+          console.warn("[ZER\xD8] XHR handler error:", err.message);
         }
       });
-      return XHRSend.apply(this, args);
+      return XHRSend.apply(this, sendArgs);
     };
     const OrigWS = window.WebSocket;
     window.WebSocket = function(...args) {

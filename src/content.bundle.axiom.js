@@ -180,7 +180,7 @@
         },
         shadowEventLog: [],
         schemaVersion: 3,
-        version: "1.11.8"
+        version: "2.0.0"
       };
       Store = {
         state: null,
@@ -5406,7 +5406,7 @@ input:checked + .slider:before {
                 <div class="state">ENABLED</div>
                 <div class="hint" style="margin-left:8px; opacity:0.5; font-size:11px;">${modeHint}</div>
             </div>
-            <div style="position:absolute; right:20px; font-size:10px; color:#334155; pointer-events:none;">v${Store.state?.version || "0.9.1"}</div>
+            <div style="position:absolute; right:20px; font-size:10px; color:#334155; pointer-events:none;">v${Store.state?.version || "2.0.0"}</div>
         `;
       bar.addEventListener("click", async () => {
         if (!Store.state)
@@ -8684,7 +8684,7 @@ canvas#equity-canvas {
                 `}
 
                 <div style="margin-top:20px; text-align:center; font-size:11px; color:#64748b;">
-                    ZER\xD8 v${Store.state.version || "1.11.6"}
+                    ZER\xD8 v${Store.state.version || "2.0.0"}
                 </div>
             </div>
         `;
@@ -8879,7 +8879,7 @@ canvas#equity-canvas {
         clientId: "<redacted>",
         createdAt: Date.now(),
         schemaVersion: 3,
-        extensionVersion: Store.state.version || "1.11.6",
+        extensionVersion: Store.state.version || "2.0.0",
         eventsDelta: [
           {
             eventId: "evt_sample1",
@@ -11784,9 +11784,9 @@ canvas#equity-canvas {
       Market.subscribe(async () => {
         this.scheduleRender();
       });
+      ShadowTradeIngestion.init();
       if (ModeManager.getMode() === MODES.SHADOW) {
         NarrativeTrust.init();
-        ShadowTradeIngestion.init();
       }
       ModesUI.showSessionBanner();
     },
@@ -11874,7 +11874,7 @@ canvas#equity-canvas {
   (async () => {
     "use strict";
     const PLATFORM = "Axiom";
-    Logger.info(`ZER\xD8 v1.11.14 (${PLATFORM} Platform)`);
+    Logger.info(`ZER\xD8 v2.0.0 (${PLATFORM} Platform)`);
     TokenContextResolver.init(PLATFORM);
     try {
       Logger.info("Loading Store...");

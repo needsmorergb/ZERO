@@ -124,7 +124,7 @@ const DEFAULTS = {
   shadowEventLog: [],
 
   schemaVersion: 3,
-  version: "1.11.8",
+  version: "2.0.0",
 };
 
 // Helper utils

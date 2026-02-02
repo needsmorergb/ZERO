@@ -21,6 +21,7 @@ import {
   setupWalletAddressCapture,
   setupSwapDetection,
   cacheSwapQuote,
+  parseRequestBody,
 } from "../shared/bridge-utils.js";
 
 (() => {
@@ -243,9 +244,13 @@ import {
             .then((json) => {
               cacheSwapQuote(json, ctx); // Always cache potential quotes
               if (isApiUrl) tryHandleJson(url, json, ctx);
-              if (isSwapUrl) tryHandleSwap(url, json, ctx);
+              if (isSwapUrl) {
+                console.log(`[ZERØ] Swap URL matched: ${url}`);
+                const reqData = parseRequestBody(args);
+                tryHandleSwap(url, json, ctx, reqData);
+              }
             })
-            .catch(() => {});
+            .catch((err) => console.warn("[ZERØ] Fetch parse error:", err.message, url));
         }
       } catch { /* swallowed */ }
       return res;
@@ -253,6 +258,46 @@ import {
     console.log("[ZERØ] Padre: fetch interception active");
   } catch (e) {
     console.log("[ZERØ] Padre: fetch interception blocked by SES");
+  }
+
+  // 1b. Try XHR interception (may be blocked by SES — if so, just log and continue)
+  try {
+    const XHROpen = XMLHttpRequest.prototype.open;
+    const XHRSend = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.open = function (method, url, ...rest) {
+      this.__paper_url = String(url || "");
+      return XHROpen.call(this, method, url, ...rest);
+    };
+    XMLHttpRequest.prototype.send = function (...sendArgs) {
+      let xhrReqData = null;
+      try {
+        if (typeof sendArgs[0] === "string") xhrReqData = JSON.parse(sendArgs[0]);
+      } catch { /* not JSON */ }
+
+      this.addEventListener("load", function () {
+        try {
+          const url = this.__paper_url || "";
+          const ct = (this.getResponseHeader("content-type") || "").toLowerCase();
+          if (ct.includes("json")) {
+            const json = JSON.parse(this.responseText);
+            cacheSwapQuote(json, ctx);
+            if (/quote|price|ticker|market|candles|kline|chart|pair|swap|route/i.test(url)) {
+              tryHandleJson(url, json, ctx);
+            }
+            if (SWAP_URL_PATTERNS.test(url)) {
+              console.log(`[ZERØ] Swap URL matched (XHR/Padre): ${url}`);
+              tryHandleSwap(url, json, ctx, xhrReqData);
+            }
+          }
+        } catch (err) {
+          console.warn("[ZERØ] Padre XHR handler error:", err.message);
+        }
+      });
+      return XHRSend.apply(this, sendArgs);
+    };
+    console.log("[ZERØ] Padre: XHR interception active");
+  } catch (e) {
+    console.log("[ZERØ] Padre: XHR interception blocked by SES:", e.message);
   }
 
   // 2. MutationObserver — triggers header re-scrape on DOM changes (SES-safe)

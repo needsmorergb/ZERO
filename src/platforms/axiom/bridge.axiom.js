@@ -21,6 +21,7 @@ import {
   setupWalletAddressCapture,
   setupSwapDetection,
   cacheSwapQuote,
+  parseRequestBody,
 } from "../shared/bridge-utils.js";
 
 (() => {
@@ -220,9 +221,13 @@ import {
           .then((json) => {
             cacheSwapQuote(json, ctx); // Always cache potential quotes
             if (isApiUrl) tryHandleJson(url, json, ctx);
-            if (isSwapUrl) tryHandleSwap(url, json, ctx);
+            if (isSwapUrl) {
+              console.log(`[ZERØ] Swap URL matched: ${url}`);
+              const reqData = parseRequestBody(args);
+              tryHandleSwap(url, json, ctx, reqData);
+            }
           })
-          .catch(() => {});
+          .catch((err) => console.warn("[ZERØ] Fetch parse error:", err.message, url));
       }
     } catch { /* swallowed */ }
     return res;
@@ -235,7 +240,13 @@ import {
     this.__paper_url = String(url || "");
     return XHROpen.call(this, method, url, ...rest);
   };
-  XMLHttpRequest.prototype.send = function (...args) {
+  XMLHttpRequest.prototype.send = function (...sendArgs) {
+    // Capture request body for swap detection fallback
+    let xhrReqData = null;
+    try {
+      if (typeof sendArgs[0] === "string") xhrReqData = JSON.parse(sendArgs[0]);
+    } catch { /* not JSON */ }
+
     this.addEventListener("load", function () {
       try {
         const url = this.__paper_url || "";
@@ -246,11 +257,16 @@ import {
           if (/quote|price|ticker|market|candles|kline|chart|pair|swap|route/i.test(url)) {
             tryHandleJson(url, json, ctx);
           }
-          if (SWAP_URL_PATTERNS.test(url)) tryHandleSwap(url, json, ctx);
+          if (SWAP_URL_PATTERNS.test(url)) {
+            console.log(`[ZERØ] Swap URL matched (XHR): ${url}`);
+            tryHandleSwap(url, json, ctx, xhrReqData);
+          }
         }
-      } catch { /* swallowed */ }
+      } catch (err) {
+        console.warn("[ZERØ] XHR handler error:", err.message);
+      }
     });
-    return XHRSend.apply(this, args);
+    return XHRSend.apply(this, sendArgs);
   };
 
   // WebSocket
