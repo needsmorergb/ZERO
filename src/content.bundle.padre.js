@@ -11440,13 +11440,9 @@ canvas#equity-canvas {
 
   // src/modules/core/shadow-trade-ingestion.js
   init_store();
-  var POLL_INTERVAL_MS = 15e3;
   var ShadowTradeIngestion = {
     initialized: false,
     walletBalanceFetched: false,
-    _pollTimer: null,
-    _lastSignature: null,
-    _polling: false,
     init() {
       if (this.initialized)
         return;
@@ -11470,85 +11466,11 @@ canvas#equity-canvas {
       const storedAddr = Store.state?.shadow?.walletAddress;
       if (storedAddr) {
         console.log(`[ShadowIngestion] Stored wallet found: ${storedAddr.slice(0, 8)}...`);
-        this.startHeliusPolling(storedAddr);
         this.proactiveFetchBalance();
       } else {
         console.log("[ShadowIngestion] No stored wallet \u2014 waiting for bridge detection");
-        console.log(`[ShadowIngestion] Store.state.shadow exists: ${!!Store.state?.shadow}`);
       }
-      console.log("[ShadowIngestion] Initialized \u2014 listening for swap events + Helius polling");
-    },
-    // --- Helius RPC Polling ---
-    startHeliusPolling(walletAddress) {
-      if (this._pollTimer)
-        return;
-      if (!walletAddress)
-        return;
-      console.log(`[ShadowIngestion] Starting Helius polling for ${walletAddress.slice(0, 8)}...`);
-      this._polling = false;
-      this.pollWalletSwaps(walletAddress, true);
-      this._pollTimer = setInterval(() => {
-        this.pollWalletSwaps(walletAddress, false);
-      }, POLL_INTERVAL_MS);
-    },
-    stopHeliusPolling() {
-      if (this._pollTimer) {
-        clearInterval(this._pollTimer);
-        this._pollTimer = null;
-      }
-      this._lastSignature = null;
-      this._polling = false;
-    },
-    _pollCycleCount: 0,
-    async pollWalletSwaps(walletAddress, cursorOnly) {
-      if (this._polling)
-        return;
-      this._polling = true;
-      this._pollCycleCount++;
-      try {
-        if (this._pollCycleCount % 4 === 0) {
-          console.log(`[ShadowIngestion] Helius poll #${this._pollCycleCount} \u2014 cursor: ${this._lastSignature?.slice(0, 12) || "none"}`);
-        }
-        const response = await new Promise((resolve, reject) => {
-          chrome.runtime.sendMessage(
-            {
-              type: "POLL_WALLET_SWAPS",
-              walletAddress,
-              lastSignature: this._lastSignature
-            },
-            (resp) => {
-              if (chrome.runtime.lastError)
-                reject(chrome.runtime.lastError);
-              else
-                resolve(resp);
-            }
-          );
-        });
-        if (!response?.ok) {
-          console.warn("[ShadowIngestion] Poll error:", response?.error || "no response");
-          return;
-        }
-        if (response.lastSignature) {
-          this._lastSignature = response.lastSignature;
-        }
-        if (cursorOnly) {
-          console.log(
-            `[ShadowIngestion] Helius cursor set: ${this._lastSignature?.slice(0, 12) || "none"}... (polling active)`
-          );
-          return;
-        }
-        const swaps = response.swaps || [];
-        if (swaps.length > 0) {
-          console.log(`[ShadowIngestion] Helius found ${swaps.length} new swap(s)`);
-        }
-        for (const swap of swaps) {
-          await this.handleDetectedTrade(swap);
-        }
-      } catch (e) {
-        console.warn("[ShadowIngestion] Helius poll failed:", e?.message || e);
-      } finally {
-        this._polling = false;
-      }
+      console.log("[ShadowIngestion] Initialized \u2014 listening for bridge swap events");
     },
     // --- Wallet Address Detection ---
     async handleWalletAddress(addr) {
@@ -11562,7 +11484,6 @@ canvas#equity-canvas {
       shadow.walletAddress = addr;
       await Store.save();
       console.log(`[ShadowIngestion] Wallet address stored: ${addr.slice(0, 8)}...`);
-      this.startHeliusPolling(addr);
       this.proactiveFetchBalance();
     },
     async proactiveFetchBalance() {
@@ -11835,7 +11756,6 @@ canvas#equity-canvas {
       );
     },
     cleanup() {
-      this.stopHeliusPolling();
       this.initialized = false;
       this.walletBalanceFetched = false;
       console.log("[ShadowIngestion] Cleanup complete");

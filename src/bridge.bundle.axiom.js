@@ -167,6 +167,173 @@
       ts: Date.now()
     });
   }
+  var _quoteCache = [];
+  var QUOTE_CACHE_SIZE = 5;
+  var QUOTE_CACHE_TTL = 6e4;
+  function cacheSwapQuote(json, ctx) {
+    if (!json || typeof json !== "object")
+      return;
+    const data = json.data || json.result || json;
+    if (!data || typeof data !== "object")
+      return;
+    const inputMint = data.inputMint || data.fromMint || data.tokenIn || data.sourceMint || data.inToken?.address || data.inputToken?.mint;
+    const outputMint = data.outputMint || data.toMint || data.tokenOut || data.destMint || data.outToken?.address || data.outputToken?.mint;
+    if (!inputMint || !outputMint)
+      return;
+    if (typeof inputMint !== "string" || typeof outputMint !== "string")
+      return;
+    if (inputMint.length < 30 || outputMint.length < 30)
+      return;
+    const inAmount = parseFloat(
+      data.inAmount || data.inputAmount || data.amountIn || data.inToken?.amount || data.inputToken?.amount || 0
+    );
+    const outAmount = parseFloat(
+      data.outAmount || data.outputAmount || data.amountOut || data.outToken?.amount || data.outputToken?.amount || 0
+    );
+    const symbol = data.outputSymbol || data.inputSymbol || data.outToken?.symbol || data.inToken?.symbol || ctx.symbol || null;
+    const entry = {
+      inputMint,
+      outputMint,
+      inAmount,
+      outAmount,
+      symbol,
+      ts: Date.now()
+    };
+    _quoteCache.push(entry);
+    if (_quoteCache.length > QUOTE_CACHE_SIZE)
+      _quoteCache.shift();
+    console.log(
+      `[ZER\xD8] SwapDetection: Quote cached \u2014 ${inputMint.slice(0, 8)}\u2192${outputMint.slice(0, 8)}, in=${inAmount}, out=${outAmount}`
+    );
+  }
+  function findBestQuote(ctx) {
+    const now = Date.now();
+    for (let i = _quoteCache.length - 1; i >= 0; i--) {
+      const q = _quoteCache[i];
+      if (now - q.ts > QUOTE_CACHE_TTL)
+        continue;
+      const hasSol = isSolMint(q.inputMint) || isSolMint(q.outputMint);
+      const hasMint = !ctx.mint || q.inputMint === ctx.mint || q.outputMint === ctx.mint;
+      if (hasSol && hasMint)
+        return q;
+    }
+    return null;
+  }
+  function setupSwapDetection(ctx) {
+    const WALLET_PROVIDERS = {
+      "window.solana": () => window.solana,
+      "phantom.solana": () => window.phantom?.solana,
+      "solflare": () => window.solflare,
+      "backpack.solana": () => window.backpack?.solana
+    };
+    const _hooked = /* @__PURE__ */ new Set();
+    const hookProvider = (provider, name) => {
+      if (!provider || _hooked.has(name))
+        return;
+      const methods = ["signAndSendTransaction", "sendTransaction"];
+      for (const method of methods) {
+        if (typeof provider[method] !== "function")
+          continue;
+        const origMethod = provider[method].bind(provider);
+        provider[method] = async (...args) => {
+          let result;
+          try {
+            result = await origMethod(...args);
+          } catch (err) {
+            throw err;
+          }
+          try {
+            let signature = null;
+            if (typeof result === "string") {
+              signature = result;
+            } else if (result?.signature) {
+              signature = result.signature;
+            } else if (result?.publicKey && result?.signature === void 0) {
+              signature = null;
+            }
+            if (typeof signature === "string" && signature.length >= 30) {
+              console.log(
+                `[ZER\xD8] SwapDetection: ${method} returned sig=${signature.slice(0, 16)}...`
+              );
+              processSignature(signature, ctx);
+            }
+          } catch (hookErr) {
+            console.warn("[ZER\xD8] SwapDetection: post-tx processing error:", hookErr);
+          }
+          return result;
+        };
+        _hooked.add(name);
+        console.log(`[ZER\xD8] SwapDetection: Hooked ${name}.${method}`);
+      }
+    };
+    const processSignature = (signature, ctx2) => {
+      const quote = findBestQuote(ctx2);
+      let side, mint, solAmount, tokenAmount, symbol;
+      if (quote) {
+        const isSolInput = isSolMint(quote.inputMint);
+        side = isSolInput ? "BUY" : "SELL";
+        mint = isSolInput ? quote.outputMint : quote.inputMint;
+        const solLamports = isSolInput ? quote.inAmount : quote.outAmount;
+        const tokenRaw = isSolInput ? quote.outAmount : quote.inAmount;
+        solAmount = solLamports > 1e3 ? solLamports / 1e9 : solLamports;
+        tokenAmount = tokenRaw;
+        symbol = quote.symbol;
+        console.log(
+          `[ZER\xD8] SwapDetection: Matched quote \u2014 ${side} ${symbol || mint.slice(0, 8)}, ${solAmount.toFixed(4)} SOL, sig=${signature.slice(0, 12)}...`
+        );
+      } else {
+        if (!ctx2.mint) {
+          console.warn(
+            "[ZER\xD8] SwapDetection: No cached quote and no ctx.mint \u2014 cannot determine trade"
+          );
+          return;
+        }
+        mint = ctx2.mint;
+        symbol = ctx2.symbol;
+        side = "BUY";
+        solAmount = 0;
+        tokenAmount = 0;
+        console.warn(
+          `[ZER\xD8] SwapDetection: No cached quote \u2014 using ctx.mint=${mint.slice(0, 8)}, defaulting to BUY`
+        );
+      }
+      send({
+        type: "SHADOW_TRADE_DETECTED",
+        side,
+        mint,
+        symbol,
+        solAmount,
+        tokenAmount,
+        priceUsd: 0,
+        // Will be filled by ShadowTradeIngestion from Market.price
+        signature,
+        source: "bridge-hook",
+        ts: Date.now()
+      });
+    };
+    let _pollAttempts = 0;
+    const pollHook = () => {
+      _pollAttempts++;
+      for (const [name, getP] of Object.entries(WALLET_PROVIDERS)) {
+        try {
+          const p = getP();
+          if (p)
+            hookProvider(p, name);
+        } catch {
+        }
+      }
+    };
+    pollHook();
+    const hookPoll = setInterval(() => {
+      pollHook();
+      if (_pollAttempts >= 15) {
+        clearInterval(hookPoll);
+        if (_hooked.size === 0) {
+          console.warn("[ZER\xD8] SwapDetection: No wallet providers found after 30s");
+        }
+      }
+    }, 2e3);
+  }
   var _capturedWalletAddr = null;
   function setupWalletAddressCapture() {
     const providerMap = {
@@ -564,12 +731,16 @@
       try {
         const url = String(args?.[0]?.url || args?.[0] || "");
         const isApiUrl = /quote|price|ticker|market|candles|kline|chart|pair|swap|route/i.test(url);
-        if (isApiUrl || SWAP_URL_PATTERNS.test(url)) {
+        const isSwapUrl = SWAP_URL_PATTERNS.test(url);
+        const contentType = res.headers?.get?.("content-type") || "";
+        const isJson = contentType.includes("json") || isApiUrl || isSwapUrl;
+        if (isJson) {
           const clone = res.clone();
           clone.json().then((json) => {
+            cacheSwapQuote(json, ctx);
             if (isApiUrl)
               tryHandleJson(url, json, ctx);
-            if (SWAP_URL_PATTERNS.test(url))
+            if (isSwapUrl)
               tryHandleSwap(url, json, ctx);
           }).catch(() => {
           });
@@ -591,6 +762,7 @@
           const ct = (this.getResponseHeader("content-type") || "").toLowerCase();
           if (ct.includes("json")) {
             const json = JSON.parse(this.responseText);
+            cacheSwapQuote(json, ctx);
             if (/quote|price|ticker|market|candles|kline|chart|pair|swap|route/i.test(url)) {
               tryHandleJson(url, json, ctx);
             }
@@ -712,6 +884,7 @@
     };
     setInterval(pollTvMCap, 1e3);
     setupMessageListener(ctx);
+    setupSwapDetection(ctx);
     setupWalletAddressCapture();
   })();
 })();

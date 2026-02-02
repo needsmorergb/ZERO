@@ -19,6 +19,8 @@ import {
   tryHandleSwap,
   SWAP_URL_PATTERNS,
   setupWalletAddressCapture,
+  setupSwapDetection,
+  cacheSwapQuote,
 } from "../shared/bridge-utils.js";
 
 (() => {
@@ -205,14 +207,20 @@ import {
     try {
       const url = String(args?.[0]?.url || args?.[0] || "");
       const isApiUrl = /quote|price|ticker|market|candles|kline|chart|pair|swap|route/i.test(url);
+      const isSwapUrl = SWAP_URL_PATTERNS.test(url);
 
-      if (isApiUrl || SWAP_URL_PATTERNS.test(url)) {
+      // Clone ALL JSON responses for quote caching (swap detection)
+      const contentType = res.headers?.get?.("content-type") || "";
+      const isJson = contentType.includes("json") || isApiUrl || isSwapUrl;
+
+      if (isJson) {
         const clone = res.clone();
         clone
           .json()
           .then((json) => {
+            cacheSwapQuote(json, ctx); // Always cache potential quotes
             if (isApiUrl) tryHandleJson(url, json, ctx);
-            if (SWAP_URL_PATTERNS.test(url)) tryHandleSwap(url, json, ctx);
+            if (isSwapUrl) tryHandleSwap(url, json, ctx);
           })
           .catch(() => {});
       }
@@ -234,6 +242,7 @@ import {
         const ct = (this.getResponseHeader("content-type") || "").toLowerCase();
         if (ct.includes("json")) {
           const json = JSON.parse(this.responseText);
+          cacheSwapQuote(json, ctx); // Always cache potential quotes
           if (/quote|price|ticker|market|candles|kline|chart|pair|swap|route/i.test(url)) {
             tryHandleJson(url, json, ctx);
           }
@@ -355,6 +364,9 @@ import {
 
   // --- Message Listener (shared handlers + price reference) ---
   setupMessageListener(ctx);
+
+  // --- Shadow Mode: Swap Detection (signAndSendTransaction hook + quote cache) ---
+  setupSwapDetection(ctx);
 
   // --- Wallet address capture for Shadow Mode balance ---
   setupWalletAddressCapture();

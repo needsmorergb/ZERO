@@ -276,53 +276,46 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return;
     }
 
-    // Poll wallet for new swap transactions via Context API Worker → Helius RPC
-    if (msg?.type === "POLL_WALLET_SWAPS") {
-      const { walletAddress, lastSignature } = msg;
-      if (!walletAddress) {
-        sendResponse({ ok: false, error: "No wallet address" });
-        return;
-      }
-
-      try {
-        const params = new URLSearchParams({ address: walletAddress });
-        if (lastSignature) params.set("after", lastSignature);
-
-        const workerUrl = `https://api.get-zero.xyz/wallet/poll?${params}`;
-        const ctrl = new AbortController();
-        const t = setTimeout(() => ctrl.abort(), 15000);
-
-        const resp = await fetch(workerUrl, {
-          signal: ctrl.signal,
-          headers: { "Content-Type": "application/json" },
-        });
-        clearTimeout(t);
-
-        const data = await resp.json();
-
-        if (!data.ok) {
-          console.warn("[BG] POLL_WALLET_SWAPS worker error:", data.error);
-          sendResponse({ ok: false, error: data.error });
-          return;
-        }
-
-        // Enrich swap data with message metadata for content script
-        const swaps = (data.swaps || []).map((s) => ({
-          type: "SHADOW_TRADE_DETECTED",
-          __paper: true,
-          ...s,
-          priceUsd: s.priceUsd || 0,
-          source: "helius",
-          ts: Date.now(),
-        }));
-
-        sendResponse({ ok: true, swaps, lastSignature: data.lastSignature });
-      } catch (e) {
-        console.error("[BG] POLL_WALLET_SWAPS failed:", e);
-        sendResponse({ ok: false, error: e.toString() });
-      }
-      return;
-    }
+    // DEPRECATED: Helius RPC polling replaced by bridge-level signAndSendTransaction hook.
+    // Kept commented out for potential future fallback.
+    // if (msg?.type === "POLL_WALLET_SWAPS") {
+    //   const { walletAddress, lastSignature } = msg;
+    //   if (!walletAddress) {
+    //     sendResponse({ ok: false, error: "No wallet address" });
+    //     return;
+    //   }
+    //   try {
+    //     const params = new URLSearchParams({ address: walletAddress });
+    //     if (lastSignature) params.set("after", lastSignature);
+    //     const workerUrl = `https://api.get-zero.xyz/wallet/poll?${params}`;
+    //     const ctrl = new AbortController();
+    //     const t = setTimeout(() => ctrl.abort(), 15000);
+    //     const resp = await fetch(workerUrl, {
+    //       signal: ctrl.signal,
+    //       headers: { "Content-Type": "application/json" },
+    //     });
+    //     clearTimeout(t);
+    //     const data = await resp.json();
+    //     if (!data.ok) {
+    //       console.warn("[BG] POLL_WALLET_SWAPS worker error:", data.error);
+    //       sendResponse({ ok: false, error: data.error });
+    //       return;
+    //     }
+    //     const swaps = (data.swaps || []).map((s) => ({
+    //       type: "SHADOW_TRADE_DETECTED",
+    //       __paper: true,
+    //       ...s,
+    //       priceUsd: s.priceUsd || 0,
+    //       source: "helius",
+    //       ts: Date.now(),
+    //     }));
+    //     sendResponse({ ok: true, swaps, lastSignature: data.lastSignature });
+    //   } catch (e) {
+    //     console.error("[BG] POLL_WALLET_SWAPS failed:", e);
+    //     sendResponse({ ok: false, error: e.toString() });
+    //   }
+    //   return;
+    // }
 
     // Wallet Balance (Shadow Mode auto-detect)
     if (msg?.type === "GET_WALLET_BALANCE") {

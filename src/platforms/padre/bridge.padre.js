@@ -19,6 +19,8 @@ import {
   tryHandleSwap,
   SWAP_URL_PATTERNS,
   setupWalletAddressCapture,
+  setupSwapDetection,
+  cacheSwapQuote,
 } from "../shared/bridge-utils.js";
 
 (() => {
@@ -26,83 +28,122 @@ import {
 
   const ctx = createContext();
 
-  // --- Padre-Specific DOM Price Scraping ---
-  const scrapeDomPrice = () => {
+  // --- Padre Header Bar Price/Stats Scraping ---
+  // Padre displays stats as label-value pairs in the header bar:
+  //   MC: $1.28M | Price: $0.00128 | Liquidity: $117K | ... | T.PNL: -$0.007
+  // Uses label-adjacent element discovery (Tailwind-proof — no CSS class dependency).
+
+  const HEADER_LABELS = {
+    price: /^Price$/i,
+    mc: /^(?:MC|MCap|Market\s*Cap)$/i,
+    liquidity: /^(?:Liq|Liquidity)$/i,
+    tpnl: /^T\.?\s*PNL$/i,
+    invested: /^Invested$/i,
+    sold: /^Sold$/i,
+    remaining: /^Remaining$/i,
+  };
+
+  const parseHeaderValue = (text) => {
+    // Handle: "$1.28M", "$0.00128", "-$0.007", "$117K", "$0.10"
+    const neg = text.includes("-") ? -1 : 1;
+    const clean = text.replace(/[^0-9.MKBmkb]/g, "");
+    if (!clean) return null;
+    const m = clean.match(/([0-9.]+)\s*([MKBmkb])?$/);
+    if (!m) return null;
+    let val = parseFloat(m[1]);
+    if (isNaN(val)) return null;
+    const suffix = (m[2] || "").toUpperCase();
+    if (suffix === "K") val *= 1_000;
+    else if (suffix === "M") val *= 1_000_000;
+    else if (suffix === "B") val *= 1_000_000_000;
+    return val * neg;
+  };
+
+  const scrapePadreHeader = () => {
     try {
-      // 1. Check price display elements with subscript/sub-zero support
-      const priceEls = document.querySelectorAll(
-        '[class*="price"], [class*="Price"], [class*="token-price"], [class*="tokenPrice"]'
-      );
-      for (const priceEl of priceEls) {
-        let fullText = "";
-        priceEl.childNodes.forEach((node) => {
-          if (node.nodeType === 3) fullText += node.textContent;
-          else if (
-            node.tagName === "SUB" ||
-            node.classList?.contains("subscript") ||
-            (node.tagName === "SPAN" && node.textContent.length <= 2)
-          ) {
-            const val = node.textContent.trim();
-            if (val.match(/^[0-9]$/)) {
-              fullText += "0".repeat(parseInt(val) || 0);
-            } else {
-              fullText += val;
-            }
-          } else {
-            fullText += node.textContent;
+      const results = {};
+      const allEls = document.querySelectorAll("span, div, p, td, th, dt, dd, label");
+      const limit = Math.min(allEls.length, 2000);
+
+      for (let i = 0; i < limit; i++) {
+        const el = allEls[i];
+        if (el.children.length > 3) continue;
+        const text = el.textContent?.trim();
+        if (!text || text.length > 20) continue;
+
+        for (const [key, pattern] of Object.entries(HEADER_LABELS)) {
+          if (results[key] !== undefined) continue;
+          if (!pattern.test(text)) continue;
+
+          // Found a label — find the adjacent value element
+          const valueEl =
+            el.nextElementSibling ||
+            el.parentElement?.nextElementSibling?.querySelector("span, div, p") ||
+            el.parentElement?.nextElementSibling ||
+            (i + 1 < limit ? allEls[i + 1] : null);
+
+          if (!valueEl) continue;
+          const valText = valueEl.textContent?.trim();
+          if (!valText) continue;
+
+          const parsed = parseHeaderValue(valText);
+          if (parsed !== null) {
+            results[key] = parsed;
           }
-        });
-        // Reject market cap values (M/B/K suffix)
-        if (fullText.includes("$") && !fullText.match(/[MBK]\b/i)) {
-          const val = parseFloat(fullText.replace(/[^0-9.]/g, ""));
-          if (val > 0 && val < 1000) return val;
         }
       }
-
-      // 2. Title fallback — reject market cap values (M/B/K suffix)
-      const titleMatches = [...document.title.matchAll(/\$([0-9.,]+)\s*([MBKmbk])?/g)];
-      for (const m of titleMatches) {
-        if (m[2]) continue; // Skip market cap: $2.06M, $500K, $1.2B
-        const val = parseFloat(m[1].replace(/,/g, ""));
-        if (val > 0 && val < 1000) return val;
-      }
-
-      // 3. Broad DOM scan — accept any $ value that isn't market cap
-      const els = Array.from(document.querySelectorAll("span, div")).slice(0, 500);
-      for (const el of els) {
-        if (el.children.length > 5) continue;
-        const text = el.textContent.trim();
-        if (text.length > 30 || text.length < 3) continue;
-        if (text.startsWith("$") && !text.match(/[MBK]\b/i)) {
-          const val = parseFloat(text.slice(1).replace(/,/g, ""));
-          if (val > 0 && val < 100) return val;
-        }
-        // Non-$ tiny decimal values (per-token price like "0.0003152")
-        if (/^0\.\d{4,}$/.test(text)) {
-          const val = parseFloat(text);
-          if (val > 0 && val < 0.01) return val;
-        }
-      }
+      return Object.keys(results).length > 0 ? results : null;
     } catch (e) { /* swallowed */ }
     return null;
   };
 
-  let lastDomPrice = 0;
-  const pollDomPrice = () => {
-    const p = scrapeDomPrice();
-    if (p && p !== lastDomPrice) {
-      lastDomPrice = p;
+  let lastHeaderPrice = 0;
+  let lastHeaderMCap = 0;
+  let _headerLogOnce = false;
+  const pollPadreHeader = () => {
+    const h = scrapePadreHeader();
+    if (!h) return;
+
+    if (!_headerLogOnce) {
+      _headerLogOnce = true;
+      console.log("[ZERØ] Padre header scrape result:", JSON.stringify(h));
+    }
+
+    // Price — highest confidence, this IS what the user sees on Padre
+    if (h.price && h.price > 0 && h.price !== lastHeaderPrice) {
+      lastHeaderPrice = h.price;
       send({
         type: "PRICE_TICK",
-        source: "dom",
-        price: p,
-        confidence: 2,
+        source: "padre-header",
+        price: h.price,
+        chartMCap: h.mc || 0,
+        confidence: 4,
         ts: Date.now(),
       });
     }
+
+    // MC only (if price didn't fire but MC changed)
+    if (h.mc && h.mc > 0 && h.mc !== lastHeaderMCap) {
+      lastHeaderMCap = h.mc;
+      if (!h.price && lastHeaderPrice > 0) {
+        send({
+          type: "PRICE_TICK",
+          source: "padre-header-mc",
+          price: lastHeaderPrice,
+          chartMCap: h.mc,
+          confidence: 3,
+          ts: Date.now(),
+        });
+      }
+    }
+
+    // T.PNL — optional, for future cross-reference
+    if (h.tpnl !== undefined) {
+      send({ type: "PADRE_PNL_TICK", tpnl: h.tpnl, ts: Date.now() });
+    }
   };
 
-  setInterval(pollDomPrice, 200);
+  setInterval(pollPadreHeader, 200);
 
   // --- Chart MCap Scraping (Padre: Y-axis = Market Cap, not token price) ---
   const parseOhlcClose = (text) => {
@@ -189,16 +230,18 @@ import {
       try {
         const url = String(args?.[0]?.url || args?.[0] || "");
         const isApiUrl = /quote|price|ticker|market|candles|kline|chart|pair|swap|route/i.test(url);
-
         const isSwapUrl = SWAP_URL_PATTERNS.test(url);
-        if (isApiUrl || isSwapUrl) {
-          if (isSwapUrl) {
-            console.log(`[ZERØ] Padre: Swap URL intercepted: ${url.slice(0, 120)}`);
-          }
+
+        // Clone ALL JSON responses for quote caching (swap detection)
+        const contentType = res.headers?.get?.("content-type") || "";
+        const isJson = contentType.includes("json") || isApiUrl || isSwapUrl;
+
+        if (isJson) {
           const clone = res.clone();
           clone
             .json()
             .then((json) => {
+              cacheSwapQuote(json, ctx); // Always cache potential quotes
               if (isApiUrl) tryHandleJson(url, json, ctx);
               if (isSwapUrl) tryHandleSwap(url, json, ctx);
             })
@@ -212,51 +255,18 @@ import {
     console.log("[ZERØ] Padre: fetch interception blocked by SES");
   }
 
-  // 2. MutationObserver — instant DOM price detection (SES-safe)
+  // 2. MutationObserver — triggers header re-scrape on DOM changes (SES-safe)
   const setupPriceObserver = () => {
     if (!document.body) return;
-    const emitDomPrice = (val) => {
-      if (val > 0 && val < 100 && val !== lastDomPrice) {
-        lastDomPrice = val;
-        send({
-          type: "PRICE_TICK",
-          source: "dom",
-          price: val,
-          confidence: 2,
-          ts: Date.now(),
-        });
-      }
-    };
 
-    const checkText = (text) => {
-      if (!text || text.length < 2 || text.length > 30) return;
-      text = text.trim();
-      if (text.startsWith("$") && !text.match(/[MBK]\b/i)) {
-        const val = parseFloat(text.slice(1).replace(/,/g, ""));
-        emitDomPrice(val);
-        return;
-      }
-      if (/^0\.\d{4,}$/.test(text)) {
-        const val = parseFloat(text);
-        if (val > 0 && val < 0.01) {
-          emitDomPrice(val);
-        }
-      }
-    };
-
-    const observer = new MutationObserver((mutations) => {
-      for (const m of mutations) {
-        if (m.type === "characterData") {
-          checkText(m.target.textContent);
-        } else if (m.type === "childList") {
-          for (const node of m.addedNodes) {
-            if (node.nodeType === 3) checkText(node.textContent);
-            else if (node.nodeType === 1 && !node.children?.length) {
-              checkText(node.textContent);
-            }
-          }
-        }
-      }
+    // Debounced header re-scrape on any text mutation
+    let _mutationTimer = null;
+    const observer = new MutationObserver(() => {
+      if (_mutationTimer) return;
+      _mutationTimer = setTimeout(() => {
+        _mutationTimer = null;
+        pollPadreHeader();
+      }, 100);
     });
 
     observer.observe(document.body, {
@@ -264,7 +274,7 @@ import {
       childList: true,
       subtree: true,
     });
-    console.log("[ZERØ] Padre: MutationObserver active for instant price detection");
+    console.log("[ZERØ] Padre: MutationObserver active for header price detection");
   };
 
   if (document.body) {
@@ -365,6 +375,9 @@ import {
 
   // --- Message Listener (shared handlers + price reference) ---
   setupMessageListener(ctx);
+
+  // --- Shadow Mode: Swap Detection (signAndSendTransaction hook + quote cache) ---
+  setupSwapDetection(ctx);
 
   // --- Wallet address capture for Shadow Mode balance ---
   setupWalletAddressCapture();

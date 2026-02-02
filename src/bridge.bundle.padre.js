@@ -167,6 +167,173 @@
       ts: Date.now()
     });
   }
+  var _quoteCache = [];
+  var QUOTE_CACHE_SIZE = 5;
+  var QUOTE_CACHE_TTL = 6e4;
+  function cacheSwapQuote(json, ctx) {
+    if (!json || typeof json !== "object")
+      return;
+    const data = json.data || json.result || json;
+    if (!data || typeof data !== "object")
+      return;
+    const inputMint = data.inputMint || data.fromMint || data.tokenIn || data.sourceMint || data.inToken?.address || data.inputToken?.mint;
+    const outputMint = data.outputMint || data.toMint || data.tokenOut || data.destMint || data.outToken?.address || data.outputToken?.mint;
+    if (!inputMint || !outputMint)
+      return;
+    if (typeof inputMint !== "string" || typeof outputMint !== "string")
+      return;
+    if (inputMint.length < 30 || outputMint.length < 30)
+      return;
+    const inAmount = parseFloat(
+      data.inAmount || data.inputAmount || data.amountIn || data.inToken?.amount || data.inputToken?.amount || 0
+    );
+    const outAmount = parseFloat(
+      data.outAmount || data.outputAmount || data.amountOut || data.outToken?.amount || data.outputToken?.amount || 0
+    );
+    const symbol = data.outputSymbol || data.inputSymbol || data.outToken?.symbol || data.inToken?.symbol || ctx.symbol || null;
+    const entry = {
+      inputMint,
+      outputMint,
+      inAmount,
+      outAmount,
+      symbol,
+      ts: Date.now()
+    };
+    _quoteCache.push(entry);
+    if (_quoteCache.length > QUOTE_CACHE_SIZE)
+      _quoteCache.shift();
+    console.log(
+      `[ZER\xD8] SwapDetection: Quote cached \u2014 ${inputMint.slice(0, 8)}\u2192${outputMint.slice(0, 8)}, in=${inAmount}, out=${outAmount}`
+    );
+  }
+  function findBestQuote(ctx) {
+    const now = Date.now();
+    for (let i = _quoteCache.length - 1; i >= 0; i--) {
+      const q = _quoteCache[i];
+      if (now - q.ts > QUOTE_CACHE_TTL)
+        continue;
+      const hasSol = isSolMint(q.inputMint) || isSolMint(q.outputMint);
+      const hasMint = !ctx.mint || q.inputMint === ctx.mint || q.outputMint === ctx.mint;
+      if (hasSol && hasMint)
+        return q;
+    }
+    return null;
+  }
+  function setupSwapDetection(ctx) {
+    const WALLET_PROVIDERS = {
+      "window.solana": () => window.solana,
+      "phantom.solana": () => window.phantom?.solana,
+      "solflare": () => window.solflare,
+      "backpack.solana": () => window.backpack?.solana
+    };
+    const _hooked = /* @__PURE__ */ new Set();
+    const hookProvider = (provider, name) => {
+      if (!provider || _hooked.has(name))
+        return;
+      const methods = ["signAndSendTransaction", "sendTransaction"];
+      for (const method of methods) {
+        if (typeof provider[method] !== "function")
+          continue;
+        const origMethod = provider[method].bind(provider);
+        provider[method] = async (...args) => {
+          let result;
+          try {
+            result = await origMethod(...args);
+          } catch (err) {
+            throw err;
+          }
+          try {
+            let signature = null;
+            if (typeof result === "string") {
+              signature = result;
+            } else if (result?.signature) {
+              signature = result.signature;
+            } else if (result?.publicKey && result?.signature === void 0) {
+              signature = null;
+            }
+            if (typeof signature === "string" && signature.length >= 30) {
+              console.log(
+                `[ZER\xD8] SwapDetection: ${method} returned sig=${signature.slice(0, 16)}...`
+              );
+              processSignature(signature, ctx);
+            }
+          } catch (hookErr) {
+            console.warn("[ZER\xD8] SwapDetection: post-tx processing error:", hookErr);
+          }
+          return result;
+        };
+        _hooked.add(name);
+        console.log(`[ZER\xD8] SwapDetection: Hooked ${name}.${method}`);
+      }
+    };
+    const processSignature = (signature, ctx2) => {
+      const quote = findBestQuote(ctx2);
+      let side, mint, solAmount, tokenAmount, symbol;
+      if (quote) {
+        const isSolInput = isSolMint(quote.inputMint);
+        side = isSolInput ? "BUY" : "SELL";
+        mint = isSolInput ? quote.outputMint : quote.inputMint;
+        const solLamports = isSolInput ? quote.inAmount : quote.outAmount;
+        const tokenRaw = isSolInput ? quote.outAmount : quote.inAmount;
+        solAmount = solLamports > 1e3 ? solLamports / 1e9 : solLamports;
+        tokenAmount = tokenRaw;
+        symbol = quote.symbol;
+        console.log(
+          `[ZER\xD8] SwapDetection: Matched quote \u2014 ${side} ${symbol || mint.slice(0, 8)}, ${solAmount.toFixed(4)} SOL, sig=${signature.slice(0, 12)}...`
+        );
+      } else {
+        if (!ctx2.mint) {
+          console.warn(
+            "[ZER\xD8] SwapDetection: No cached quote and no ctx.mint \u2014 cannot determine trade"
+          );
+          return;
+        }
+        mint = ctx2.mint;
+        symbol = ctx2.symbol;
+        side = "BUY";
+        solAmount = 0;
+        tokenAmount = 0;
+        console.warn(
+          `[ZER\xD8] SwapDetection: No cached quote \u2014 using ctx.mint=${mint.slice(0, 8)}, defaulting to BUY`
+        );
+      }
+      send({
+        type: "SHADOW_TRADE_DETECTED",
+        side,
+        mint,
+        symbol,
+        solAmount,
+        tokenAmount,
+        priceUsd: 0,
+        // Will be filled by ShadowTradeIngestion from Market.price
+        signature,
+        source: "bridge-hook",
+        ts: Date.now()
+      });
+    };
+    let _pollAttempts = 0;
+    const pollHook = () => {
+      _pollAttempts++;
+      for (const [name, getP] of Object.entries(WALLET_PROVIDERS)) {
+        try {
+          const p = getP();
+          if (p)
+            hookProvider(p, name);
+        } catch {
+        }
+      }
+    };
+    pollHook();
+    const hookPoll = setInterval(() => {
+      pollHook();
+      if (_pollAttempts >= 15) {
+        clearInterval(hookPoll);
+        if (_hooked.size === 0) {
+          console.warn("[ZER\xD8] SwapDetection: No wallet providers found after 30s");
+        }
+      }
+    }, 2e3);
+  }
   var _capturedWalletAddr = null;
   function setupWalletAddressCapture() {
     const providerMap = {
@@ -397,78 +564,109 @@
   (() => {
     console.log("[ZER\xD8] Padre Bridge Active (document_start, MAIN world).");
     const ctx = createContext();
-    const scrapeDomPrice = () => {
+    const HEADER_LABELS = {
+      price: /^Price$/i,
+      mc: /^(?:MC|MCap|Market\s*Cap)$/i,
+      liquidity: /^(?:Liq|Liquidity)$/i,
+      tpnl: /^T\.?\s*PNL$/i,
+      invested: /^Invested$/i,
+      sold: /^Sold$/i,
+      remaining: /^Remaining$/i
+    };
+    const parseHeaderValue = (text) => {
+      const neg = text.includes("-") ? -1 : 1;
+      const clean = text.replace(/[^0-9.MKBmkb]/g, "");
+      if (!clean)
+        return null;
+      const m = clean.match(/([0-9.]+)\s*([MKBmkb])?$/);
+      if (!m)
+        return null;
+      let val = parseFloat(m[1]);
+      if (isNaN(val))
+        return null;
+      const suffix = (m[2] || "").toUpperCase();
+      if (suffix === "K")
+        val *= 1e3;
+      else if (suffix === "M")
+        val *= 1e6;
+      else if (suffix === "B")
+        val *= 1e9;
+      return val * neg;
+    };
+    const scrapePadreHeader = () => {
       try {
-        const priceEls = document.querySelectorAll(
-          '[class*="price"], [class*="Price"], [class*="token-price"], [class*="tokenPrice"]'
-        );
-        for (const priceEl of priceEls) {
-          let fullText = "";
-          priceEl.childNodes.forEach((node) => {
-            if (node.nodeType === 3)
-              fullText += node.textContent;
-            else if (node.tagName === "SUB" || node.classList?.contains("subscript") || node.tagName === "SPAN" && node.textContent.length <= 2) {
-              const val = node.textContent.trim();
-              if (val.match(/^[0-9]$/)) {
-                fullText += "0".repeat(parseInt(val) || 0);
-              } else {
-                fullText += val;
-              }
-            } else {
-              fullText += node.textContent;
+        const results = {};
+        const allEls = document.querySelectorAll("span, div, p, td, th, dt, dd, label");
+        const limit = Math.min(allEls.length, 2e3);
+        for (let i = 0; i < limit; i++) {
+          const el = allEls[i];
+          if (el.children.length > 3)
+            continue;
+          const text = el.textContent?.trim();
+          if (!text || text.length > 20)
+            continue;
+          for (const [key, pattern] of Object.entries(HEADER_LABELS)) {
+            if (results[key] !== void 0)
+              continue;
+            if (!pattern.test(text))
+              continue;
+            const valueEl = el.nextElementSibling || el.parentElement?.nextElementSibling?.querySelector("span, div, p") || el.parentElement?.nextElementSibling || (i + 1 < limit ? allEls[i + 1] : null);
+            if (!valueEl)
+              continue;
+            const valText = valueEl.textContent?.trim();
+            if (!valText)
+              continue;
+            const parsed = parseHeaderValue(valText);
+            if (parsed !== null) {
+              results[key] = parsed;
             }
-          });
-          if (fullText.includes("$") && !fullText.match(/[MBK]\b/i)) {
-            const val = parseFloat(fullText.replace(/[^0-9.]/g, ""));
-            if (val > 0 && val < 1e3)
-              return val;
           }
         }
-        const titleMatches = [...document.title.matchAll(/\$([0-9.,]+)\s*([MBKmbk])?/g)];
-        for (const m of titleMatches) {
-          if (m[2])
-            continue;
-          const val = parseFloat(m[1].replace(/,/g, ""));
-          if (val > 0 && val < 1e3)
-            return val;
-        }
-        const els = Array.from(document.querySelectorAll("span, div")).slice(0, 500);
-        for (const el of els) {
-          if (el.children.length > 5)
-            continue;
-          const text = el.textContent.trim();
-          if (text.length > 30 || text.length < 3)
-            continue;
-          if (text.startsWith("$") && !text.match(/[MBK]\b/i)) {
-            const val = parseFloat(text.slice(1).replace(/,/g, ""));
-            if (val > 0 && val < 100)
-              return val;
-          }
-          if (/^0\.\d{4,}$/.test(text)) {
-            const val = parseFloat(text);
-            if (val > 0 && val < 0.01)
-              return val;
-          }
-        }
+        return Object.keys(results).length > 0 ? results : null;
       } catch (e) {
       }
       return null;
     };
-    let lastDomPrice = 0;
-    const pollDomPrice = () => {
-      const p = scrapeDomPrice();
-      if (p && p !== lastDomPrice) {
-        lastDomPrice = p;
+    let lastHeaderPrice = 0;
+    let lastHeaderMCap = 0;
+    let _headerLogOnce = false;
+    const pollPadreHeader = () => {
+      const h = scrapePadreHeader();
+      if (!h)
+        return;
+      if (!_headerLogOnce) {
+        _headerLogOnce = true;
+        console.log("[ZER\xD8] Padre header scrape result:", JSON.stringify(h));
+      }
+      if (h.price && h.price > 0 && h.price !== lastHeaderPrice) {
+        lastHeaderPrice = h.price;
         send({
           type: "PRICE_TICK",
-          source: "dom",
-          price: p,
-          confidence: 2,
+          source: "padre-header",
+          price: h.price,
+          chartMCap: h.mc || 0,
+          confidence: 4,
           ts: Date.now()
         });
       }
+      if (h.mc && h.mc > 0 && h.mc !== lastHeaderMCap) {
+        lastHeaderMCap = h.mc;
+        if (!h.price && lastHeaderPrice > 0) {
+          send({
+            type: "PRICE_TICK",
+            source: "padre-header-mc",
+            price: lastHeaderPrice,
+            chartMCap: h.mc,
+            confidence: 3,
+            ts: Date.now()
+          });
+        }
+      }
+      if (h.tpnl !== void 0) {
+        send({ type: "PADRE_PNL_TICK", tpnl: h.tpnl, ts: Date.now() });
+      }
     };
-    setInterval(pollDomPrice, 200);
+    setInterval(pollPadreHeader, 200);
     const parseOhlcClose = (text) => {
       if (!text)
         return null;
@@ -562,12 +760,12 @@
           const url = String(args?.[0]?.url || args?.[0] || "");
           const isApiUrl = /quote|price|ticker|market|candles|kline|chart|pair|swap|route/i.test(url);
           const isSwapUrl = SWAP_URL_PATTERNS.test(url);
-          if (isApiUrl || isSwapUrl) {
-            if (isSwapUrl) {
-              console.log(`[ZER\xD8] Padre: Swap URL intercepted: ${url.slice(0, 120)}`);
-            }
+          const contentType = res.headers?.get?.("content-type") || "";
+          const isJson = contentType.includes("json") || isApiUrl || isSwapUrl;
+          if (isJson) {
             const clone = res.clone();
             clone.json().then((json) => {
+              cacheSwapQuote(json, ctx);
               if (isApiUrl)
                 tryHandleJson(url, json, ctx);
               if (isSwapUrl)
@@ -586,55 +784,21 @@
     const setupPriceObserver = () => {
       if (!document.body)
         return;
-      const emitDomPrice = (val) => {
-        if (val > 0 && val < 100 && val !== lastDomPrice) {
-          lastDomPrice = val;
-          send({
-            type: "PRICE_TICK",
-            source: "dom",
-            price: val,
-            confidence: 2,
-            ts: Date.now()
-          });
-        }
-      };
-      const checkText = (text) => {
-        if (!text || text.length < 2 || text.length > 30)
+      let _mutationTimer = null;
+      const observer = new MutationObserver(() => {
+        if (_mutationTimer)
           return;
-        text = text.trim();
-        if (text.startsWith("$") && !text.match(/[MBK]\b/i)) {
-          const val = parseFloat(text.slice(1).replace(/,/g, ""));
-          emitDomPrice(val);
-          return;
-        }
-        if (/^0\.\d{4,}$/.test(text)) {
-          const val = parseFloat(text);
-          if (val > 0 && val < 0.01) {
-            emitDomPrice(val);
-          }
-        }
-      };
-      const observer = new MutationObserver((mutations) => {
-        for (const m of mutations) {
-          if (m.type === "characterData") {
-            checkText(m.target.textContent);
-          } else if (m.type === "childList") {
-            for (const node of m.addedNodes) {
-              if (node.nodeType === 3)
-                checkText(node.textContent);
-              else if (node.nodeType === 1 && !node.children?.length) {
-                checkText(node.textContent);
-              }
-            }
-          }
-        }
+        _mutationTimer = setTimeout(() => {
+          _mutationTimer = null;
+          pollPadreHeader();
+        }, 100);
       });
       observer.observe(document.body, {
         characterData: true,
         childList: true,
         subtree: true
       });
-      console.log("[ZER\xD8] Padre: MutationObserver active for instant price detection");
+      console.log("[ZER\xD8] Padre: MutationObserver active for header price detection");
     };
     if (document.body) {
       setupPriceObserver();
@@ -731,6 +895,7 @@
     };
     setInterval(pollTvMCap, 1e3);
     setupMessageListener(ctx);
+    setupSwapDetection(ctx);
     setupWalletAddressCapture();
   })();
 })();

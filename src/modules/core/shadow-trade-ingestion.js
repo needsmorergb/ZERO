@@ -3,22 +3,18 @@
  * Listens for SHADOW_TRADE_DETECTED messages from bridge scripts and records
  * real trades into shadow state using identical PnL logic as OrderExecution.
  *
- * Primary detection: Helius RPC polling (background.js parses on-chain transactions)
- * Secondary detection: Bridge-level fetch interception (fast path for some platforms)
+ * Primary detection: Bridge-level signAndSendTransaction hook (instant)
+ * Secondary detection: Bridge-level fetch response scanning (quote cache)
+ * Price source: Padre/Axiom header bar scraping (matches displayed price exactly)
  */
 import { Store } from "../store.js";
 import { PnlCalculator } from "./pnl-calculator.js";
 import { Analytics } from "./analytics.js";
 import { Market } from "./market.js";
 
-const POLL_INTERVAL_MS = 15_000; // 15 seconds
-
 export const ShadowTradeIngestion = {
   initialized: false,
   walletBalanceFetched: false,
-  _pollTimer: null,
-  _lastSignature: null,
-  _polling: false,
 
   init() {
     if (this.initialized) return;
@@ -27,7 +23,7 @@ export const ShadowTradeIngestion = {
     const isShadow = Store.isShadowMode();
     console.log(`[ShadowIngestion] Mode: ${isShadow ? "SHADOW" : Store.state?.settings?.tradingMode || "unknown"}`);
 
-    // Listen for bridge-level swap detection (fast secondary path)
+    // Listen for bridge-level swap detection (primary path — instant)
     window.addEventListener("message", (e) => {
       if (e.source !== window) return;
       if (!e.data?.__paper) return;
@@ -43,106 +39,16 @@ export const ShadowTradeIngestion = {
       }
     });
 
-    // If wallet address already known from a previous session, start polling immediately
+    // If wallet address already known from a previous session, fetch balance
     const storedAddr = Store.state?.shadow?.walletAddress;
     if (storedAddr) {
       console.log(`[ShadowIngestion] Stored wallet found: ${storedAddr.slice(0, 8)}...`);
-      this.startHeliusPolling(storedAddr);
       this.proactiveFetchBalance();
     } else {
       console.log("[ShadowIngestion] No stored wallet — waiting for bridge detection");
-      console.log(`[ShadowIngestion] Store.state.shadow exists: ${!!Store.state?.shadow}`);
     }
 
-    console.log("[ShadowIngestion] Initialized — listening for swap events + Helius polling");
-  },
-
-  // --- Helius RPC Polling ---
-
-  startHeliusPolling(walletAddress) {
-    if (this._pollTimer) return; // Already polling
-    if (!walletAddress) return;
-
-    console.log(`[ShadowIngestion] Starting Helius polling for ${walletAddress.slice(0, 8)}...`);
-
-    // First poll: just capture the cursor (don't replay old trades)
-    this._polling = false;
-    this.pollWalletSwaps(walletAddress, true);
-
-    // Subsequent polls every 15 seconds
-    this._pollTimer = setInterval(() => {
-      this.pollWalletSwaps(walletAddress, false);
-    }, POLL_INTERVAL_MS);
-  },
-
-  stopHeliusPolling() {
-    if (this._pollTimer) {
-      clearInterval(this._pollTimer);
-      this._pollTimer = null;
-    }
-    this._lastSignature = null;
-    this._polling = false;
-  },
-
-  _pollCycleCount: 0,
-
-  async pollWalletSwaps(walletAddress, cursorOnly) {
-    if (this._polling) return; // Prevent overlapping polls
-    this._polling = true;
-    this._pollCycleCount++;
-
-    try {
-      // Heartbeat log every 4th poll (~60s) so user knows it's running
-      if (this._pollCycleCount % 4 === 0) {
-        console.log(`[ShadowIngestion] Helius poll #${this._pollCycleCount} — cursor: ${this._lastSignature?.slice(0, 12) || "none"}`);
-      }
-
-      const response = await new Promise((resolve, reject) => {
-        chrome.runtime.sendMessage(
-          {
-            type: "POLL_WALLET_SWAPS",
-            walletAddress,
-            lastSignature: this._lastSignature,
-          },
-          (resp) => {
-            if (chrome.runtime.lastError) reject(chrome.runtime.lastError);
-            else resolve(resp);
-          },
-        );
-      });
-
-      if (!response?.ok) {
-        console.warn("[ShadowIngestion] Poll error:", response?.error || "no response");
-        return;
-      }
-
-      // Update cursor
-      if (response.lastSignature) {
-        this._lastSignature = response.lastSignature;
-      }
-
-      // On first poll, just save cursor — don't process old trades
-      if (cursorOnly) {
-        console.log(
-          `[ShadowIngestion] Helius cursor set: ${this._lastSignature?.slice(0, 12) || "none"}... (polling active)`,
-        );
-        return;
-      }
-
-      // Process new swaps
-      const swaps = response.swaps || [];
-      if (swaps.length > 0) {
-        console.log(`[ShadowIngestion] Helius found ${swaps.length} new swap(s)`);
-      }
-
-      for (const swap of swaps) {
-        await this.handleDetectedTrade(swap);
-      }
-    } catch (e) {
-      console.warn("[ShadowIngestion] Helius poll failed:", e?.message || e);
-    } finally {
-      this._polling = false;
-    }
+    console.log("[ShadowIngestion] Initialized — listening for bridge swap events");
   },
 
   // --- Wallet Address Detection ---
@@ -158,9 +64,6 @@ export const ShadowTradeIngestion = {
     shadow.walletAddress = addr;
     await Store.save();
     console.log(`[ShadowIngestion] Wallet address stored: ${addr.slice(0, 8)}...`);
-
-    // Start Helius polling now that we have the address
-    this.startHeliusPolling(addr);
 
     // Proactively fetch balance when in shadow mode
     this.proactiveFetchBalance();
@@ -499,7 +402,6 @@ export const ShadowTradeIngestion = {
   },
 
   cleanup() {
-    this.stopHeliusPolling();
     this.initialized = false;
     this.walletBalanceFetched = false;
     console.log("[ShadowIngestion] Cleanup complete");

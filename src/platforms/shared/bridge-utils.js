@@ -212,6 +212,212 @@ export function tryHandleSwap(url, json, ctx) {
   });
 }
 
+// --- Swap Quote Cache + signAndSendTransaction Hook for Shadow Mode ---
+
+const _quoteCache = []; // Ring buffer of recent swap quotes
+const QUOTE_CACHE_SIZE = 5;
+const QUOTE_CACHE_TTL = 60_000; // 60s
+
+export function cacheSwapQuote(json, ctx) {
+  if (!json || typeof json !== "object") return;
+
+  // Unwrap common response wrappers
+  const data = json.data || json.result || json;
+  if (!data || typeof data !== "object") return;
+
+  // Detect quote-shaped data: must have input + output mint fields
+  const inputMint =
+    data.inputMint || data.fromMint || data.tokenIn || data.sourceMint ||
+    data.inToken?.address || data.inputToken?.mint;
+  const outputMint =
+    data.outputMint || data.toMint || data.tokenOut || data.destMint ||
+    data.outToken?.address || data.outputToken?.mint;
+
+  if (!inputMint || !outputMint) return;
+  if (typeof inputMint !== "string" || typeof outputMint !== "string") return;
+  if (inputMint.length < 30 || outputMint.length < 30) return;
+
+  const inAmount = parseFloat(
+    data.inAmount || data.inputAmount || data.amountIn ||
+    data.inToken?.amount || data.inputToken?.amount || 0
+  );
+  const outAmount = parseFloat(
+    data.outAmount || data.outputAmount || data.amountOut ||
+    data.outToken?.amount || data.outputToken?.amount || 0
+  );
+
+  const symbol =
+    data.outputSymbol || data.inputSymbol || data.outToken?.symbol ||
+    data.inToken?.symbol || ctx.symbol || null;
+
+  const entry = {
+    inputMint,
+    outputMint,
+    inAmount,
+    outAmount,
+    symbol,
+    ts: Date.now(),
+  };
+
+  // Ring buffer: push new, evict oldest if over limit
+  _quoteCache.push(entry);
+  if (_quoteCache.length > QUOTE_CACHE_SIZE) _quoteCache.shift();
+
+  console.log(
+    `[ZERØ] SwapDetection: Quote cached — ${inputMint.slice(0, 8)}→${outputMint.slice(0, 8)}, in=${inAmount}, out=${outAmount}`
+  );
+}
+
+function findBestQuote(ctx) {
+  const now = Date.now();
+  // Search from most recent
+  for (let i = _quoteCache.length - 1; i >= 0; i--) {
+    const q = _quoteCache[i];
+    if (now - q.ts > QUOTE_CACHE_TTL) continue;
+    // Match: one side should be SOL, other should match ctx.mint
+    const hasSol = isSolMint(q.inputMint) || isSolMint(q.outputMint);
+    const hasMint = !ctx.mint || q.inputMint === ctx.mint || q.outputMint === ctx.mint;
+    if (hasSol && hasMint) return q;
+  }
+  return null;
+}
+
+export function setupSwapDetection(ctx) {
+  const WALLET_PROVIDERS = {
+    "window.solana": () => window.solana,
+    "phantom.solana": () => window.phantom?.solana,
+    "solflare": () => window.solflare,
+    "backpack.solana": () => window.backpack?.solana,
+  };
+
+  const _hooked = new Set();
+
+  const hookProvider = (provider, name) => {
+    if (!provider || _hooked.has(name)) return;
+
+    // Hook signAndSendTransaction
+    const methods = ["signAndSendTransaction", "sendTransaction"];
+    for (const method of methods) {
+      if (typeof provider[method] !== "function") continue;
+      const origMethod = provider[method].bind(provider);
+      provider[method] = async (...args) => {
+        let result;
+        try {
+          result = await origMethod(...args);
+        } catch (err) {
+          // CRITICAL: Never swallow wallet errors — re-throw immediately
+          throw err;
+        }
+
+        // Process successful transaction (in try/catch — never break user's flow)
+        try {
+          // Extract signature from result
+          let signature = null;
+          if (typeof result === "string") {
+            signature = result;
+          } else if (result?.signature) {
+            signature = result.signature;
+          } else if (result?.publicKey && result?.signature === undefined) {
+            // Some wallets return { publicKey, signature } where signature is the tx sig
+            signature = null;
+          }
+
+          if (typeof signature === "string" && signature.length >= 30) {
+            console.log(
+              `[ZERØ] SwapDetection: ${method} returned sig=${signature.slice(0, 16)}...`
+            );
+            processSignature(signature, ctx);
+          }
+        } catch (hookErr) {
+          console.warn("[ZERØ] SwapDetection: post-tx processing error:", hookErr);
+        }
+
+        return result;
+      };
+
+      _hooked.add(name);
+      console.log(`[ZERØ] SwapDetection: Hooked ${name}.${method}`);
+    }
+  };
+
+  const processSignature = (signature, ctx) => {
+    const quote = findBestQuote(ctx);
+
+    let side, mint, solAmount, tokenAmount, symbol;
+
+    if (quote) {
+      const isSolInput = isSolMint(quote.inputMint);
+      side = isSolInput ? "BUY" : "SELL";
+      mint = isSolInput ? quote.outputMint : quote.inputMint;
+
+      const solLamports = isSolInput ? quote.inAmount : quote.outAmount;
+      const tokenRaw = isSolInput ? quote.outAmount : quote.inAmount;
+      solAmount = solLamports > 1000 ? solLamports / 1e9 : solLamports;
+      tokenAmount = tokenRaw;
+      symbol = quote.symbol;
+
+      console.log(
+        `[ZERØ] SwapDetection: Matched quote — ${side} ${symbol || mint.slice(0, 8)}, ${solAmount.toFixed(4)} SOL, sig=${signature.slice(0, 12)}...`
+      );
+    } else {
+      // No cached quote — use context as fallback
+      if (!ctx.mint) {
+        console.warn(
+          "[ZERØ] SwapDetection: No cached quote and no ctx.mint — cannot determine trade"
+        );
+        return;
+      }
+      mint = ctx.mint;
+      symbol = ctx.symbol;
+      side = "BUY"; // Default assumption — most trades are buys
+      solAmount = 0; // Will need to be filled by ShadowTradeIngestion
+      tokenAmount = 0;
+      console.warn(
+        `[ZERØ] SwapDetection: No cached quote — using ctx.mint=${mint.slice(0, 8)}, defaulting to BUY`
+      );
+    }
+
+    send({
+      type: "SHADOW_TRADE_DETECTED",
+      side,
+      mint,
+      symbol,
+      solAmount,
+      tokenAmount,
+      priceUsd: 0, // Will be filled by ShadowTradeIngestion from Market.price
+      signature,
+      source: "bridge-hook",
+      ts: Date.now(),
+    });
+  };
+
+  // Poll for wallet providers and hook them as they appear
+  let _pollAttempts = 0;
+  const pollHook = () => {
+    _pollAttempts++;
+    for (const [name, getP] of Object.entries(WALLET_PROVIDERS)) {
+      try {
+        const p = getP();
+        if (p) hookProvider(p, name);
+      } catch { /* swallowed */ }
+    }
+  };
+
+  // Immediately try
+  pollHook();
+
+  // Retry every 2s for 30s
+  const hookPoll = setInterval(() => {
+    pollHook();
+    if (_pollAttempts >= 15) {
+      clearInterval(hookPoll);
+      if (_hooked.size === 0) {
+        console.warn("[ZERØ] SwapDetection: No wallet providers found after 30s");
+      }
+    }
+  }, 2000);
+}
+
 // --- Wallet Address Detection for Shadow Mode Balance ---
 
 let _capturedWalletAddr = null;
