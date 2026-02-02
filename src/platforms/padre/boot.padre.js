@@ -9,6 +9,7 @@ import { DiagnosticsStore } from "../../modules/diagnostics-store.js";
 import { Logger } from "../../modules/logger.js";
 import { TokenContextResolver } from "../../modules/core/token-context.js";
 import { License } from "../../modules/license.js";
+import { ShadowTradeIngestion } from "../../modules/core/shadow-trade-ingestion.js";
 
 (async () => {
   "use strict";
@@ -90,6 +91,14 @@ import { License } from "../../modules/license.js";
     PnlCalculator.init();
   } catch (e) {
     Logger.error("PNL Calculator Init Failed:", e);
+  }
+
+  // Initialize Shadow Trade Ingestion (before HUD — guaranteed to run)
+  try {
+    Logger.info("Init ShadowTradeIngestion...");
+    ShadowTradeIngestion.init();
+  } catch (e) {
+    Logger.error("ShadowTradeIngestion Init Failed:", e);
   }
 
   // Initialize HUD (Render)

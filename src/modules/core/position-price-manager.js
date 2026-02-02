@@ -1,11 +1,13 @@
 import { Store } from "../store.js";
+import { proxyFetch } from "../../services/shared/proxy-fetch.js";
+import { Logger } from "../logger.js";
 
 export const PositionPriceManager = {
   updateInterval: null,
   lastUpdate: 0,
 
   init() {
-    console.log("[PositionPrices] Initializing background price updates...");
+    Logger.debug("[PositionPrices] Initializing background price updates...");
 
     // Fetch prices for all positions every 15 seconds
     this.updateInterval = setInterval(() => {
@@ -27,7 +29,7 @@ export const PositionPriceManager = {
     const mints = Object.keys(positions);
     if (mints.length === 0) return;
 
-    console.log(`[PositionPrices] Updating ${mints.length} position(s)...`);
+    Logger.debug(`[PositionPrices] Updating ${mints.length} position(s)...`);
 
     // Batch fetch prices (DexScreener supports up to 30 tokens)
     const batchSize = 30;
@@ -41,15 +43,20 @@ export const PositionPriceManager = {
 
   async fetchBatchPrices(mints, positions) {
     try {
-      // DexScreener batch API: /tokens/:mint1,:mint2,:mint3
+      // DexScreener batch API via background proxy (avoids host_permissions)
       const mintsStr = mints.join(",");
-      const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${mintsStr}`, {
-        signal: AbortSignal.timeout(8000),
-      });
-      const data = await response.json();
+      const result = await proxyFetch(
+        `https://api.dexscreener.com/latest/dex/tokens/${mintsStr}`
+      );
+
+      if (!result.ok) {
+        Logger.warn("[PositionPrices] Proxy fetch failed:", result.error || result.status);
+        return;
+      }
+      const data = result.data;
 
       if (!data.pairs) {
-        console.warn("[PositionPrices] No pairs returned from DexScreener");
+        Logger.warn("[PositionPrices] No pairs returned from DexScreener");
         return;
       }
 
@@ -73,14 +80,14 @@ export const PositionPriceManager = {
         if (price && price > 0 && price < 10000) {
           position.lastPriceUsd = price;
           position.lastPriceUpdate = Date.now();
-          console.log(`[PositionPrices] ${position.symbol}: $${price.toFixed(8)}`);
+          Logger.debug(`[PositionPrices] ${position.symbol}: $${price.toFixed(8)}`);
         }
       });
 
       // Save updated prices (will be handled by debounced save in PNL calculator)
       // Don't save immediately here to avoid storage thrashing
     } catch (e) {
-      console.error(`[PositionPrices] Batch fetch failed: ${e.message}`);
+      Logger.error(`[PositionPrices] Batch fetch failed: ${e.message}`);
     }
   },
 
@@ -89,6 +96,6 @@ export const PositionPriceManager = {
       clearInterval(this.updateInterval);
       this.updateInterval = null;
     }
-    console.log("[PositionPrices] Cleanup complete");
+    Logger.debug("[PositionPrices] Cleanup complete");
   },
 };

@@ -1639,6 +1639,157 @@ async function handleContext(request, env) {
 }
 
 // ---------------------------------------------------------------------------
+// Route: /wallet/poll — Shadow Mode Swap Detection via Helius RPC
+// ---------------------------------------------------------------------------
+
+/**
+ * Polls a wallet's recent transactions and returns parsed swap data.
+ * Uses getSignaturesForAddress + getTransaction with the Helius API key.
+ *
+ * Query params:
+ *   address  — Solana wallet address to poll
+ *   after    — (optional) Only return transactions newer than this signature
+ */
+async function handleWalletPoll(request, env) {
+    if (!env.HELIUS_API_KEY) {
+        return json({ ok: false, error: 'Helius API key not configured' }, 503);
+    }
+
+    const url = new URL(request.url);
+    const address = url.searchParams.get('address');
+    const after = url.searchParams.get('after') || null;
+
+    if (!address || address.length < 32 || address.length > 44) {
+        return json({ ok: false, error: 'Invalid address' }, 400);
+    }
+
+    const rpcUrl = `https://mainnet.helius-rpc.com/?api-key=${env.HELIUS_API_KEY}`;
+
+    try {
+        // Step 1: Get recent signatures
+        const sigParams = { limit: 5 };
+        if (after) sigParams.until = after;
+
+        const sigResp = await fetchWithTimeout(rpcUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                jsonrpc: '2.0', id: 1,
+                method: 'getSignaturesForAddress',
+                params: [address, sigParams],
+            }),
+        }, 10000);
+
+        const sigData = await sigResp.json();
+        const signatures = sigData?.result || [];
+
+        if (signatures.length === 0) {
+            return json({ ok: true, swaps: [], lastSignature: after });
+        }
+
+        // Step 2: Parse each transaction for swap activity
+        const swaps = [];
+
+        for (const sigInfo of signatures) {
+            if (sigInfo.err) continue;
+
+            try {
+                const txResp = await fetchWithTimeout(rpcUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        jsonrpc: '2.0', id: 1,
+                        method: 'getTransaction',
+                        params: [sigInfo.signature, { maxSupportedTransactionVersion: 0 }],
+                    }),
+                }, 10000);
+
+                const txData = await txResp.json();
+                const tx = txData?.result;
+                if (!tx) continue;
+
+                const swap = workerParseSwap(tx, address, sigInfo.signature);
+                if (swap) swaps.push(swap);
+            } catch (_) { /* skip individual tx errors */ }
+        }
+
+        const newLastSig = signatures[0]?.signature || after;
+        return json({ ok: true, swaps, lastSignature: newLastSig });
+    } catch (e) {
+        console.error('[WalletPoll] Error:', e?.message || e);
+        return json({ ok: false, error: 'RPC error' }, 502);
+    }
+}
+
+/**
+ * Parse a raw Solana transaction for SOL<->token swaps.
+ * Detects swaps by comparing pre/post balance changes — works with any DEX.
+ */
+function workerParseSwap(tx, walletAddress, signature) {
+    const meta = tx.meta;
+    if (!meta || meta.err) return null;
+
+    const accountKeys = tx.transaction?.message?.accountKeys || [];
+
+    let walletIndex = -1;
+    for (let i = 0; i < accountKeys.length; i++) {
+        const key = typeof accountKeys[i] === 'string' ? accountKeys[i] : accountKeys[i]?.pubkey;
+        if (key === walletAddress) { walletIndex = i; break; }
+    }
+    if (walletIndex === -1) return null;
+
+    const preLamports = meta.preBalances?.[walletIndex] || 0;
+    const postLamports = meta.postBalances?.[walletIndex] || 0;
+    const fee = (meta.fee || 0) / 1e9;
+    const solDelta = (postLamports - preLamports) / 1e9;
+
+    const WRAPPED_SOL = 'So11111111111111111111111111111111111111112';
+    const preTokens = {};
+    const postTokens = {};
+
+    for (const tb of meta.preTokenBalances || []) {
+        if (tb.owner === walletAddress && tb.mint !== WRAPPED_SOL) {
+            preTokens[tb.mint] = parseFloat(tb.uiTokenAmount?.uiAmountString || '0');
+        }
+    }
+    for (const tb of meta.postTokenBalances || []) {
+        if (tb.owner === walletAddress && tb.mint !== WRAPPED_SOL) {
+            postTokens[tb.mint] = parseFloat(tb.uiTokenAmount?.uiAmountString || '0');
+        }
+    }
+
+    const allMints = new Set([...Object.keys(preTokens), ...Object.keys(postTokens)]);
+    let bestMint = null;
+    let bestDelta = 0;
+
+    for (const mint of allMints) {
+        const delta = (postTokens[mint] || 0) - (preTokens[mint] || 0);
+        if (Math.abs(delta) > Math.abs(bestDelta)) {
+            bestMint = mint;
+            bestDelta = delta;
+        }
+    }
+
+    if (!bestMint || Math.abs(bestDelta) < 0.000001) return null;
+
+    // BUY: SOL decreased + token increased
+    if (solDelta < -0.001 && bestDelta > 0) {
+        const swapSolAmount = Math.abs(solDelta) - fee;
+        if (swapSolAmount <= 0) return null;
+        return { side: 'BUY', mint: bestMint, solAmount: swapSolAmount, tokenAmount: bestDelta, signature };
+    }
+
+    // SELL: SOL increased + token decreased
+    if (solDelta > 0.001 && bestDelta < 0) {
+        const swapSolAmount = solDelta + fee;
+        if (swapSolAmount <= 0) return null;
+        return { side: 'SELL', mint: bestMint, solAmount: swapSolAmount, tokenAmount: Math.abs(bestDelta), signature };
+    }
+
+    return null;
+}
+
+// ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
 
@@ -1670,6 +1821,12 @@ export default {
         // Verify Membership (Whop)
         if (path === '/verify-membership' && request.method === 'POST') {
             const response = await handleVerifyMembership(request, env);
+            return withCors(response, request);
+        }
+
+        // Wallet Swap Polling (Shadow Mode)
+        if (path === '/wallet/poll' && request.method === 'GET') {
+            const response = await handleWalletPoll(request, env);
             return withCors(response, request);
         }
 

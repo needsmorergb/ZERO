@@ -18,6 +18,7 @@ import {
   setupMessageListener,
   tryHandleSwap,
   SWAP_URL_PATTERNS,
+  setupWalletAddressCapture,
 } from "../shared/bridge-utils.js";
 
 (() => {
@@ -197,25 +198,22 @@ import {
 
   // --- Full Network Hooks (safe on Axiom — no SES lockdown) ---
 
-  // Fetch
+  // Fetch — clone API responses for price data + swap detection
   const origFetch = window.fetch;
   window.fetch = async (...args) => {
     const res = await origFetch(...args);
     try {
       const url = String(args?.[0]?.url || args?.[0] || "");
-      if (/quote|price|ticker|market|candles|kline|chart|pair|swap|route/i.test(url)) {
+      const isApiUrl = /quote|price|ticker|market|candles|kline|chart|pair|swap|route/i.test(url);
+
+      if (isApiUrl || SWAP_URL_PATTERNS.test(url)) {
         const clone = res.clone();
         clone
           .json()
-          .then((json) => tryHandleJson(url, json, ctx))
-          .catch(() => {});
-      }
-      // Shadow mode: detect swap/trade submissions
-      if (SWAP_URL_PATTERNS.test(url)) {
-        const clone2 = res.clone();
-        clone2
-          .json()
-          .then((json) => tryHandleSwap(url, json, ctx))
+          .then((json) => {
+            if (isApiUrl) tryHandleJson(url, json, ctx);
+            if (SWAP_URL_PATTERNS.test(url)) tryHandleSwap(url, json, ctx);
+          })
           .catch(() => {});
       }
     } catch { /* swallowed */ }
@@ -234,16 +232,12 @@ import {
       try {
         const url = this.__paper_url || "";
         const ct = (this.getResponseHeader("content-type") || "").toLowerCase();
-        if (/quote|price|ticker|market|candles|kline|chart|pair|swap|route/i.test(url)) {
-          if (ct.includes("json")) {
-            const json = JSON.parse(this.responseText);
+        if (ct.includes("json")) {
+          const json = JSON.parse(this.responseText);
+          if (/quote|price|ticker|market|candles|kline|chart|pair|swap|route/i.test(url)) {
             tryHandleJson(url, json, ctx);
           }
-        }
-        // Shadow mode: detect swap/trade submissions
-        if (SWAP_URL_PATTERNS.test(url) && ct.includes("json")) {
-          const json = JSON.parse(this.responseText);
-          tryHandleSwap(url, json, ctx);
+          if (SWAP_URL_PATTERNS.test(url)) tryHandleSwap(url, json, ctx);
         }
       } catch { /* swallowed */ }
     });
@@ -361,4 +355,7 @@ import {
 
   // --- Message Listener (shared handlers + price reference) ---
   setupMessageListener(ctx);
+
+  // --- Wallet address capture for Shadow Mode balance ---
+  setupWalletAddressCapture();
 })();

@@ -6,6 +6,7 @@
 
 import { DiagnosticsStore } from "./diagnostics-store.js";
 import { buildUploadPackets, enqueueUploadPackets } from "./upload-packet.js";
+import { Logger } from "./logger.js";
 
 const UPLOAD_INTERVAL_MS = 60000; // Check every minute
 const RETRY_DELAY_MS = 30000; // Wait 30s on error
@@ -15,9 +16,9 @@ export const DiagnosticsManager = {
 
   init() {
     if (this._timer) return;
-    console.log(
-      "[DiagnosticsManager] Initialized. Status:",
-      DiagnosticsStore.isAutoSendEnabled() ? "ENABLED" : "DISABLED"
+    Logger.debug(
+      "[DiagnosticsManager] Initialized:",
+      DiagnosticsStore.isAutoSendEnabled() ? "enabled" : "disabled"
     );
     this._scheduleNextTick();
   },
@@ -51,13 +52,13 @@ export const DiagnosticsManager = {
       // This moves events from 'unsynced' to 'queued' state
       const enqueuedCount = enqueueUploadPackets();
       if (enqueuedCount > 0) {
-        console.log(`[DiagnosticsManager] Enqueued ${enqueuedCount} packets.`);
+        Logger.debug(`[DiagnosticsManager] Enqueued ${enqueuedCount} packets.`);
       }
 
       // 4. Notify background worker to process queue
       chrome.runtime.sendMessage({ type: "ZERO_TRIGGER_UPLOAD" });
     } catch (e) {
-      console.error("[DiagnosticsManager] Loop error:", e);
+      Logger.error("[DiagnosticsManager] Loop error:", e);
     }
 
     // Schedule next (always run loop to catch re-enables)

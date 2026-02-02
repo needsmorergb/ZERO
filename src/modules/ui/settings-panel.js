@@ -28,6 +28,7 @@ export const SettingsPanel = {
 
     const currentMode = Store.state.settings.tradingMode || "paper";
     const isElite = FeatureManager.isElite(Store.state);
+    const isDebugLogs = !!Store.state.settings?.debugLogs;
     const diagState = DiagnosticsStore.state || {};
     const isAutoSend = diagState.settings?.privacy?.autoSendDiagnostics || false;
     const lastUpload = diagState.settings?.diagnostics?.lastUploadedEventTs || 0;
@@ -88,7 +89,7 @@ export const SettingsPanel = {
                 </div>
 
                 <!-- Privacy & Data -->
-                <div class="settings-section-title">Optional diagnostics (off by default)</div>
+                <div class="settings-section-title">Share anonymous diagnostics</div>
 
                 <div class="privacy-info-box">
                     <p>ZERØ stores your paper trading data locally on your device by default.</p>
@@ -111,7 +112,7 @@ export const SettingsPanel = {
                 <div class="setting-row">
                     <div class="setting-info">
                         <div class="setting-name">Enable diagnostics</div>
-                        <div class="setting-desc">Enable optional diagnostics to help improve ZERØ and future features.</div>
+                        <div class="setting-desc">Helps improve stability. Off by default.</div>
                         <div class="setting-desc" style="opacity:0.6; margin-top:4px;">Some future features may improve faster with anonymized diagnostics enabled.</div>
                     </div>
                     <label class="toggle-switch">
@@ -158,6 +159,19 @@ export const SettingsPanel = {
                     <button class="settings-action-btn" data-setting-act="viewPayload">View sample payload</button>
                     <button class="settings-action-btn danger" data-setting-act="deleteQueue">Delete queued uploads</button>
                     <button class="settings-action-btn danger" data-setting-act="deleteLocal">Delete local ZERØ data</button>
+                </div>
+
+                <!-- Debug Logging -->
+                <div class="settings-section-title">Developer</div>
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <div class="setting-name">Debug logs</div>
+                        <div class="setting-desc">Enable verbose logging to the browser console. Off by default.</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" data-setting="debugLogs" ${isDebugLogs ? "checked" : ""}>
+                        <span class="slider"></span>
+                    </label>
                 </div>
 
                 <!-- Elite -->
@@ -282,6 +296,18 @@ export const SettingsPanel = {
           DiagnosticsStore.disableAutoSend();
           this._refreshDiagStatus(overlay, false);
         }
+      };
+    }
+
+    // Debug logs toggle
+    const debugToggle = overlay.querySelector('[data-setting="debugLogs"]');
+    if (debugToggle) {
+      debugToggle.onchange = async (e) => {
+        const enabled = e.target.checked;
+        Store.state.settings.debugLogs = enabled;
+        await Store.save();
+        const { Logger } = await import("../logger.js");
+        Logger.configure(enabled);
       };
     }
 

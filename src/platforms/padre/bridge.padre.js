@@ -18,6 +18,7 @@ import {
   setupMessageListener,
   tryHandleSwap,
   SWAP_URL_PATTERNS,
+  setupWalletAddressCapture,
 } from "../shared/bridge-utils.js";
 
 (() => {
@@ -187,19 +188,20 @@ import {
       const res = await origFetch(...args);
       try {
         const url = String(args?.[0]?.url || args?.[0] || "");
-        if (/quote|price|ticker|market|candles|kline|chart|pair|swap|route/i.test(url)) {
+        const isApiUrl = /quote|price|ticker|market|candles|kline|chart|pair|swap|route/i.test(url);
+
+        const isSwapUrl = SWAP_URL_PATTERNS.test(url);
+        if (isApiUrl || isSwapUrl) {
+          if (isSwapUrl) {
+            console.log(`[ZERØ] Padre: Swap URL intercepted: ${url.slice(0, 120)}`);
+          }
           const clone = res.clone();
           clone
             .json()
-            .then((json) => tryHandleJson(url, json, ctx))
-            .catch(() => {});
-        }
-        // Shadow mode: detect swap/trade submissions
-        if (SWAP_URL_PATTERNS.test(url)) {
-          const clone2 = res.clone();
-          clone2
-            .json()
-            .then((json) => tryHandleSwap(url, json, ctx))
+            .then((json) => {
+              if (isApiUrl) tryHandleJson(url, json, ctx);
+              if (isSwapUrl) tryHandleSwap(url, json, ctx);
+            })
             .catch(() => {});
         }
       } catch { /* swallowed */ }
@@ -363,4 +365,7 @@ import {
 
   // --- Message Listener (shared handlers + price reference) ---
   setupMessageListener(ctx);
+
+  // --- Wallet address capture for Shadow Mode balance ---
+  setupWalletAddressCapture();
 })();

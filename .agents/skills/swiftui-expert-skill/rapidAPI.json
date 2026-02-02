@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "RapidAPI Hub - The Old Bird": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://mcp.rapidapi.com",
+        "--header",
+        "x-api-host: twitter154.p.rapidapi.com",
+        "--header",
+        "x-api-key: 832d3c9d00msh6713ae0e67cc3bbp1d7cc5jsn7809a35db2d5"
+      ]
+    }
+  }
+}

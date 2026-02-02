@@ -785,7 +785,95 @@
     }
   });
 
+  // src/modules/logger.js
+  var logger_exports = {};
+  __export(logger_exports, {
+    Logger: () => Logger
+  });
+  var LEVEL_MAP, Logger;
+  var init_logger = __esm({
+    "src/modules/logger.js"() {
+      LEVEL_MAP = { debug: 0, info: 1, warn: 2, error: 3, silent: 4 };
+      Logger = {
+        /** @type {'debug'|'info'|'warn'|'error'|'silent'} */
+        level: "warn",
+        /**
+         * Call once after Store.load() with the user's debugLogs setting.
+         * @param {boolean} debugEnabled
+         */
+        configure(debugEnabled) {
+          this.level = debugEnabled ? "debug" : "warn";
+        },
+        _shouldLog(lvl) {
+          return LEVEL_MAP[lvl] >= LEVEL_MAP[this.level];
+        },
+        debug(msg, ...args) {
+          if (!this._shouldLog("debug"))
+            return;
+          console.debug(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
+        },
+        info(msg, ...args) {
+          if (!this._shouldLog("info"))
+            return;
+          console.log(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
+        },
+        warn(msg, ...args) {
+          if (!this._shouldLog("warn"))
+            return;
+          console.warn(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
+        },
+        error(msg, ...args) {
+          if (!this._shouldLog("error"))
+            return;
+          console.error(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
+        },
+        cleanArgs(args) {
+          return args.map((arg) => {
+            if (arg instanceof Error) {
+              return { name: arg.name, message: arg.message, stack: arg.stack };
+            }
+            if (typeof DOMException !== "undefined" && arg instanceof DOMException) {
+              return { name: arg.name, message: arg.message, code: arg.code };
+            }
+            if (typeof arg === "object" && arg !== null) {
+              const clean = { ...arg };
+              ["key", "secret", "token", "auth", "password", "walletAddress", "privateKey"].forEach((k) => {
+                if (k in clean)
+                  clean[k] = "***REDACTED***";
+              });
+              return clean;
+            }
+            return arg;
+          });
+        }
+      };
+    }
+  });
+
   // src/modules/upload-packet.js
+  function sanitizeEvent(evt) {
+    if (!evt || !evt.payload)
+      return evt;
+    const p = { ...evt.payload };
+    delete p.walletAddress;
+    delete p.wallet;
+    delete p.privateKey;
+    delete p.notes;
+    delete p.thesis;
+    for (const [k, v] of Object.entries(p)) {
+      if (typeof v === "string" && WALLET_RE.test(v)) {
+        p[k] = "***REDACTED***";
+      }
+      if (typeof v === "string" && v.startsWith("http") && v.includes("?")) {
+        p[k] = v.split("?")[0] + "?***";
+      }
+    }
+    if (typeof p.qty === "number")
+      p.qty = p.qty > 0 ? "nonzero" : "zero";
+    if (typeof p.amount === "number")
+      p.amount = p.amount > 0 ? "nonzero" : "zero";
+    return { ...evt, payload: p };
+  }
   function buildUploadPackets() {
     const events = DiagnosticsStore.getEventsDelta();
     if (events.length === 0)
@@ -803,7 +891,7 @@
         createdAt: Date.now(),
         schemaVersion: SCHEMA_VERSION,
         extensionVersion: version,
-        eventsDelta: chunk
+        eventsDelta: chunk.map(sanitizeEvent)
       };
       const serialized = JSON.stringify(packet);
       if (serialized.length > MAX_PAYLOAD_BYTES && chunk.length > 100) {
@@ -822,7 +910,7 @@
     }
     return packets.length;
   }
-  var MAX_EVENTS_PER_PACKET, MAX_PAYLOAD_BYTES;
+  var MAX_EVENTS_PER_PACKET, MAX_PAYLOAD_BYTES, WALLET_RE;
   var init_upload_packet = __esm({
     "src/modules/upload-packet.js"() {
       init_diagnostics_store();
@@ -830,6 +918,7 @@
       init_store();
       MAX_EVENTS_PER_PACKET = 2e3;
       MAX_PAYLOAD_BYTES = 300 * 1024;
+      WALLET_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
     }
   });
 
@@ -843,15 +932,16 @@
     "src/modules/diagnostics-manager.js"() {
       init_diagnostics_store();
       init_upload_packet();
+      init_logger();
       UPLOAD_INTERVAL_MS = 6e4;
       DiagnosticsManager = {
         _timer: null,
         init() {
           if (this._timer)
             return;
-          console.log(
-            "[DiagnosticsManager] Initialized. Status:",
-            DiagnosticsStore.isAutoSendEnabled() ? "ENABLED" : "DISABLED"
+          Logger.debug(
+            "[DiagnosticsManager] Initialized:",
+            DiagnosticsStore.isAutoSendEnabled() ? "enabled" : "disabled"
           );
           this._scheduleNextTick();
         },
@@ -876,11 +966,11 @@
             }
             const enqueuedCount = enqueueUploadPackets();
             if (enqueuedCount > 0) {
-              console.log(`[DiagnosticsManager] Enqueued ${enqueuedCount} packets.`);
+              Logger.debug(`[DiagnosticsManager] Enqueued ${enqueuedCount} packets.`);
             }
             chrome.runtime.sendMessage({ type: "ZERO_TRIGGER_UPLOAD" });
           } catch (e) {
-            console.error("[DiagnosticsManager] Loop error:", e);
+            Logger.error("[DiagnosticsManager] Loop error:", e);
           }
           this._scheduleNextTick();
         },
@@ -6936,44 +7026,7 @@ input:checked + .slider:before {
 
   // src/modules/license.js
   init_store();
-
-  // src/modules/logger.js
-  var Logger = {
-    isProduction: false,
-    // Set to true in prod builds
-    info(msg, ...args) {
-      if (this.isProduction)
-        return;
-      console.log(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
-    },
-    warn(msg, ...args) {
-      console.warn(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
-    },
-    error(msg, ...args) {
-      console.error(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
-    },
-    cleanArgs(args) {
-      return args.map((arg) => {
-        if (arg instanceof Error) {
-          return { name: arg.name, message: arg.message, stack: arg.stack };
-        }
-        if (typeof DOMException !== "undefined" && arg instanceof DOMException) {
-          return { name: arg.name, message: arg.message, code: arg.code };
-        }
-        if (typeof arg === "object" && arg !== null) {
-          const clean = { ...arg };
-          ["key", "secret", "token", "auth", "password"].forEach((k) => {
-            if (k in clean)
-              clean[k] = "***REDACTED***";
-          });
-          return clean;
-        }
-        return arg;
-      });
-    }
-  };
-
-  // src/modules/license.js
+  init_logger();
   var WHOP_PRODUCT_URL = "https://whop.com/crowd-ctrl/zero-elite/";
   var REVALIDATION_INTERVAL_MS = 24 * 60 * 60 * 1e3;
   var License = {
@@ -8452,6 +8505,7 @@ canvas#equity-canvas {
       overlay.className = "confirm-modal-overlay zero-settings-overlay";
       const currentMode = Store.state.settings.tradingMode || "paper";
       const isElite = FeatureManager.isElite(Store.state);
+      const isDebugLogs = !!Store.state.settings?.debugLogs;
       const diagState = DiagnosticsStore.state || {};
       const isAutoSend = diagState.settings?.privacy?.autoSendDiagnostics || false;
       const lastUpload = diagState.settings?.diagnostics?.lastUploadedEventTs || 0;
@@ -8511,7 +8565,7 @@ canvas#equity-canvas {
                 </div>
 
                 <!-- Privacy & Data -->
-                <div class="settings-section-title">Optional diagnostics (off by default)</div>
+                <div class="settings-section-title">Share anonymous diagnostics</div>
 
                 <div class="privacy-info-box">
                     <p>ZER\xD8 stores your paper trading data locally on your device by default.</p>
@@ -8534,7 +8588,7 @@ canvas#equity-canvas {
                 <div class="setting-row">
                     <div class="setting-info">
                         <div class="setting-name">Enable diagnostics</div>
-                        <div class="setting-desc">Enable optional diagnostics to help improve ZER\xD8 and future features.</div>
+                        <div class="setting-desc">Helps improve stability. Off by default.</div>
                         <div class="setting-desc" style="opacity:0.6; margin-top:4px;">Some future features may improve faster with anonymized diagnostics enabled.</div>
                     </div>
                     <label class="toggle-switch">
@@ -8569,6 +8623,19 @@ canvas#equity-canvas {
                     <button class="settings-action-btn" data-setting-act="viewPayload">View sample payload</button>
                     <button class="settings-action-btn danger" data-setting-act="deleteQueue">Delete queued uploads</button>
                     <button class="settings-action-btn danger" data-setting-act="deleteLocal">Delete local ZER\xD8 data</button>
+                </div>
+
+                <!-- Debug Logging -->
+                <div class="settings-section-title">Developer</div>
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <div class="setting-name">Debug logs</div>
+                        <div class="setting-desc">Enable verbose logging to the browser console. Off by default.</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" data-setting="debugLogs" ${isDebugLogs ? "checked" : ""}>
+                        <span class="slider"></span>
+                    </label>
                 </div>
 
                 <!-- Elite -->
@@ -8678,6 +8745,16 @@ canvas#equity-canvas {
             DiagnosticsStore.disableAutoSend();
             this._refreshDiagStatus(overlay, false);
           }
+        };
+      }
+      const debugToggle = overlay.querySelector('[data-setting="debugLogs"]');
+      if (debugToggle) {
+        debugToggle.onchange = async (e) => {
+          const enabled = e.target.checked;
+          Store.state.settings.debugLogs = enabled;
+          await Store.save();
+          const { Logger: Logger2 } = await Promise.resolve().then(() => (init_logger(), logger_exports));
+          Logger2.configure(enabled);
         };
       }
       overlay.addEventListener("click", async (e) => {
@@ -11363,27 +11440,175 @@ canvas#equity-canvas {
 
   // src/modules/core/shadow-trade-ingestion.js
   init_store();
+  var POLL_INTERVAL_MS = 15e3;
   var ShadowTradeIngestion = {
     initialized: false,
     walletBalanceFetched: false,
+    _pollTimer: null,
+    _lastSignature: null,
+    _polling: false,
     init() {
       if (this.initialized)
         return;
       this.initialized = true;
+      const isShadow = Store.isShadowMode();
+      console.log(`[ShadowIngestion] Mode: ${isShadow ? "SHADOW" : Store.state?.settings?.tradingMode || "unknown"}`);
       window.addEventListener("message", (e) => {
         if (e.source !== window)
           return;
-        if (e.data?.type !== "SHADOW_TRADE_DETECTED")
-          return;
         if (!e.data?.__paper)
           return;
-        this.handleDetectedTrade(e.data);
+        if (e.data.type === "SHADOW_TRADE_DETECTED") {
+          console.log(`[ShadowIngestion] Bridge swap event received: ${e.data.side} ${e.data.mint?.slice(0, 8) || "?"}`);
+          this.handleDetectedTrade(e.data);
+        }
+        if (e.data.type === "WALLET_ADDRESS_DETECTED") {
+          console.log(`[ShadowIngestion] Wallet address message received: ${e.data.walletAddress?.slice(0, 8) || "none"}`);
+          this.handleWalletAddress(e.data.walletAddress);
+        }
       });
-      console.log("[ShadowIngestion] Initialized \u2014 listening for swap events");
+      const storedAddr = Store.state?.shadow?.walletAddress;
+      if (storedAddr) {
+        console.log(`[ShadowIngestion] Stored wallet found: ${storedAddr.slice(0, 8)}...`);
+        this.startHeliusPolling(storedAddr);
+        this.proactiveFetchBalance();
+      } else {
+        console.log("[ShadowIngestion] No stored wallet \u2014 waiting for bridge detection");
+        console.log(`[ShadowIngestion] Store.state.shadow exists: ${!!Store.state?.shadow}`);
+      }
+      console.log("[ShadowIngestion] Initialized \u2014 listening for swap events + Helius polling");
     },
+    // --- Helius RPC Polling ---
+    startHeliusPolling(walletAddress) {
+      if (this._pollTimer)
+        return;
+      if (!walletAddress)
+        return;
+      console.log(`[ShadowIngestion] Starting Helius polling for ${walletAddress.slice(0, 8)}...`);
+      this._polling = false;
+      this.pollWalletSwaps(walletAddress, true);
+      this._pollTimer = setInterval(() => {
+        this.pollWalletSwaps(walletAddress, false);
+      }, POLL_INTERVAL_MS);
+    },
+    stopHeliusPolling() {
+      if (this._pollTimer) {
+        clearInterval(this._pollTimer);
+        this._pollTimer = null;
+      }
+      this._lastSignature = null;
+      this._polling = false;
+    },
+    _pollCycleCount: 0,
+    async pollWalletSwaps(walletAddress, cursorOnly) {
+      if (this._polling)
+        return;
+      this._polling = true;
+      this._pollCycleCount++;
+      try {
+        if (this._pollCycleCount % 4 === 0) {
+          console.log(`[ShadowIngestion] Helius poll #${this._pollCycleCount} \u2014 cursor: ${this._lastSignature?.slice(0, 12) || "none"}`);
+        }
+        const response = await new Promise((resolve, reject) => {
+          chrome.runtime.sendMessage(
+            {
+              type: "POLL_WALLET_SWAPS",
+              walletAddress,
+              lastSignature: this._lastSignature
+            },
+            (resp) => {
+              if (chrome.runtime.lastError)
+                reject(chrome.runtime.lastError);
+              else
+                resolve(resp);
+            }
+          );
+        });
+        if (!response?.ok) {
+          console.warn("[ShadowIngestion] Poll error:", response?.error || "no response");
+          return;
+        }
+        if (response.lastSignature) {
+          this._lastSignature = response.lastSignature;
+        }
+        if (cursorOnly) {
+          console.log(
+            `[ShadowIngestion] Helius cursor set: ${this._lastSignature?.slice(0, 12) || "none"}... (polling active)`
+          );
+          return;
+        }
+        const swaps = response.swaps || [];
+        if (swaps.length > 0) {
+          console.log(`[ShadowIngestion] Helius found ${swaps.length} new swap(s)`);
+        }
+        for (const swap of swaps) {
+          await this.handleDetectedTrade(swap);
+        }
+      } catch (e) {
+        console.warn("[ShadowIngestion] Helius poll failed:", e?.message || e);
+      } finally {
+        this._polling = false;
+      }
+    },
+    // --- Wallet Address Detection ---
+    async handleWalletAddress(addr) {
+      if (!addr || typeof addr !== "string")
+        return;
+      const shadow = Store.state?.shadow;
+      if (!shadow)
+        return;
+      if (shadow.walletAddress === addr)
+        return;
+      shadow.walletAddress = addr;
+      await Store.save();
+      console.log(`[ShadowIngestion] Wallet address stored: ${addr.slice(0, 8)}...`);
+      this.startHeliusPolling(addr);
+      this.proactiveFetchBalance();
+    },
+    async proactiveFetchBalance() {
+      if (this.walletBalanceFetched)
+        return;
+      if (!Store.isShadowMode())
+        return;
+      const session = Store.state?.shadowSession;
+      if (!session || session.balance > 0)
+        return;
+      const walletAddress = Store.state?.shadow?.walletAddress;
+      if (!walletAddress)
+        return;
+      this.walletBalanceFetched = true;
+      try {
+        const response = await new Promise((resolve, reject) => {
+          chrome.runtime.sendMessage(
+            { type: "GET_WALLET_BALANCE", walletAddress },
+            (resp) => {
+              if (chrome.runtime.lastError)
+                reject(chrome.runtime.lastError);
+              else
+                resolve(resp);
+            }
+          );
+        });
+        if (response && response.ok && response.balance > 0) {
+          session.balance = response.balance;
+          session.equity = response.balance;
+          await Store.save();
+          console.log(
+            `[ShadowIngestion] Wallet balance: ${response.balance.toFixed(4)} SOL`
+          );
+          if (window.ZeroHUD && window.ZeroHUD.updateAll) {
+            window.ZeroHUD.updateAll();
+          }
+        }
+      } catch (e) {
+        console.warn("[ShadowIngestion] Proactive balance fetch failed:", e);
+        this.walletBalanceFetched = false;
+      }
+    },
+    // --- Trade Processing ---
     async handleDetectedTrade(data) {
       if (!Store.isShadowMode()) {
-        console.log("[ShadowIngestion] Ignoring swap \u2014 not in shadow mode");
+        console.log(`[ShadowIngestion] Trade ignored \u2014 not in shadow mode (current: ${Store.state?.settings?.tradingMode || "?"})`);
         return;
       }
       const state = Store.state;
@@ -11398,11 +11623,11 @@ canvas#equity-canvas {
         (t) => t.signature === signature
       );
       if (existingTrade) {
-        console.log(`[ShadowIngestion] Duplicate tx ${signature.slice(0, 12)}... \u2014 skipping`);
         return;
       }
+      const src = data.source === "helius" ? "Helius" : "Bridge";
       console.log(
-        `[ShadowIngestion] Processing ${side} \u2014 ${symbol || mint.slice(0, 8)}, ${solAmount.toFixed(4)} SOL`
+        `[ShadowIngestion] Processing ${side} via ${src} \u2014 ${symbol || mint.slice(0, 8)}, ${solAmount.toFixed(4)} SOL`
       );
       if (side === "BUY") {
         await this.recordShadowBuy(state, data);
@@ -11581,17 +11806,20 @@ canvas#equity-canvas {
     },
     async fetchWalletBalance(session, firstTradeAmount) {
       this.walletBalanceFetched = true;
+      const walletAddress = Store.state?.shadow?.walletAddress;
       try {
         const response = await new Promise((resolve, reject) => {
-          chrome.runtime.sendMessage({ type: "GET_WALLET_BALANCE" }, (resp) => {
-            if (chrome.runtime.lastError) {
-              reject(chrome.runtime.lastError);
-            } else {
-              resolve(resp);
+          chrome.runtime.sendMessage(
+            { type: "GET_WALLET_BALANCE", walletAddress },
+            (resp) => {
+              if (chrome.runtime.lastError)
+                reject(chrome.runtime.lastError);
+              else
+                resolve(resp);
             }
-          });
+          );
         });
-        if (response && response.balance > 0) {
+        if (response && response.ok && response.balance > 0) {
           session.balance = response.balance;
           console.log(
             `[ShadowIngestion] Wallet balance detected: ${response.balance.toFixed(4)} SOL`
@@ -11602,9 +11830,12 @@ canvas#equity-canvas {
         console.warn("[ShadowIngestion] Wallet balance fetch failed:", e);
       }
       session.balance = firstTradeAmount * 10;
-      console.log(`[ShadowIngestion] Wallet balance estimated: ~${session.balance.toFixed(4)} SOL`);
+      console.log(
+        `[ShadowIngestion] Wallet balance estimated: ~${session.balance.toFixed(4)} SOL`
+      );
     },
     cleanup() {
+      this.stopHeliusPolling();
       this.initialized = false;
       this.walletBalanceFetched = false;
       console.log("[ShadowIngestion] Cleanup complete");
@@ -11719,6 +11950,7 @@ canvas#equity-canvas {
 
   // src/platforms/padre/boot.padre.js
   init_diagnostics_store();
+  init_logger();
   (async () => {
     "use strict";
     const PLATFORM = "Padre";
@@ -11783,6 +12015,12 @@ canvas#equity-canvas {
       PnlCalculator.init();
     } catch (e) {
       Logger.error("PNL Calculator Init Failed:", e);
+    }
+    try {
+      Logger.info("Init ShadowTradeIngestion...");
+      ShadowTradeIngestion.init();
+    } catch (e) {
+      Logger.error("ShadowTradeIngestion Init Failed:", e);
     }
     try {
       Logger.info("Init HUD...");

@@ -16,7 +16,8 @@
     "https://api.dexscreener.com/*",
     "https://api.coingecko.com/*",
     "https://zero-diagnostics.zerodata1.workers.dev/*",
-    "https://api.get-zero.xyz/*"
+    "https://api.get-zero.xyz/*",
+    "https://mainnet.helius-rpc.com/*"
   ],
   "icons": {
     "16": "assets/zero-16.png",
