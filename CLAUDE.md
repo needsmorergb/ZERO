@@ -7,7 +7,7 @@ ZERO is a Chrome extension for zero-risk paper trading on Solana (Axiom + Padre 
 ## Architecture
 
 - **Content scripts** are per-platform bundles built with esbuild (`content.bundle.axiom.js`, `content.bundle.padre.js`)
-- **Bridge scripts** run in page context (not isolated) to intercept fetch/XHR/WebSocket
+- **Bridge scripts** run in page context (MAIN world, not isolated) for DOM scraping, TradingView API access, and network interception. Note: Padre uses SES lockdown which kills fetch/XHR overrides — see "Padre-Specific Pitfalls" below
 - **Background service worker** (`background.js`) handles price fetching, API proxying, caching
 - **Context API** lives in `worker-context/` — a Cloudflare Worker that enriches tokens via twitter154 and Helius DAS/RPC
 - **Modules** follow a core/ui split: `src/modules/core/` for logic, `src/modules/ui/` for HUD rendering
@@ -92,15 +92,66 @@ Listens for `SHADOW_TRADE_DETECTED` messages from bridge scripts and records rea
 - Deduplicates by transaction signature
 - Auto-detects wallet SOL balance on first BUY via `GET_WALLET_BALANCE` → Helius RPC
 
-### Swap Detection (`bridge-utils.js`)
+### Swap Detection — Multi-Layer Architecture (`bridge-utils.js`, `bridge.padre.js`)
 
-Bridge scripts intercept fetch/XHR responses matching `SWAP_URL_PATTERNS` (swap, execute, submit, send-tx, etc.) and extract:
-- Transaction signature (proof of on-chain execution)
-- Input/output mints → determine BUY (SOL in) vs SELL (SOL out)
-- SOL amount (auto-detects lamports vs SOL)
-- Token amount and price
+Trade detection uses platform-appropriate methods. **The detection layer varies by platform** due to SES lockdown and wallet adapter differences.
 
-Sends `SHADOW_TRADE_DETECTED` via `window.postMessage` for the content script to process.
+#### Padre: Header Delta Detection (Primary)
+
+Padre uses SES (Secure EcmaScript) lockdown that **replaces `window.fetch` and `XMLHttpRequest.prototype.send` after our bridge script runs**. This makes all fetch/XHR interception silently non-functional. Additionally, Padre's wallet adapter caches method references at initialization time, so `signTransaction`/`signAndSendTransaction` hooks are installed but never called (the adapter calls the cached original).
+
+**What works on Padre:**
+- `scrapePadreHeader()` reads cumulative "Invested" and "Sold" USD values from the header DOM
+- `detectHeaderTrade()` tracks deltas: invested increase → BUY, sold increase → SELL
+- MutationObserver triggers re-scrape within ~100ms of DOM changes
+- TradingView `createExecutionShape` hook logs Padre's B/S markers (secondary diagnostic)
+- `PerformanceObserver` (Resource Timing API) detects swap-related network requests even after SES — triggers aggressive deep scan
+
+**Header scraper architecture (`scrapePadreHeader`):**
+- **Fast scan** (2000-element limit): reliably finds price, MC, liquidity in the header bar (early in DOM)
+- **Cache-first reads** (`_posCache`): after first discovery of invested/sold elements, reads directly from cached DOM element references (instant, bypasses element limit)
+- **Deep scan** (8000-element limit, every 3s fallback): re-discovers position field elements that are beyond the 2000 fast-scan limit after TradingView chart renders. Also triggered aggressively (every 200ms) for 5s after PerfObs detects a swap URL
+- **Cache invalidation** (`invalidatePosCache()`): called after every detected trade — Padre's React may re-render the position panel, making cached element references stale
+
+**What does NOT work on Padre (do not retry these approaches):**
+- `window.fetch` override — SES replaces it (confirmed: `fetch override was REPLACED`)
+- `XMLHttpRequest.prototype.send` override — same SES issue
+- `signTransaction` / `signAndSendTransaction` hooks — wallet adapter caches method references before hooks are installed; hooks fire but are never called by Padre's code
+- `tryDetectRpcSignature()` — depends on fetch override which is dead
+
+**Header delta detection emits `usdAmount` instead of `solAmount`** (SOL price unavailable in bridge context). The content script (`ShadowTradeIngestion.handleDetectedTrade()`) converts USD→SOL using `PnlCalculator.getSolPrice()`.
+
+#### Axiom: Fetch/XHR Interception (Primary)
+
+Axiom does NOT use SES lockdown, so fetch/XHR interception works normally:
+- `tryHandleSwap()` intercepts swap API responses matching `SWAP_URL_PATTERNS`
+- Extracts tx signature, mints, amounts directly from response JSON
+- `cacheSwapQuote()` caches recent quotes for wallet hook correlation
+
+#### Shared: Wallet Hooks (Backup)
+
+`setupSwapDetection()` in `bridge-utils.js` hooks `signAndSendTransaction`, `sendTransaction`, and `signTransaction` on wallet providers. These work as the primary detection on platforms without SES. On Padre they are installed but non-functional (see above).
+
+The `_bs58encode()` function converts `Uint8Array(64)` signatures from `signTransaction` results to base58 txid strings.
+
+#### Shared: RPC Resolution (Backup)
+
+When only a tx signature is available (no quote data), `SHADOW_SWAP_SIGNATURE` is emitted. The content script's `resolveSwapSignature()` sends `RESOLVE_SWAP_TX` to the background service worker, which calls `getTransaction` RPC and parses with `parseSwapFromTx()`. Retry loop: 3 attempts at [1.5s, 3s, 5s] delays.
+
+#### Message Types
+
+| Message | Direction | Purpose |
+|---------|-----------|---------|
+| `SHADOW_TRADE_DETECTED` | bridge → content | Full trade data (side, mint, solAmount/usdAmount, price, signature) |
+| `SHADOW_SWAP_SIGNATURE` | bridge → content | Signature-only, needs RPC resolution |
+| `RESOLVE_SWAP_TX` | content → background | Single `getTransaction` RPC call |
+| `PADRE_PNL_TICK` | bridge → content | Platform T.PNL from header scraping |
+
+#### Deduplication
+
+- By tx signature in `shadowTrades` (prevents recording same trade twice)
+- `_pendingSignatures` Set prevents concurrent resolve loops
+- Header-detected trades use synthetic signatures (`hdr-B-{mint}-{ts}`, `hdr-S-{mint}-{ts}`)
 
 ### Key Rules
 - Shadow and Paper PnL use the exact same WAC math — never diverge these
@@ -123,6 +174,18 @@ Sends `SHADOW_TRADE_DETECTED` via `window.postMessage` for the content script to
 - Bridge scripts run in page context — they cannot access `chrome.*` APIs
 - When editing `view-model.js`, always handle all FieldStatus variants (ok, pending, error, skipped)
 - For authority fields (`mintAuthority`, `freezeAuthority`), distinguish `null` (revoked) from `undefined` (not fetched) — they have different display meanings
+
+### Padre-Specific Pitfalls (SES Lockdown)
+
+- **Do NOT rely on `window.fetch` or XHR interception on Padre** — SES lockdown (`lockdown-install.js`) runs after bridge scripts and replaces/restores these globals. The override appears to install successfully but is silently non-functional.
+- **Do NOT assume wallet hooks will fire on Padre** — Padre's wallet adapter (likely `@solana/wallet-adapter`) caches `signTransaction` method references at initialization. Our hooks replace the property but the cached reference bypasses the hook. The hooks ARE installed (confirmed in logs) but never invoked.
+- **Do NOT parse `fetch()` request bodies in response handlers** — `args[1].body` may be a consumed ReadableStream, a locked stream, or undefined (when `fetch(new Request(...))` is used). `parseRequestBody()` returns null in all these cases.
+- **Padre's working detection vectors:** DOM scraping (MutationObserver + querySelectorAll), TradingView API (`findTV()`, `chart.createExecutionShape`), `PerformanceObserver` (Resource Timing API), and `window.postMessage` listeners. These are all SES-safe.
+- **Always test interception changes on Padre specifically** — what works on Axiom (no SES) will silently fail on Padre. Verify with diagnostic logs that the interceptor actually fires, not just that it installs.
+- **`SWAP_URL_PATTERNS` matches the Padre domain** — the shared regex contains `/trade/` which matches `trade.padre.gg` in the full URL. When using `SWAP_URL_PATTERNS` with `PerformanceObserver` (which provides full URLs), always parse `new URL(url).pathname` first and test only the pathname. The bridge's `PERFOBS_SWAP_PATH` regex is a tightened version for this purpose.
+- **DOM element caching must prefer FIRST match** — Padre's DOM has duplicate labels (e.g., "Sold" appears in both the position panel and other sections). `deepScanPositionFields()` must skip already-cached connected elements (`if (_posCache[key] && _posCache[key].isConnected) continue`) to avoid overwriting good references with later, potentially non-updating duplicates.
+- **Invalidate element cache after trade detection** — Padre uses React, which may re-render the position panel after a trade completes. Cached DOM element references can become disconnected or point to stale nodes. Always call `invalidatePosCache()` after emitting any `SHADOW_TRADE_DETECTED` to force re-discovery on the next poll.
+- **2000-element scan limit is too low after TradingView renders** — TradingView's chart adds thousands of DOM elements (canvas wrappers, SVG, legends, axis labels). Position panel fields ("Invested", "Sold") are below the header bar in DOM order and get pushed past any low scan limit. The cache-first approach solves this: discover once via deep scan (8000 limit), then read cached refs on every poll.
 
 ## When Editing
 

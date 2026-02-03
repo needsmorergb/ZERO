@@ -153,6 +153,25 @@ const INSIGHTS_CSS = `
     color: #64748b;
     margin-top: 4px;
 }
+
+.insights-nodata {
+    font-size: 12px;
+    color: #475569;
+    padding: 14px 16px;
+    background: rgba(255, 255, 255, 0.015);
+    border: 1px solid rgba(255, 255, 255, 0.03);
+    border-radius: 10px;
+    text-align: center;
+}
+
+.insights-disclaimer {
+    font-size: 10px;
+    color: #334155;
+    text-align: center;
+    margin-top: 20px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.03);
+}
 `;
 
 export const Insights = {
@@ -210,6 +229,7 @@ export const Insights = {
                 </div>
                 <div class="insights-scroll">
                     ${isElite ? this.renderEliteContent(state) : this.renderFreeContent()}
+                    <div class="insights-disclaimer">Based on your recorded sessions. Not financial advice.</div>
                 </div>
             </div>
         `;
@@ -247,6 +267,8 @@ export const Insights = {
           "ELITE_AI_DEBRIEF",
           "ELITE_MARKET_CONTEXT",
           "ELITE_TRADE_PLAN",
+          "ELITE_TIME_ANALYSIS",
+          "ELITE_MARKETCAP_ANALYSIS",
         ],
       },
     ];
@@ -281,36 +303,176 @@ export const Insights = {
     const session = Store.getActiveSession();
     const behavior = Store.getActiveBehavior();
 
-    return `
-            <div class="insights-section-label">SESSION OVERVIEW</div>
-            <div class="insights-grid">
-                <div class="insights-elite-card">
-                    <div class="insights-elite-card-title">Discipline Score</div>
-                    <div class="insights-elite-card-value">${session.disciplineScore || 100}</div>
-                    <div class="insights-elite-card-desc">How well you followed your trading rules this session.</div>
-                </div>
-                <div class="insights-elite-card">
-                    <div class="insights-elite-card-title">Behavior Profile</div>
-                    <div class="insights-elite-card-value">${behavior.profile || "Disciplined"}</div>
-                    <div class="insights-elite-card-desc">Your current trading behavior classification.</div>
-                </div>
-            </div>
+    let html = "";
 
-            <div class="insights-section-label">BEHAVIORAL PATTERNS</div>
-            <div class="insights-grid">
-                <div class="insights-elite-card">
-                    <div class="insights-elite-card-title">Tilt Events</div>
-                    <div class="insights-elite-card-value">${behavior.tiltFrequency || 0}</div>
-                </div>
-                <div class="insights-elite-card">
-                    <div class="insights-elite-card-title">FOMO Trades</div>
-                    <div class="insights-elite-card-value">${behavior.fomoTrades || 0}</div>
-                </div>
-                <div class="insights-elite-card">
-                    <div class="insights-elite-card-title">Panic Sells</div>
-                    <div class="insights-elite-card-value">${behavior.panicSells || 0}</div>
-                </div>
-            </div>
-        `;
+    // Existing: Session Overview
+    html += `
+      <div class="insights-section-label">SESSION OVERVIEW</div>
+      <div class="insights-grid">
+        <div class="insights-elite-card">
+          <div class="insights-elite-card-title">Discipline Score</div>
+          <div class="insights-elite-card-value">${session.disciplineScore || 100}</div>
+          <div class="insights-elite-card-desc">How well you followed your trading rules this session.</div>
+        </div>
+        <div class="insights-elite-card">
+          <div class="insights-elite-card-title">Behavior Profile</div>
+          <div class="insights-elite-card-value">${behavior.profile || "Disciplined"}</div>
+          <div class="insights-elite-card-desc">Your current trading behavior classification.</div>
+        </div>
+      </div>
+    `;
+
+    // Existing: Behavioral Patterns
+    html += `
+      <div class="insights-section-label">BEHAVIORAL PATTERNS</div>
+      <div class="insights-grid">
+        <div class="insights-elite-card">
+          <div class="insights-elite-card-title">Tilt Events</div>
+          <div class="insights-elite-card-value">${behavior.tiltFrequency || 0}</div>
+        </div>
+        <div class="insights-elite-card">
+          <div class="insights-elite-card-title">FOMO Trades</div>
+          <div class="insights-elite-card-value">${behavior.fomoTrades || 0}</div>
+        </div>
+        <div class="insights-elite-card">
+          <div class="insights-elite-card-title">Panic Sells</div>
+          <div class="insights-elite-card-value">${behavior.panicSells || 0}</div>
+        </div>
+      </div>
+    `;
+
+    // New: Best Session Times (hour-of-day)
+    html += this._renderTimeOfDaySection(state);
+
+    // New: Performance by Market Cap
+    html += this._renderMarketCapSection(state);
+
+    return html;
+  },
+
+  // --- Time-of-Day Analysis ---
+
+  _computeTimeOfDayAnalysis(state) {
+    const tradesMap = Store.getActiveTrades() || {};
+    const allTrades = Object.values(tradesMap);
+    const sellTrades = allTrades.filter((t) => t.side === "SELL");
+
+    // Bucket by hour (local time)
+    const hourBuckets = {};
+    for (let h = 0; h < 24; h++) {
+      hourBuckets[h] = { wins: 0, losses: 0, pnl: 0, total: 0 };
+    }
+
+    sellTrades.forEach((t) => {
+      const hour = new Date(t.ts).getHours();
+      hourBuckets[hour].total++;
+      hourBuckets[hour].pnl += t.realizedPnlSol || 0;
+      if ((t.realizedPnlSol || 0) > 0) hourBuckets[hour].wins++;
+      else if ((t.realizedPnlSol || 0) < 0) hourBuckets[hour].losses++;
+    });
+
+    // Filter: require >= 5 trades per hour bucket
+    const qualified = Object.entries(hourBuckets)
+      .filter(([_, b]) => b.total >= 5)
+      .map(([hour, b]) => ({
+        hour: parseInt(hour, 10),
+        total: b.total,
+        winRate: b.total > 0 ? ((b.wins / b.total) * 100).toFixed(0) : "0",
+        pnl: b.pnl,
+      }))
+      .sort((a, b) => b.pnl - a.pnl);
+
+    return qualified;
+  },
+
+  _renderTimeOfDaySection(state) {
+    const timeAnalysis = this._computeTimeOfDayAnalysis(state);
+
+    let html = `<div class="insights-section-label">BEST SESSION TIMES</div>`;
+
+    if (timeAnalysis.length === 0) {
+      html += `<div class="insights-nodata">Not enough data yet. Complete more sessions to unlock time-of-day analysis.</div>`;
+      return html;
+    }
+
+    html += `<div class="insights-grid">`;
+    timeAnalysis.slice(0, 3).forEach((slot) => {
+      const hourStr = `${String(slot.hour).padStart(2, "0")}:00 \u2013 ${String((slot.hour + 1) % 24).padStart(2, "0")}:00`;
+      const pnlSign = slot.pnl >= 0 ? "+" : "";
+      html += `
+        <div class="insights-elite-card">
+          <div class="insights-elite-card-title">${hourStr}</div>
+          <div class="insights-elite-card-value">${slot.winRate}% win rate</div>
+          <div class="insights-elite-card-desc">${slot.total} trades, ${pnlSign}${slot.pnl.toFixed(4)} SOL net</div>
+        </div>
+      `;
+    });
+    html += `</div>`;
+
+    return html;
+  },
+
+  // --- Market Cap Bucket Analysis ---
+
+  _computeMarketCapAnalysis(state) {
+    const tradesMap = Store.getActiveTrades() || {};
+    const sellTrades = Object.values(tradesMap).filter((t) => t.side === "SELL");
+
+    const buckets = [
+      { label: "< $1M", min: 0, max: 1_000_000, wins: 0, losses: 0, pnl: 0, count: 0 },
+      { label: "$1M \u2013 $5M", min: 1_000_000, max: 5_000_000, wins: 0, losses: 0, pnl: 0, count: 0 },
+      { label: "$5M \u2013 $20M", min: 5_000_000, max: 20_000_000, wins: 0, losses: 0, pnl: 0, count: 0 },
+      { label: "$20M \u2013 $100M", min: 20_000_000, max: 100_000_000, wins: 0, losses: 0, pnl: 0, count: 0 },
+      { label: "> $100M", min: 100_000_000, max: Infinity, wins: 0, losses: 0, pnl: 0, count: 0 },
+    ];
+
+    let hasMarketCapData = false;
+
+    sellTrades.forEach((t) => {
+      const mc = t.marketCapUsdAtFill;
+      if (!mc || mc <= 0) return;
+      hasMarketCapData = true;
+
+      for (const bucket of buckets) {
+        if (mc >= bucket.min && mc < bucket.max) {
+          bucket.count++;
+          bucket.pnl += t.realizedPnlSol || 0;
+          if ((t.realizedPnlSol || 0) > 0) bucket.wins++;
+          else if ((t.realizedPnlSol || 0) < 0) bucket.losses++;
+          break;
+        }
+      }
+    });
+
+    if (!hasMarketCapData) return null;
+
+    return buckets.filter((b) => b.count > 0);
+  },
+
+  _renderMarketCapSection(state) {
+    const mcAnalysis = this._computeMarketCapAnalysis(state);
+
+    let html = `<div class="insights-section-label">PERFORMANCE BY MARKET CAP</div>`;
+
+    if (!mcAnalysis) {
+      html += `<div class="insights-nodata">Market cap insights will appear once market cap data is available for your trades.</div>`;
+      return html;
+    }
+
+    html += `<div class="insights-grid">`;
+    mcAnalysis.forEach((bucket) => {
+      const winRate = bucket.count > 0 ? ((bucket.wins / bucket.count) * 100).toFixed(0) : "0";
+      const pnlSign = bucket.pnl >= 0 ? "+" : "";
+      html += `
+        <div class="insights-elite-card">
+          <div class="insights-elite-card-title">${bucket.label}</div>
+          <div class="insights-elite-card-value">${winRate}% win rate</div>
+          <div class="insights-elite-card-desc">${bucket.count} trades, ${pnlSign}${bucket.pnl.toFixed(4)} SOL net</div>
+        </div>
+      `;
+    });
+    html += `</div>`;
+
+    return html;
   },
 };

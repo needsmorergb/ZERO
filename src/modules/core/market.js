@@ -10,6 +10,10 @@ export const Market = {
   sourceSite: null,
   listeners: [],
 
+  // Platform PnL (scraped from Padre/Axiom header — used in Shadow Mode)
+  platformPnl: null,      // Platform's own T.PNL value (USD)
+  platformPnlTs: 0,       // Timestamp of last platform PnL update
+
   // Legacy support flags if needed
   lastTickTs: 0,
   lastSource: null, // 'site', 'dom', 'api'

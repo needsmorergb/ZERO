@@ -22,6 +22,7 @@ import {
   setupSwapDetection,
   cacheSwapQuote,
   parseRequestBody,
+  tryDetectRpcSignature,
 } from "../shared/bridge-utils.js";
 
 (() => {
@@ -39,9 +40,9 @@ import {
     mc: /^(?:MC|MCap|Market\s*Cap)$/i,
     liquidity: /^(?:Liq|Liquidity)$/i,
     tpnl: /^T\.?\s*PNL$/i,
-    invested: /^Invested$/i,
-    sold: /^Sold$/i,
-    remaining: /^Remaining$/i,
+    invested: /^(?:Invested|Total\s*Invested|Inv|Buy\s*Value|Cost)$/i,
+    sold: /^(?:Sold|Total\s*Sold|Sell\s*Value)$/i,
+    remaining: /^(?:Remaining|Holdings?|Balance)$/i,
   };
 
   const parseHeaderValue = (text) => {
@@ -60,12 +61,77 @@ import {
     return val * neg;
   };
 
+  // --- Cached position field elements ---
+  // After TradingView chart renders, the DOM has >2000 elements and invested/sold
+  // labels (in the position panel) get pushed past the fast scan limit.
+  // We cache their value element references for instant re-read on every poll.
+  const _posCache = {
+    investedValEl: null,
+    soldValEl: null,
+    remainingValEl: null,
+    tpnlValEl: null,
+    lastDeepScan: 0,
+    DEEP_SCAN_INTERVAL: 3000, // Re-discover elements every 3s
+  };
+
+  // PerformanceObserver triggers aggressive re-scanning after swap URLs are detected
+  let _aggressiveScrapeUntil = 0;
+
+  const POS_FIELD_KEYS = [
+    ["invested", "investedValEl"],
+    ["sold", "soldValEl"],
+    ["remaining", "remainingValEl"],
+    ["tpnl", "tpnlValEl"],
+  ];
+
+  // Deep scan: find position field VALUE elements in up to 8000 DOM nodes
+  function deepScanPositionFields() {
+    const allEls = document.querySelectorAll("span, div, p, td, th, dt, dd, label");
+    const limit = Math.min(allEls.length, 8000);
+    const posLabels = {
+      invested: HEADER_LABELS.invested,
+      sold: HEADER_LABELS.sold,
+      remaining: HEADER_LABELS.remaining,
+      tpnl: HEADER_LABELS.tpnl,
+    };
+
+    for (let i = 0; i < limit; i++) {
+      const el = allEls[i];
+      if (el.children.length > 3) continue;
+      const text = el.textContent?.trim();
+      if (!text || text.length > 20) continue;
+
+      for (const [key, pattern] of Object.entries(posLabels)) {
+        if (!pattern.test(text)) continue;
+        // Prefer FIRST match — skip if we already cached a connected element for this key
+        const cacheKey = key + "ValEl";
+        if (_posCache[cacheKey] && _posCache[cacheKey].isConnected) continue;
+        const valueEl =
+          el.nextElementSibling ||
+          el.parentElement?.nextElementSibling?.querySelector("span, div, p") ||
+          el.parentElement?.nextElementSibling ||
+          (i + 1 < limit ? allEls[i + 1] : null);
+        if (!valueEl) continue;
+        _posCache[cacheKey] = valueEl;
+      }
+    }
+  }
+
+  // Read a cached position field value element
+  function readCachedPosField(cacheKey) {
+    const el = _posCache[cacheKey];
+    if (!el || !el.isConnected) return undefined;
+    const val = parseHeaderValue(el.textContent?.trim() || "");
+    return val !== null ? val : undefined;
+  }
+
   const scrapePadreHeader = () => {
     try {
       const results = {};
       const allEls = document.querySelectorAll("span, div, p, td, th, dt, dd, label");
       const limit = Math.min(allEls.length, 2000);
 
+      // Fast scan (limit 2000): reliably finds price, MC, liquidity in header bar
       for (let i = 0; i < limit; i++) {
         const el = allEls[i];
         if (el.children.length > 3) continue;
@@ -90,24 +156,211 @@ import {
           const parsed = parseHeaderValue(valText);
           if (parsed !== null) {
             results[key] = parsed;
+            // Cache position field value elements when found in fast scan too
+            const cacheKey = key + "ValEl";
+            if (cacheKey in _posCache) _posCache[cacheKey] = valueEl;
           }
         }
       }
+
+      // Position fields: try cached elements for any fields not found in fast scan
+      for (const [key, cacheKey] of POS_FIELD_KEYS) {
+        if (results[key] !== undefined) continue;
+        const val = readCachedPosField(cacheKey);
+        if (val !== undefined) results[key] = val;
+      }
+
+      // Periodic deep scan: re-discover position field elements when missing
+      const now = Date.now();
+      const isAggressive = now < _aggressiveScrapeUntil;
+      const shouldDeepScan = (now - _posCache.lastDeepScan > _posCache.DEEP_SCAN_INTERVAL) || isAggressive;
+      if (shouldDeepScan && (results.invested === undefined || results.sold === undefined)) {
+        _posCache.lastDeepScan = now;
+        deepScanPositionFields();
+        // Re-try cached reads after deep scan
+        for (const [key, cacheKey] of POS_FIELD_KEYS) {
+          if (results[key] !== undefined) continue;
+          const val = readCachedPosField(cacheKey);
+          if (val !== undefined) results[key] = val;
+        }
+      }
+
       return Object.keys(results).length > 0 ? results : null;
     } catch (e) { /* swallowed */ }
     return null;
   };
 
+  // --- Header Delta Trade Detection (Shadow Mode) ---
+  // Padre shows cumulative "Invested" and "Sold" USD in the header — but ONLY
+  // when the user already has a position for that token. For a fresh token these
+  // fields are absent from the DOM until the first buy completes.
+  //
+  // State semantics:
+  //   null  = field has NEVER been seen in the header for this mint
+  //   0     = field was seen with value $0 (or appeared with zero)
+  //   >0    = last known cumulative value
+  //
+  // Detection:
+  //   null → value > MIN_DELTA  →  "first appearance" trade (full value is the trade amount)
+  //   prev → value > prev       →  "delta" trade (increase is the trade amount)
+  const _td = {
+    lastInvested: null,   // null = never seen
+    lastSold: null,       // null = never seen
+    lastMint: null,
+    settledAt: 0,         // timestamp when mint change is "settled" (DOM stabilized)
+    MIN_DELTA: 0.005,     // $0.005 minimum to filter noise
+    SETTLE_MS: 1500,      // wait 1.5s after mint change before detecting
+  };
+
+  // Invalidate cached position elements — forces deep scan to re-discover them
+  // Called after trade detection because Padre's React may re-render the position panel
+  function invalidatePosCache() {
+    _posCache.investedValEl = null;
+    _posCache.soldValEl = null;
+    _posCache.remainingValEl = null;
+    _posCache.tpnlValEl = null;
+    _posCache.lastDeepScan = 0; // Force immediate deep scan on next poll
+  }
+
+  function detectHeaderTrade(h) {
+    const mint = ctx.mint;
+    if (!mint) return;
+
+    // Reset tracking on mint change
+    if (mint !== _td.lastMint) {
+      _td.lastMint = mint;
+      _td.settledAt = Date.now() + _td.SETTLE_MS;
+      // If invested/sold already present (returning to a token with position), initialize to current values.
+      // If absent (undefined), set to null to indicate "never seen for this mint".
+      _td.lastInvested = h.invested !== undefined ? h.invested : null;
+      _td.lastSold = h.sold !== undefined ? h.sold : null;
+      console.log(
+        `[ZERØ] Header trade tracking reset — mint=${mint.slice(0, 8)}, invested=${_td.lastInvested}, sold=${_td.lastSold}, fields: ${JSON.stringify(Object.keys(h))}`
+      );
+      return;
+    }
+
+    // Don't detect during settling period (prevents stale header data from previous token)
+    if (Date.now() < _td.settledAt) return;
+
+    // Keep invested/sold as undefined (not coerced to 0) to distinguish "absent" from "zero"
+    const invested = h.invested;
+    const sold = h.sold;
+
+    // --- BUY Detection ---
+    if (invested !== undefined && invested > 0) {
+      if (_td.lastInvested === null) {
+        // FIRST APPEARANCE: invested was never seen → it just appeared after a buy
+        if (invested > _td.MIN_DELTA) {
+          console.log(`[ZERØ] Header BUY (first): +$${invested.toFixed(4)} for ${ctx.symbol || mint.slice(0, 8)}`);
+          _td.lastInvested = invested;
+          invalidatePosCache(); // DOM may re-render after trade
+          send({
+            type: "SHADOW_TRADE_DETECTED",
+            side: "BUY",
+            mint,
+            symbol: ctx.symbol || null,
+            solAmount: 0,
+            usdAmount: invested,
+            tokenAmount: 0,
+            priceUsd: h.price || 0,
+            signature: `hdr-B-${mint.slice(0, 8)}-${Date.now()}`,
+            source: "padre-header",
+            ts: Date.now(),
+          });
+        }
+      } else if (invested > _td.lastInvested) {
+        // DELTA: invested increased (subsequent buy)
+        const delta = invested - _td.lastInvested;
+        _td.lastInvested = invested;
+        invalidatePosCache(); // DOM may re-render after trade
+        if (delta > _td.MIN_DELTA) {
+          console.log(`[ZERØ] Header BUY (delta): +$${delta.toFixed(4)} for ${ctx.symbol || mint.slice(0, 8)}`);
+          send({
+            type: "SHADOW_TRADE_DETECTED",
+            side: "BUY",
+            mint,
+            symbol: ctx.symbol || null,
+            solAmount: 0,
+            usdAmount: delta,
+            tokenAmount: 0,
+            priceUsd: h.price || 0,
+            signature: `hdr-B-${mint.slice(0, 8)}-${Date.now()}`,
+            source: "padre-header",
+            ts: Date.now(),
+          });
+        }
+      }
+    }
+
+    // --- SELL Detection ---
+    if (sold !== undefined && sold > 0) {
+      if (_td.lastSold === null) {
+        // FIRST APPEARANCE: sold was never seen → it just appeared after a sell
+        if (sold > _td.MIN_DELTA) {
+          console.log(`[ZERØ] Header SELL (first): +$${sold.toFixed(4)} for ${ctx.symbol || mint.slice(0, 8)}`);
+          _td.lastSold = sold;
+          invalidatePosCache(); // DOM may re-render after trade
+          send({
+            type: "SHADOW_TRADE_DETECTED",
+            side: "SELL",
+            mint,
+            symbol: ctx.symbol || null,
+            solAmount: 0,
+            usdAmount: sold,
+            tokenAmount: 0,
+            priceUsd: h.price || 0,
+            signature: `hdr-S-${mint.slice(0, 8)}-${Date.now()}`,
+            source: "padre-header",
+            ts: Date.now(),
+          });
+        }
+      } else if (sold > _td.lastSold) {
+        // DELTA: sold increased (subsequent sell)
+        const delta = sold - _td.lastSold;
+        _td.lastSold = sold;
+        invalidatePosCache(); // DOM may re-render after trade
+        if (delta > _td.MIN_DELTA) {
+          console.log(`[ZERØ] Header SELL (delta): +$${delta.toFixed(4)} for ${ctx.symbol || mint.slice(0, 8)}`);
+          send({
+            type: "SHADOW_TRADE_DETECTED",
+            side: "SELL",
+            mint,
+            symbol: ctx.symbol || null,
+            solAmount: 0,
+            usdAmount: delta,
+            tokenAmount: 0,
+            priceUsd: h.price || 0,
+            signature: `hdr-S-${mint.slice(0, 8)}-${Date.now()}`,
+            source: "padre-header",
+            ts: Date.now(),
+          });
+        }
+      }
+    }
+  }
+
   let lastHeaderPrice = 0;
   let lastHeaderMCap = 0;
-  let _headerLogOnce = false;
+  let _headerLogMint = null;   // Log header on each mint change
+  let _headerDiagTimer = 0;    // Periodic diagnostic (every 10s)
   const pollPadreHeader = () => {
     const h = scrapePadreHeader();
     if (!h) return;
 
-    if (!_headerLogOnce) {
-      _headerLogOnce = true;
-      console.log("[ZERØ] Padre header scrape result:", JSON.stringify(h));
+    // Log full header on mint change (shows which fields are available)
+    if (ctx.mint && ctx.mint !== _headerLogMint) {
+      _headerLogMint = ctx.mint;
+      console.log(`[ZERØ] Header scrape [${ctx.mint.slice(0, 8)}]:`, JSON.stringify(h));
+    }
+
+    // Periodic diagnostic: log every 10s unconditionally to track field appearance/disappearance
+    const now = Date.now();
+    if (now > _headerDiagTimer) {
+      _headerDiagTimer = now + 10000;
+      console.log(
+        `[ZERØ] Header fields [${(ctx.mint || "?").slice(0, 8)}]: invested=${h.invested}, sold=${h.sold}, tpnl=${h.tpnl}, remaining=${h.remaining}, keys=${JSON.stringify(Object.keys(h))}`
+      );
     }
 
     // Price — highest confidence, this IS what the user sees on Padre
@@ -142,6 +395,9 @@ import {
     if (h.tpnl !== undefined) {
       send({ type: "PADRE_PNL_TICK", tpnl: h.tpnl, ts: Date.now() });
     }
+
+    // Shadow Mode: detect trades from invested/sold deltas
+    detectHeaderTrade(h);
   };
 
   setInterval(pollPadreHeader, 200);
@@ -232,10 +488,11 @@ import {
         const url = String(args?.[0]?.url || args?.[0] || "");
         const isApiUrl = /quote|price|ticker|market|candles|kline|chart|pair|swap|route/i.test(url);
         const isSwapUrl = SWAP_URL_PATTERNS.test(url);
+        const isRpcUrl = /rpc|helius|quicknode|alchemy|triton|shyft/i.test(url);
 
         // Clone ALL JSON responses for quote caching (swap detection)
         const contentType = res.headers?.get?.("content-type") || "";
-        const isJson = contentType.includes("json") || isApiUrl || isSwapUrl;
+        const isJson = contentType.includes("json") || isApiUrl || isSwapUrl || isRpcUrl;
 
         if (isJson) {
           const clone = res.clone();
@@ -249,6 +506,8 @@ import {
                 const reqData = parseRequestBody(args);
                 tryHandleSwap(url, json, ctx, reqData);
               }
+              // Detect RPC sendTransaction responses (catches sign-then-send flow)
+              tryDetectRpcSignature(json, args, ctx);
             })
             .catch((err) => console.warn("[ZERØ] Fetch parse error:", err.message, url));
         }
@@ -256,6 +515,15 @@ import {
       return res;
     };
     console.log("[ZERØ] Padre: fetch interception active");
+    // Verify fetch override survives SES lockdown
+    const _ourFetch = window.fetch;
+    setTimeout(() => {
+      if (window.fetch === _ourFetch) {
+        console.log("[ZERØ] fetch override verified active (post-SES)");
+      } else {
+        console.warn("[ZERØ] fetch override was REPLACED (likely SES lockdown)");
+      }
+    }, 3000);
   } catch (e) {
     console.log("[ZERØ] Padre: fetch interception blocked by SES");
   }
@@ -288,6 +556,8 @@ import {
               console.log(`[ZERØ] Swap URL matched (XHR/Padre): ${url}`);
               tryHandleSwap(url, json, ctx, xhrReqData);
             }
+            // Detect RPC sendTransaction responses (catches sign-then-send flow)
+            tryDetectRpcSignature(json, [url, { body: sendArgs[0] }], ctx);
           }
         } catch (err) {
           console.warn("[ZERØ] Padre XHR handler error:", err.message);
@@ -298,6 +568,35 @@ import {
     console.log("[ZERØ] Padre: XHR interception active");
   } catch (e) {
     console.log("[ZERØ] Padre: XHR interception blocked by SES:", e.message);
+  }
+
+  // 1c. PerformanceObserver — SES-safe network activity detection
+  // Detects swap/transaction URLs even after SES replaces fetch/XHR.
+  // Resource Timing API is read-only — SES never modifies it.
+  // IMPORTANT: Test PATHNAME only (not full URL) because trade.padre.gg domain
+  // contains "trade" which would match SWAP_URL_PATTERNS on every single request.
+  const PERFOBS_SWAP_PATH = /\/swap|\/execute|\/submit|send-?tx|confirm-?tx|transaction\/send|order\/place|\/jup|\/jupiter|\/raydium/i;
+  const PERFOBS_TX_PATH = /sendTransaction|signTransaction/i;
+  try {
+    const po = new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        if (entry.initiatorType !== "fetch" && entry.initiatorType !== "xmlhttprequest") continue;
+        const url = entry.name || "";
+        // Parse pathname to avoid false matches on domain name (trade.padre.gg)
+        let pathname = url;
+        try { pathname = new URL(url).pathname; } catch { /* use full url as fallback */ }
+        if (PERFOBS_SWAP_PATH.test(pathname) || PERFOBS_TX_PATH.test(pathname)) {
+          console.log(`[ZERØ] PerfObs: swap/tx request → ${url.slice(0, 80)}`);
+          // Trigger aggressive deep scan for the next 5 seconds
+          _aggressiveScrapeUntil = Date.now() + 5000;
+          _posCache.lastDeepScan = 0; // Force immediate deep scan
+        }
+      }
+    });
+    po.observe({ type: "resource", buffered: false });
+    console.log("[ZERØ] PerformanceObserver active for swap detection");
+  } catch (e) {
+    console.log("[ZERØ] PerformanceObserver not available:", e.message);
   }
 
   // 2. MutationObserver — triggers header re-scrape on DOM changes (SES-safe)
@@ -372,8 +671,43 @@ import {
   };
   setInterval(pollChartMCap, 200);
 
-  // 5. TradingView API fallback — async export of chart data
+  // 5a. TradingView Execution Shape Hook — detect Padre trade markers (secondary diagnostic)
+  let _tvExecHooked = false;
+  function hookTvExecutionShapes() {
+    if (_tvExecHooked) return;
+    const tv = findTV();
+    if (!tv || !tv.activeChart) return;
+    try {
+      const chart = tv.activeChart();
+      if (typeof chart.createExecutionShape !== "function") return;
+      const origCreate = chart.createExecutionShape.bind(chart);
+      chart.createExecutionShape = function (...args) {
+        const shape = origCreate(...args);
+        const td = {};
+        for (const [setter, key] of [["setDirection", "dir"], ["setPrice", "price"], ["setText", "text"], ["setTime", "time"]]) {
+          if (typeof shape[setter] === "function") {
+            const orig = shape[setter].bind(shape);
+            shape[setter] = (val) => { td[key] = val; return orig(val); };
+          }
+        }
+        setTimeout(() => {
+          // Only log Padre's markers (ours use "BUY"/"SELL", Padre uses different text)
+          if (td.dir && td.text !== "BUY" && td.text !== "SELL") {
+            console.log(`[ZERØ] Padre TV marker: ${td.dir} at MCap=${td.price}, text="${td.text}"`);
+          }
+        }, 0);
+        return shape;
+      };
+      _tvExecHooked = true;
+      console.log("[ZERØ] TV createExecutionShape hooked for trade markers");
+    } catch (e) { /* TV hook failed — non-critical */ }
+  }
+
+  // 5b. TradingView API fallback — async export of chart data
   const pollTvMCap = async () => {
+    // Try hooking TV execution shapes (once, when TV widget first available)
+    hookTvExecutionShapes();
+
     if (ctx.refPrice <= 0 || ctx.refMCap <= 0) return;
     const tv = findTV();
     if (!tv || !tv.activeChart) return;

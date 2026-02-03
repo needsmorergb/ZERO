@@ -22,6 +22,7 @@ import {
   setupSwapDetection,
   cacheSwapQuote,
   parseRequestBody,
+  tryDetectRpcSignature,
 } from "../shared/bridge-utils.js";
 
 (() => {
@@ -122,6 +123,84 @@ import {
 
   setInterval(pollDomPrice, 200);
 
+  // --- Axiom Header/Stats PnL Scraping ---
+  // Scrapes T.PNL and related stats from Axiom's terminal UI using label-adjacent discovery.
+  const AXIOM_PNL_LABELS = {
+    tpnl: /^(?:T\.?\s*PNL|PnL|P&L|PNL|Unrealized|UPnL)$/i,
+    invested: /^Invested$/i,
+    sold: /^Sold$/i,
+    remaining: /^(?:Remaining|Position)$/i,
+  };
+
+  const parseStatsValue = (text) => {
+    const neg = text.includes("-") ? -1 : 1;
+    const clean = text.replace(/[^0-9.MKBmkb]/g, "");
+    if (!clean) return null;
+    const m = clean.match(/([0-9.]+)\s*([MKBmkb])?$/);
+    if (!m) return null;
+    let val = parseFloat(m[1]);
+    if (isNaN(val)) return null;
+    const suffix = (m[2] || "").toUpperCase();
+    if (suffix === "K") val *= 1_000;
+    else if (suffix === "M") val *= 1_000_000;
+    else if (suffix === "B") val *= 1_000_000_000;
+    return val * neg;
+  };
+
+  const scrapeAxiomStats = () => {
+    try {
+      const results = {};
+      const allEls = document.querySelectorAll("span, div, p, td, th, dt, dd, label");
+      const limit = Math.min(allEls.length, 2000);
+
+      for (let i = 0; i < limit; i++) {
+        const el = allEls[i];
+        if (el.children.length > 3) continue;
+        const text = el.textContent?.trim();
+        if (!text || text.length > 20) continue;
+
+        for (const [key, pattern] of Object.entries(AXIOM_PNL_LABELS)) {
+          if (results[key] !== undefined) continue;
+          if (!pattern.test(text)) continue;
+
+          const valueEl =
+            el.nextElementSibling ||
+            el.parentElement?.nextElementSibling?.querySelector("span, div, p") ||
+            el.parentElement?.nextElementSibling ||
+            (i + 1 < limit ? allEls[i + 1] : null);
+
+          if (!valueEl) continue;
+          const valText = valueEl.textContent?.trim();
+          if (!valText) continue;
+
+          const parsed = parseStatsValue(valText);
+          if (parsed !== null) {
+            results[key] = parsed;
+          }
+        }
+      }
+      return Object.keys(results).length > 0 ? results : null;
+    } catch (e) { /* swallowed */ }
+    return null;
+  };
+
+  let _axiomStatsLogOnce = false;
+  const pollAxiomStats = () => {
+    const h = scrapeAxiomStats();
+    if (!h) return;
+
+    if (!_axiomStatsLogOnce) {
+      _axiomStatsLogOnce = true;
+      console.log("[ZERØ] Axiom stats scrape result:", JSON.stringify(h));
+    }
+
+    if (h.tpnl !== undefined) {
+      send({ type: "AXIOM_PNL_TICK", tpnl: h.tpnl, ts: Date.now() });
+    }
+  };
+
+  setInterval(pollAxiomStats, 500);
+
   // --- Chart MCap Scraping (Axiom: Y-axis = Market Cap, not token price) ---
   // Ported from Padre: Extracts MCap from TradingView chart OHLC legend & Y-axis labels.
   const parseOhlcClose = (text) => {
@@ -209,10 +288,11 @@ import {
       const url = String(args?.[0]?.url || args?.[0] || "");
       const isApiUrl = /quote|price|ticker|market|candles|kline|chart|pair|swap|route/i.test(url);
       const isSwapUrl = SWAP_URL_PATTERNS.test(url);
+      const isRpcUrl = /rpc|helius|quicknode|alchemy|triton|shyft/i.test(url);
 
       // Clone ALL JSON responses for quote caching (swap detection)
       const contentType = res.headers?.get?.("content-type") || "";
-      const isJson = contentType.includes("json") || isApiUrl || isSwapUrl;
+      const isJson = contentType.includes("json") || isApiUrl || isSwapUrl || isRpcUrl;
 
       if (isJson) {
         const clone = res.clone();
@@ -226,6 +306,8 @@ import {
               const reqData = parseRequestBody(args);
               tryHandleSwap(url, json, ctx, reqData);
             }
+            // Detect RPC sendTransaction responses (catches sign-then-send flow)
+            tryDetectRpcSignature(json, args, ctx);
           })
           .catch((err) => console.warn("[ZERØ] Fetch parse error:", err.message, url));
       }
@@ -261,6 +343,8 @@ import {
             console.log(`[ZERØ] Swap URL matched (XHR): ${url}`);
             tryHandleSwap(url, json, ctx, xhrReqData);
           }
+          // Detect RPC sendTransaction responses (catches sign-then-send flow)
+          tryDetectRpcSignature(json, [url, { body: sendArgs[0] }], ctx);
         }
       } catch (err) {
         console.warn("[ZERØ] XHR handler error:", err.message);

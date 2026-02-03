@@ -9,6 +9,8 @@ import { ModeManager } from "../mode-manager.js";
 import { OverlayManager } from "./overlay.js";
 import { Analytics } from "../core/analytics.js";
 import { ICONS } from "./icons.js";
+import { SessionReplay } from "./session-replay.js";
+import { Dashboard } from "./dashboard.js";
 
 export const ShadowInsights = {
   /**
@@ -213,14 +215,42 @@ export const ShadowInsights = {
                   .join("")}
 
                 <div class="si-footer">This is not advice. It is a reflection of your behavior.</div>
-                <button class="si-action">Review session details</button>
+                <div style="display:flex; gap:8px; padding:0 24px 24px;">
+                  <button class="si-action si-secondary" style="flex:1; background:transparent; border:1px solid rgba(255,255,255,0.1); color:#94a3b8; padding:12px; border-radius:10px; font-weight:700; font-size:12px; cursor:pointer;">Review session details</button>
+                  <button class="si-action si-primary" style="flex:1; background:linear-gradient(135deg,#8b5cf6,#a78bfa); border:none; color:white; padding:12px; border-radius:10px; font-weight:700; font-size:12px; cursor:pointer;">${ICONS.REPLAY} Replay session</button>
+                </div>
             </div>
         `;
 
     container.appendChild(overlay);
 
     const dismiss = () => overlay.remove();
-    overlay.querySelector(".si-action").onclick = dismiss;
+
+    // "Review session details" → open Dashboard
+    const reviewBtn = overlay.querySelector(".si-secondary");
+    if (reviewBtn) {
+      reviewBtn.onclick = () => {
+        dismiss();
+        Dashboard.open();
+      };
+    }
+
+    // "Replay session" → open Session Replay for last archived session
+    const replayBtn = overlay.querySelector(".si-primary");
+    if (replayBtn) {
+      replayBtn.onclick = () => {
+        dismiss();
+        const history = Store.getActiveSessionHistory() || [];
+        const lastSession = history.length > 0 ? history[history.length - 1] : null;
+        if (lastSession) {
+          SessionReplay.openForSession(lastSession);
+        } else {
+          // Fallback: open replay for current session
+          SessionReplay.open();
+        }
+      };
+    }
+
     overlay.addEventListener("click", (e) => {
       if (e.target === overlay) dismiss();
     });

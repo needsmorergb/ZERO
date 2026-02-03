@@ -5,6 +5,8 @@ import { FeatureManager } from "../featureManager.js";
 import { DASHBOARD_CSS } from "./dashboard-styles.js";
 import { Market } from "../core/market.js";
 import { renderEliteLockedCard } from "./elite-helpers.js";
+import { SessionReplay } from "./session-replay.js";
+import { ICONS } from "./icons.js";
 
 export const Dashboard = {
   isOpen: false,
@@ -96,7 +98,6 @@ export const Dashboard = {
     // Session P&L
     const sessionPnl = session.realized || 0;
     const isShadow = Store.isShadowMode();
-    // Shadow: use total invested as denominator. Paper: use startSol.
     const positions = Store.getActivePositions();
     const totalInvestedSol = Object.values(positions || {}).reduce(
       (sum, pos) => sum + (pos.totalSolSpent || 0),
@@ -147,6 +148,178 @@ export const Dashboard = {
     };
   },
 
+  computeEliteAnalysis(state) {
+    const session = Store.getActiveSession();
+    const tradesMap = Store.getActiveTrades();
+    const tradeIds = session.trades || [];
+    const allTrades = tradeIds.map((id) => tradesMap[id]).filter(Boolean).sort((a, b) => a.ts - b.ts);
+    const buyTrades = allTrades.filter((t) => t.side === "BUY");
+    const sellTrades = allTrades.filter((t) => t.side === "SELL");
+
+    // Consistency score
+    let consistencyScore = null;
+    try {
+      if (typeof Analytics.calculateConsistencyScore === "function") {
+        consistencyScore = Analytics.calculateConsistencyScore(state);
+      }
+    } catch (e) { /* optional */ }
+
+    // Plan adherence
+    const plansUsed = buyTrades.filter((t) => t.riskDefined || t.tradePlan).length;
+    const plansUsedPct = buyTrades.length > 0 ? Math.round((plansUsed / buyTrades.length) * 100) : 0;
+    const stopViolations = sellTrades.filter((t) => t.planAdherence?.stopViolated).length;
+    const targetHits = sellTrades.filter((t) => t.planAdherence?.hitTarget).length;
+
+    // Trade pacing
+    const intervals = [];
+    for (let i = 1; i < allTrades.length; i++) {
+      intervals.push(allTrades[i].ts - allTrades[i - 1].ts);
+    }
+    const avgInterval = intervals.length > 0
+      ? intervals.reduce((a, b) => a + b, 0) / intervals.length
+      : 0;
+    const avgPacingMin = Math.round(avgInterval / 60000);
+
+    // Emotion breakdown
+    const emotionMap = {};
+    allTrades.forEach((t) => {
+      if (t.emotion) {
+        if (!emotionMap[t.emotion]) emotionMap[t.emotion] = { count: 0, pnl: 0, wins: 0, losses: 0 };
+        emotionMap[t.emotion].count++;
+        if (t.side === "SELL") {
+          const pnl = t.realizedPnlSol || 0;
+          emotionMap[t.emotion].pnl += pnl;
+          if (pnl > 0) emotionMap[t.emotion].wins++;
+          else if (pnl < 0) emotionMap[t.emotion].losses++;
+        }
+      }
+    });
+
+    return {
+      consistencyScore,
+      plansUsedPct,
+      stopViolations,
+      targetHits,
+      avgPacingMin,
+      emotionMap,
+    };
+  },
+
+  renderEliteAnalysis(state, isElite, behavior) {
+    if (!isElite) {
+      return `
+        <div class="dash-elite-grid">
+          ${renderEliteLockedCard("Consistency Score", "Track how steadily you trade across sessions.")}
+          ${renderEliteLockedCard("Plan Adherence", "See how often you follow your stops and targets.")}
+          ${renderEliteLockedCard("Emotion Breakdown", "Understand which emotions lead to wins vs losses.")}
+        </div>
+      `;
+    }
+
+    const ea = this.computeEliteAnalysis(state);
+    const session = Store.getActiveSession();
+
+    let html = "";
+
+    // Session Quality
+    html += `<div class="dash-elite-subsection-label">SESSION QUALITY</div>`;
+    html += `<div class="dash-elite-grid">
+      <div class="dash-metric-card">
+        <div class="dash-metric-k">Discipline Score</div>
+        <div class="dash-metric-v" style="color:#8b5cf6;">${session.disciplineScore || 100}</div>
+      </div>`;
+    if (ea.consistencyScore !== null) {
+      html += `<div class="dash-metric-card">
+        <div class="dash-metric-k">Consistency</div>
+        <div class="dash-metric-v" style="color:#8b5cf6;">${typeof ea.consistencyScore === "number" ? ea.consistencyScore.toFixed(0) : "\u2014"}/100</div>
+      </div>`;
+    }
+    html += `<div class="dash-metric-card">
+      <div class="dash-metric-k">Behavior Profile</div>
+      <div class="dash-metric-v" style="color:#8b5cf6;">${behavior?.profile || "Disciplined"}</div>
+    </div>`;
+    html += `<div class="dash-metric-card">
+      <div class="dash-metric-k">Trade Pacing</div>
+      <div class="dash-metric-v" style="color:#818cf8;">${ea.avgPacingMin > 0 ? ea.avgPacingMin + "m avg" : "\u2014"}</div>
+    </div>`;
+    html += `</div>`;
+
+    // Plan Adherence
+    html += `<div class="dash-elite-subsection-label">PLAN ADHERENCE</div>`;
+    html += `<div class="dash-elite-grid">
+      <div class="dash-metric-card">
+        <div class="dash-metric-k">Plans Used</div>
+        <div class="dash-metric-v" style="color:#818cf8;">${ea.plansUsedPct}%</div>
+      </div>
+      <div class="dash-metric-card">
+        <div class="dash-metric-k">Stop Violations</div>
+        <div class="dash-metric-v loss">${ea.stopViolations}</div>
+      </div>
+      <div class="dash-metric-card">
+        <div class="dash-metric-k">Targets Hit</div>
+        <div class="dash-metric-v win">${ea.targetHits}</div>
+      </div>
+    </div>`;
+
+    // Emotion Breakdown
+    const emotions = Object.entries(ea.emotionMap);
+    if (emotions.length > 0) {
+      html += `<div class="dash-elite-subsection-label">EMOTION BREAKDOWN</div>`;
+      html += `<table class="dash-emotion-table">
+        <tr><th>Emotion</th><th>Trades</th><th>Net P&L</th></tr>`;
+      emotions.forEach(([emo, data]) => {
+        const pnlClass = data.pnl >= 0 ? "win" : "loss";
+        html += `<tr>
+          <td>${emo}</td>
+          <td>${data.count}</td>
+          <td class="${pnlClass}">${data.pnl >= 0 ? "+" : ""}${data.pnl.toFixed(4)} SOL</td>
+        </tr>`;
+      });
+      html += `</table>`;
+    }
+
+    return html;
+  },
+
+  renderSessionHistory() {
+    const history = Store.getActiveSessionHistory() || [];
+    if (history.length === 0) {
+      return `<div class="dash-history-empty">No completed sessions yet.</div>`;
+    }
+
+    const tradesMap = Store.getActiveTrades() || {};
+
+    return history
+      .slice()
+      .reverse()
+      .map((sess, reverseIdx) => {
+        const realIdx = history.length - 1 - reverseIdx;
+        const date = new Date(sess.startTime || 0);
+        const dateStr = date.toLocaleDateString([], { month: "short", day: "numeric" }) +
+          " " + date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+        const tradeCount = (sess.trades || []).length;
+        const durationMs = (sess.endTime || sess.startTime || 0) - (sess.startTime || 0);
+        const durationMin = Math.max(1, Math.floor(durationMs / 60000));
+
+        const pnl = sess.realized || 0;
+        const pnlClass = pnl >= 0 ? "win" : "loss";
+        const pnlStr = `${pnl >= 0 ? "+" : ""}${pnl.toFixed(4)}`;
+
+        return `
+          <div class="dash-history-row">
+            <div class="dash-history-date">${dateStr}</div>
+            <div class="dash-history-meta">${tradeCount} trades \u00B7 ${durationMin}m</div>
+            <div class="dash-history-pnl ${pnlClass}">${pnlStr}</div>
+            <button class="dash-history-replay" data-history-idx="${realIdx}">
+              ${ICONS.REPLAY} Replay
+            </button>
+          </div>
+        `;
+      })
+      .join("");
+  },
+
   render() {
     const root = OverlayManager.getShadowRoot();
     let overlay = root.querySelector(".paper-dashboard-overlay");
@@ -189,6 +362,7 @@ export const Dashboard = {
 
     const isEmpty = stats.totalTrades === 0;
     const isElite = FeatureManager.isElite(state);
+    const hasTrades = (session.trades || []).length > 0;
 
     // Subtext based on trading mode
     const subtext =
@@ -289,6 +463,14 @@ export const Dashboard = {
                         </div>
                     </div>
 
+                    ${hasTrades ? `
+                    <div class="dash-replay-section">
+                        <button class="dash-replay-btn" id="dashboard-replay-btn">
+                            ${ICONS.REPLAY} Replay session
+                        </button>
+                    </div>
+                    ` : ""}
+
                     <div class="dash-share-section">
                         <button class="dash-share-btn" id="dashboard-share-btn">
                             <span style="font-size:16px;">\uD835\uDD4F</span>
@@ -300,38 +482,25 @@ export const Dashboard = {
                     <div class="dash-elite-section">
                         <div class="dash-elite-toggle" id="dash-elite-toggle">
                             <div class="dash-elite-toggle-left">
-                                <span class="dash-section-label" style="margin-bottom:0;">ADVANCED INSIGHTS</span>
+                                <span class="dash-section-label" style="margin-bottom:0;">ELITE ANALYSIS</span>
                                 <span class="dash-elite-badge">Elite</span>
                             </div>
                             <span class="dash-elite-chevron" id="dash-elite-chevron">\u25B8</span>
                         </div>
                         <div class="dash-elite-content" id="dash-elite-content" style="display:none;">
-                            ${
-                              isElite
-                                ? `
-                            <div class="dash-elite-grid">
-                                <div class="dash-metric-card">
-                                    <div class="dash-metric-k">Discipline Score</div>
-                                    <div class="dash-metric-v" style="color:#8b5cf6;">${session.disciplineScore || 100}</div>
-                                </div>
-                                <div class="dash-metric-card">
-                                    <div class="dash-metric-k">Consistency</div>
-                                    <div class="dash-metric-v" style="color:#8b5cf6;">\u2014</div>
-                                </div>
-                                <div class="dash-metric-card">
-                                    <div class="dash-metric-k">Behavior Profile</div>
-                                    <div class="dash-metric-v" style="color:#8b5cf6;">${behavior?.profile || "Disciplined"}</div>
-                                </div>
+                            ${this.renderEliteAnalysis(state, isElite, behavior)}
+                        </div>
+                    </div>
+
+                    <div class="dash-history-section">
+                        <div class="dash-history-toggle" id="dash-history-toggle">
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <span class="dash-section-label" style="margin-bottom:0;">SESSION HISTORY</span>
                             </div>
-                            `
-                                : `
-                            <div class="dash-elite-grid">
-                                ${renderEliteLockedCard("Discipline Scoring", "Track how well you stick to your trading rules with an objective score.")}
-                                ${renderEliteLockedCard("Risk Metrics", "Advanced risk-adjusted performance metrics for serious traders.")}
-                                ${renderEliteLockedCard("Behavioral Patterns", "Understand how your emotional state affects your trading outcomes.")}
-                            </div>
-                            `
-                            }
+                            <span class="dash-history-chevron" id="dash-history-chevron">\u25B8</span>
+                        </div>
+                        <div class="dash-history-content" id="dash-history-content" style="display:none;">
+                            ${this.renderSessionHistory()}
                         </div>
                     </div>
                 </div>
@@ -363,6 +532,21 @@ export const Dashboard = {
         const text = Analytics.generateXShareText(state);
         const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
         window.open(url, "_blank");
+      };
+    }
+
+    // Replay session button
+    const replayBtn = overlay.querySelector("#dashboard-replay-btn");
+    if (replayBtn) {
+      replayBtn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        self.close();
+        if (session.status === "completed") {
+          SessionReplay.openForSession(session);
+        } else {
+          SessionReplay.open();
+        }
       };
     }
 
@@ -410,6 +594,35 @@ export const Dashboard = {
         if (eliteChevron) eliteChevron.textContent = open ? "\u25B8" : "\u25BE";
       });
     }
+
+    // Session History toggle
+    const historyToggle = overlay.querySelector("#dash-history-toggle");
+    const historyContent = overlay.querySelector("#dash-history-content");
+    const historyChevron = overlay.querySelector("#dash-history-chevron");
+    if (historyToggle && historyContent) {
+      historyToggle.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const open = historyContent.style.display !== "none";
+        historyContent.style.display = open ? "none" : "block";
+        if (historyChevron) historyChevron.textContent = open ? "\u25B8" : "\u25BE";
+      });
+    }
+
+    // Session History replay buttons
+    overlay.querySelectorAll(".dash-history-replay").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const idx = parseInt(btn.getAttribute("data-history-idx"), 10);
+        const history = Store.getActiveSessionHistory() || [];
+        const targetSession = history[idx];
+        if (targetSession) {
+          self.close();
+          SessionReplay.openForSession(targetSession);
+        }
+      });
+    });
 
     // Draw equity curve if data exists
     if (hasEquityData) {

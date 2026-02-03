@@ -166,6 +166,39 @@ export function parseRequestBody(args) {
 }
 
 /**
+ * Detect JSON-RPC `sendTransaction` responses in fetch/XHR interceptors.
+ * When a dApp signs a transaction separately and sends it via RPC, the wallet
+ * hooks on `signAndSendTransaction` won't fire. This function catches the RPC
+ * response and emits SHADOW_SWAP_SIGNATURE with the returned tx signature.
+ *
+ * @param {object} json - Parsed JSON response body
+ * @param {Array} args - Original fetch() arguments (for extracting request body)
+ * @param {object} ctx - Bridge context (mint, symbol, etc.)
+ */
+export function tryDetectRpcSignature(json, args, ctx) {
+  // Only process JSON-RPC 2.0 responses
+  if (json?.jsonrpc !== "2.0") return;
+  // Result must be a signature-length string (Solana base58 sigs are 87-88 chars)
+  if (!json.result || typeof json.result !== "string") return;
+  if (json.result.length < 64 || json.result.length > 100) return;
+  // Validate base58 character set (no 0, O, I, l — standard Solana tx signature format)
+  if (!/^[1-9A-HJ-NP-Za-km-z]+$/.test(json.result)) return;
+
+  const signature = json.result;
+  console.log(
+    `[ZERØ] RPC sendTransaction detected — sig=${signature.slice(0, 16)}...`
+  );
+
+  send({
+    type: "SHADOW_SWAP_SIGNATURE",
+    signature,
+    mint: ctx.mint || null,
+    symbol: ctx.symbol || null,
+    ts: Date.now(),
+  });
+}
+
+/**
  * Extract swap-related query parameters from a URL string.
  */
 function parseSwapQueryParams(url) {
@@ -346,6 +379,23 @@ function findBestQuote(ctx) {
   return null;
 }
 
+/**
+ * Minimal base58 encoder for Solana transaction signatures.
+ * Converts a Uint8Array(64) to a base58 string (the txid).
+ */
+function _bs58encode(bytes) {
+  const ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+  let num = 0n;
+  for (const b of bytes) num = num * 256n + BigInt(b);
+  let str = '';
+  while (num > 0n) {
+    str = ALPHABET[Number(num % 58n)] + str;
+    num /= 58n;
+  }
+  for (let i = 0; i < bytes.length && bytes[i] === 0; i++) str = '1' + str;
+  return str;
+}
+
 export function setupSwapDetection(ctx) {
   const WALLET_PROVIDERS = {
     "window.solana": () => window.solana,
@@ -360,7 +410,7 @@ export function setupSwapDetection(ctx) {
     if (!provider || _hooked.has(name)) return;
 
     // Hook signAndSendTransaction
-    const methods = ["signAndSendTransaction", "sendTransaction"];
+    const methods = ["signAndSendTransaction", "sendTransaction", "signTransaction"];
     for (const method of methods) {
       if (typeof provider[method] !== "function") continue;
       const origMethod = provider[method].bind(provider);
@@ -379,11 +429,23 @@ export function setupSwapDetection(ctx) {
           let signature = null;
           if (typeof result === "string") {
             signature = result;
-          } else if (result?.signature) {
+          } else if (result?.signature && typeof result.signature === "string") {
             signature = result.signature;
-          } else if (result?.publicKey && result?.signature === undefined) {
-            // Some wallets return { publicKey, signature } where signature is the tx sig
-            signature = null;
+          }
+
+          // signTransaction returns Transaction/VersionedTransaction — extract sig from signatures array
+          if (!signature) {
+            try {
+              // VersionedTransaction: signatures is Uint8Array[]
+              const sigs = result?.signatures;
+              if (Array.isArray(sigs) && sigs[0] instanceof Uint8Array && sigs[0].length === 64) {
+                if (sigs[0].some(b => b !== 0)) signature = _bs58encode(sigs[0]);
+              }
+              // Legacy Transaction: .signature is Buffer/Uint8Array
+              if (!signature && result?.signature instanceof Uint8Array && result.signature.length === 64) {
+                if (result.signature.some(b => b !== 0)) signature = _bs58encode(result.signature);
+              }
+            } catch { /* not a transaction object */ }
           }
 
           if (typeof signature === "string" && signature.length >= 30) {
@@ -391,6 +453,10 @@ export function setupSwapDetection(ctx) {
               `[ZERØ] SwapDetection: ${method} returned sig=${signature.slice(0, 16)}...`
             );
             processSignature(signature, ctx);
+          } else {
+            console.warn(
+              `[ZERØ] SwapDetection: ${method} called but no sig extracted. type=${typeof result}, keys=${result ? Object.keys(result).join(",") : "null"}`
+            );
           }
         } catch (hookErr) {
           console.warn("[ZERØ] SwapDetection: post-tx processing error:", hookErr);
@@ -424,21 +490,19 @@ export function setupSwapDetection(ctx) {
         `[ZERØ] SwapDetection: Matched quote — ${side} ${symbol || mint.slice(0, 8)}, ${solAmount.toFixed(4)} SOL, sig=${signature.slice(0, 12)}...`
       );
     } else {
-      // No cached quote — use context as fallback
-      if (!ctx.mint) {
-        console.warn(
-          "[ZERØ] SwapDetection: No cached quote and no ctx.mint — cannot determine trade"
-        );
-        return;
-      }
-      mint = ctx.mint;
-      symbol = ctx.symbol;
-      side = "BUY"; // Default assumption — most trades are buys
-      solAmount = 0; // Will need to be filled by ShadowTradeIngestion
-      tokenAmount = 0;
-      console.warn(
-        `[ZERØ] SwapDetection: No cached quote — using ctx.mint=${mint.slice(0, 8)}, defaulting to BUY`
+      // No cached quote — send just the signature for RPC resolution by content script.
+      // The content script will call background RESOLVE_SWAP_TX to get full trade data.
+      console.log(
+        `[ZERØ] SwapDetection: No cached quote — sending sig for RPC resolve: ${signature.slice(0, 16)}...`
       );
+      send({
+        type: "SHADOW_SWAP_SIGNATURE",
+        signature,
+        mint: ctx.mint || null,
+        symbol: ctx.symbol || null,
+        ts: Date.now(),
+      });
+      return;
     }
 
     send({

@@ -276,46 +276,75 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return;
     }
 
-    // DEPRECATED: Helius RPC polling replaced by bridge-level signAndSendTransaction hook.
-    // Kept commented out for potential future fallback.
-    // if (msg?.type === "POLL_WALLET_SWAPS") {
-    //   const { walletAddress, lastSignature } = msg;
-    //   if (!walletAddress) {
-    //     sendResponse({ ok: false, error: "No wallet address" });
-    //     return;
-    //   }
-    //   try {
-    //     const params = new URLSearchParams({ address: walletAddress });
-    //     if (lastSignature) params.set("after", lastSignature);
-    //     const workerUrl = `https://api.get-zero.xyz/wallet/poll?${params}`;
-    //     const ctrl = new AbortController();
-    //     const t = setTimeout(() => ctrl.abort(), 15000);
-    //     const resp = await fetch(workerUrl, {
-    //       signal: ctrl.signal,
-    //       headers: { "Content-Type": "application/json" },
-    //     });
-    //     clearTimeout(t);
-    //     const data = await resp.json();
-    //     if (!data.ok) {
-    //       console.warn("[BG] POLL_WALLET_SWAPS worker error:", data.error);
-    //       sendResponse({ ok: false, error: data.error });
-    //       return;
-    //     }
-    //     const swaps = (data.swaps || []).map((s) => ({
-    //       type: "SHADOW_TRADE_DETECTED",
-    //       __paper: true,
-    //       ...s,
-    //       priceUsd: s.priceUsd || 0,
-    //       source: "helius",
-    //       ts: Date.now(),
-    //     }));
-    //     sendResponse({ ok: true, swaps, lastSignature: data.lastSignature });
-    //   } catch (e) {
-    //     console.error("[BG] POLL_WALLET_SWAPS failed:", e);
-    //     sendResponse({ ok: false, error: e.toString() });
-    //   }
-    //   return;
-    // }
+    // Event-driven swap resolution — single getTransaction call per detected trade.
+    // Triggered by SHADOW_SWAP_SIGNATURE from bridge wallet hooks.
+    if (msg?.type === "RESOLVE_SWAP_TX") {
+      const { signature, walletAddress } = msg;
+      if (!signature || !walletAddress) {
+        sendResponse({ ok: false, error: "Missing signature or walletAddress" });
+        return;
+      }
+
+      console.log(
+        `[BG] RESOLVE_SWAP_TX: sig=${signature.slice(0, 16)}, wallet=${walletAddress.slice(0, 8)}`,
+      );
+
+      try {
+        const rpcUrl = "https://mainnet.helius-rpc.com/?api-key=public";
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 10000);
+
+        try {
+          const resp = await fetch(rpcUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              jsonrpc: "2.0",
+              id: 1,
+              method: "getTransaction",
+              params: [signature, { maxSupportedTransactionVersion: 0 }],
+            }),
+            signal: ctrl.signal,
+          });
+          clearTimeout(t);
+          const data = await resp.json();
+
+          if (data?.error) {
+            console.warn("[BG] RESOLVE_SWAP_TX RPC error:", data.error);
+            sendResponse({ ok: true, swap: null }); // tx may not be indexed yet
+            return;
+          }
+
+          if (!data?.result) {
+            sendResponse({ ok: true, swap: null }); // tx not indexed yet
+            return;
+          }
+
+          const swap = parseSwapFromTx(data.result, walletAddress, signature);
+          if (swap) {
+            swap.blockTime = data.result.blockTime || 0;
+            console.log(
+              `[BG] RESOLVE_SWAP_TX: ${swap.side} ${swap.solAmount.toFixed(4)} SOL → ${swap.mint?.slice(0, 8)}`,
+            );
+          } else {
+            console.log("[BG] RESOLVE_SWAP_TX: tx parsed but not a SOL<->token swap");
+          }
+          sendResponse({ ok: true, swap });
+        } catch (fetchErr) {
+          clearTimeout(t);
+          if (fetchErr.name === "AbortError") {
+            console.warn("[BG] RESOLVE_SWAP_TX: RPC timeout (10s)");
+            sendResponse({ ok: true, swap: null });
+          } else {
+            throw fetchErr;
+          }
+        }
+      } catch (e) {
+        console.error("[BG] RESOLVE_SWAP_TX failed:", e);
+        sendResponse({ ok: false, error: e.toString() });
+      }
+      return;
+    }
 
     // Wallet Balance (Shadow Mode auto-detect)
     if (msg?.type === "GET_WALLET_BALANCE") {

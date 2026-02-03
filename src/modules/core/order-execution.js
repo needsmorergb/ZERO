@@ -72,6 +72,7 @@ export const OrderExecution = {
       priceSource: Market.lastSource || "unknown",
       strategy,
       tradePlan, // Store if provided
+      tradeSource: "PAPER",
     };
 
     const fillId = this.recordFill(state, fillData);
@@ -160,6 +161,7 @@ export const OrderExecution = {
       priceSource: Market.lastSource || "unknown",
       strategy,
       realizedPnlSol: pnlEventSol,
+      tradeSource: "PAPER",
     };
 
     const fillId = this.recordFill(state, fillData);

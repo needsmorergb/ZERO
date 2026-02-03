@@ -129,6 +129,20 @@ export const BuyHud = {
 
   renderQuickButtons(isBuy) {
     const values = isBuy ? Store.state.settings.quickBuySols : Store.state.settings.quickSellPcts;
+    const suffix = isBuy ? " SOL" : "%";
+
+    if (this.buyHudEdit) {
+      // Edit mode: show removable chips + an add button
+      let html = values
+        .map(
+          (v, i) => `
+            <button class="qbtn qbtn-edit" data-act="remove-preset" data-idx="${i}">${v}${suffix} <span class="qbtn-x">\u00d7</span></button>
+        `
+        )
+        .join("");
+      html += `<button class="qbtn qbtn-add" data-act="add-preset">+</button>`;
+      return html;
+    }
 
     return values
       .map(
@@ -208,9 +222,22 @@ export const BuyHud = {
         Paywall.showUpgradeModal("TRADE_PLAN");
       }
       if (act === "edit") {
-        // Toggle edit mode for quick buttons (Future: implement editing UI)
         this.buyHudEdit = !this.buyHudEdit;
-        this.mountBuyHud();
+        this.mountBuyHud(null, true);
+      }
+      if (act === "remove-preset") {
+        const idx = parseInt(actEl.getAttribute("data-idx"), 10);
+        const isBuy = this.buyHudTab === "buy";
+        const key = isBuy ? "quickBuySols" : "quickSellPcts";
+        const arr = Store.state.settings[key];
+        if (arr.length > 1) {
+          arr.splice(idx, 1);
+          await Store.save();
+          this.mountBuyHud(null, true);
+        }
+      }
+      if (act === "add-preset") {
+        this._showAddPresetInput(root);
       }
       if (act === "toggle-plan") {
         this.tradePlanExpanded = !this.tradePlanExpanded;
@@ -504,6 +531,51 @@ export const BuyHud = {
     if (stopEl) stopEl.value = "";
     if (targetEl) targetEl.value = "";
     if (thesisEl) thesisEl.value = "";
+  },
+
+  _showAddPresetInput(root) {
+    const quickRow = root.querySelector(".quickRow");
+    if (!quickRow || quickRow.querySelector(".preset-add-input")) return;
+
+    const isBuy = this.buyHudTab === "buy";
+    const wrap = document.createElement("div");
+    wrap.style.cssText = "display:flex; gap:4px; margin-top:6px; align-items:center;";
+    wrap.innerHTML = `
+      <input class="preset-add-input field" type="text" inputmode="decimal"
+        placeholder="${isBuy ? "e.g. 0.5" : "e.g. 50"}"
+        style="flex:1; padding:6px 8px; font-size:12px;">
+      <button class="qbtn" data-act="confirm-add" style="padding:4px 10px; font-size:12px;">Add</button>
+    `;
+    quickRow.appendChild(wrap);
+
+    const input = wrap.querySelector(".preset-add-input");
+    input.focus();
+
+    const confirmAdd = async () => {
+      const val = parseFloat(input.value);
+      if (isNaN(val) || val <= 0) {
+        wrap.remove();
+        return;
+      }
+      const key = isBuy ? "quickBuySols" : "quickSellPcts";
+      const arr = Store.state.settings[key];
+      if (!arr.includes(val)) {
+        arr.push(val);
+        arr.sort((a, b) => a - b);
+        await Store.save();
+      }
+      this.mountBuyHud(null, true);
+    };
+
+    wrap.querySelector('[data-act="confirm-add"]').onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      confirmAdd();
+    };
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); confirmAdd(); }
+      if (e.key === "Escape") { wrap.remove(); }
+    });
   },
 
   async executeTrade(root) {

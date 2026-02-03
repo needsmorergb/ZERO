@@ -20,7 +20,7 @@ export const FEATURES = {
   ADVANCED_ANALYTICS: "elite",
   RISK_ADJUSTED_METRICS: "elite",
   TILT_DETECTION: "elite",
-  SESSION_REPLAY: "elite",
+  SESSION_REPLAY: "free",
   ADVANCED_COACHING: "elite",
   BEHAVIOR_BASELINE: "elite",
   MARKET_CONTEXT: "elite",
@@ -39,6 +39,8 @@ export const FEATURES = {
   ELITE_SESSION_REPLAY: "elite",
   ELITE_TRADER_PROFILE: "elite",
   ELITE_MARKET_CONTEXT: "elite",
+  ELITE_TIME_ANALYSIS: "elite",
+  ELITE_MARKETCAP_ANALYSIS: "elite",
 };
 
 /**
@@ -101,6 +103,16 @@ export const TEASED_FEATURES = {
       id: "ELITE_NARRATIVE_TRUST",
       name: "Narrative Trust",
       desc: "Observe social signals, community presence, and developer history for any token.",
+    },
+    {
+      id: "ELITE_TIME_ANALYSIS",
+      name: "Session Time Analysis",
+      desc: "Discover your most profitable hours of the day.",
+    },
+    {
+      id: "ELITE_MARKETCAP_ANALYSIS",
+      name: "Market Cap Analysis",
+      desc: "See which market cap ranges give you the best results.",
     },
   ],
 };

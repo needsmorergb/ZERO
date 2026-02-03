@@ -162,7 +162,11 @@
           disciplineScore: 100,
           activeAlerts: [],
           status: "active",
-          notes: ""
+          notes: "",
+          walletBalance: 0,
+          // Initial wallet balance (set once, never mutated by trades)
+          totalSolInvested: 0
+          // Cumulative SOL spent on BUYs (never decreases)
         },
         shadowSessionHistory: [],
         // Uncapped — real sessions can be long
@@ -179,7 +183,7 @@
           profile: "Disciplined"
         },
         shadowEventLog: [],
-        schemaVersion: 3,
+        schemaVersion: 4,
         version: "2.0.0"
       };
       Store = {
@@ -241,6 +245,30 @@
                   if (this.state.schemaVersion < 3) {
                     console.log("[ZER\xD8] Migrating storage schema v2 -> v3 (shadow state)");
                     this.state.schemaVersion = 3;
+                    this.save();
+                  }
+                  if (this.state.schemaVersion < 4) {
+                    console.log("[ZER\xD8] Migrating storage schema v3 -> v4 (session replay)");
+                    for (const hist of [this.state.sessionHistory, this.state.shadowSessionHistory]) {
+                      if (Array.isArray(hist)) {
+                        hist.forEach((s) => {
+                          if (!s.eventSnapshot)
+                            s.eventSnapshot = [];
+                          if (!s.mode)
+                            s.mode = hist === this.state.shadowSessionHistory ? "shadow" : "paper";
+                        });
+                      }
+                    }
+                    for (const t of Object.values(this.state.trades || {})) {
+                      if (!t.tradeSource) {
+                        t.tradeSource = t.mode === "shadow" ? "REAL_SHADOW" : "PAPER";
+                      }
+                    }
+                    for (const t of Object.values(this.state.shadowTrades || {})) {
+                      if (!t.tradeSource)
+                        t.tradeSource = "REAL_SHADOW";
+                    }
+                    this.state.schemaVersion = 4;
                     this.save();
                   }
                 }
@@ -389,9 +417,13 @@
           if (currentSession && currentSession.trades && currentSession.trades.length > 0) {
             currentSession.endTime = Date.now();
             currentSession.status = "completed";
+            currentSession.mode = isShadow ? "shadow" : "paper";
+            const eventLogKey = isShadow ? "shadowEventLog" : "eventLog";
+            currentSession.eventSnapshot = [...this.state[eventLogKey] || []];
             if (!this.state[historyKey])
               this.state[historyKey] = [];
             this.state[historyKey].push({ ...currentSession });
+            this.state[eventLogKey] = [];
             if (!isShadow && this.state[historyKey].length > 10) {
               this.state[historyKey] = this.state[historyKey].slice(-10);
             }
@@ -412,7 +444,9 @@
             disciplineScore: 100,
             activeAlerts: [],
             status: "active",
-            notes: ""
+            notes: "",
+            walletBalance: 0,
+            totalSolInvested: 0
           };
           const prefix = isShadow ? "_shadow_milestone_" : "_milestone_";
           delete this.state[prefix + "2x"];
@@ -1708,6 +1742,38 @@
   background: rgba(20,184,166,0.1);
   border-color: rgba(20,184,166,0.3);
   color: #14b8a6;
+}
+
+#${IDS.buyHud} .qbtn-edit {
+  position: relative;
+  border-color: rgba(239, 68, 68, 0.2);
+  padding-right: 22px;
+}
+
+#${IDS.buyHud} .qbtn-edit:hover {
+  border-color: rgba(239, 68, 68, 0.5);
+  background: rgba(239, 68, 68, 0.08);
+  color: #f87171;
+}
+
+#${IDS.buyHud} .qbtn-x {
+  font-size: 13px;
+  font-weight: 700;
+  color: #ef4444;
+  margin-left: 4px;
+}
+
+#${IDS.buyHud} .qbtn-add {
+  border-style: dashed;
+  border-color: rgba(20,184,166,0.25);
+  color: #14b8a6;
+  font-size: 14px;
+  padding: 8px 14px;
+}
+
+#${IDS.buyHud} .qbtn-add:hover {
+  background: rgba(20,184,166,0.1);
+  border-color: rgba(20,184,166,0.4);
 }
 
 #${IDS.buyHud} .strategyRow {
@@ -4222,6 +4288,9 @@ input:checked + .slider:before {
     TAB_COMMUNITY: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
     TAB_WEBSITE: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`,
     TAB_DEVELOPER: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>`,
+    // Replay & History
+    REPLAY: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>`,
+    HISTORY: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`,
     // General UI
     LOCK: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`,
     BRAIN: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.97-3.06 2.5 2.5 0 0 1-1.95-4.36 2.5 2.5 0 0 1 2-4.11 2.5 2.5 0 0 1 5.38-2.45Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.97-3.06 2.5 2.5 0 0 0 1.95-4.36 2.5 2.5 0 0 0-2-4.11 2.5 2.5 0 0 0-5.38-2.45Z"/></svg>`,
@@ -4421,7 +4490,7 @@ input:checked + .slider:before {
     ADVANCED_ANALYTICS: "elite",
     RISK_ADJUSTED_METRICS: "elite",
     TILT_DETECTION: "elite",
-    SESSION_REPLAY: "elite",
+    SESSION_REPLAY: "free",
     ADVANCED_COACHING: "elite",
     BEHAVIOR_BASELINE: "elite",
     MARKET_CONTEXT: "elite",
@@ -4438,7 +4507,9 @@ input:checked + .slider:before {
     ELITE_RISK_METRICS: "elite",
     ELITE_SESSION_REPLAY: "elite",
     ELITE_TRADER_PROFILE: "elite",
-    ELITE_MARKET_CONTEXT: "elite"
+    ELITE_MARKET_CONTEXT: "elite",
+    ELITE_TIME_ANALYSIS: "elite",
+    ELITE_MARKETCAP_ANALYSIS: "elite"
   };
   var TEASED_FEATURES = {
     ELITE: [
@@ -4496,6 +4567,16 @@ input:checked + .slider:before {
         id: "ELITE_NARRATIVE_TRUST",
         name: "Narrative Trust",
         desc: "Observe social signals, community presence, and developer history for any token."
+      },
+      {
+        id: "ELITE_TIME_ANALYSIS",
+        name: "Session Time Analysis",
+        desc: "Discover your most profitable hours of the day."
+      },
+      {
+        id: "ELITE_MARKETCAP_ANALYSIS",
+        name: "Market Cap Analysis",
+        desc: "See which market cap ranges give you the best results."
       }
     ]
   };
@@ -4902,6 +4983,11 @@ input:checked + .slider:before {
     currentSymbol: null,
     sourceSite: null,
     listeners: [],
+    // Platform PnL (scraped from Padre/Axiom header — used in Shadow Mode)
+    platformPnl: null,
+    // Platform's own T.PNL value (USD)
+    platformPnlTs: 0,
+    // Timestamp of last platform PnL update
     // Legacy support flags if needed
     lastTickTs: 0,
     lastSource: null,
@@ -6886,8 +6972,9 @@ input:checked + .slider:before {
         marketCapUsdAtFill: Market.marketCap,
         priceSource: Market.lastSource || "unknown",
         strategy,
-        tradePlan
+        tradePlan,
         // Store if provided
+        tradeSource: "PAPER"
       };
       const fillId = this.recordFill(state, fillData);
       state.session.balance -= solAmount;
@@ -6947,7 +7034,8 @@ input:checked + .slider:before {
         marketCapUsdAtFill: Market.marketCap,
         priceSource: Market.lastSource || "unknown",
         strategy,
-        realizedPnlSol: pnlEventSol
+        realizedPnlSol: pnlEventSol,
+        tradeSource: "PAPER"
       };
       const fillId = this.recordFill(state, fillData);
       state.session.balance += proceedsSol;
@@ -7790,6 +7878,184 @@ canvas#equity-canvas {
     gap: 8px;
 }
 
+/* REPLAY SESSION BUTTON */
+.dash-replay-section {
+    margin-top: 12px;
+    margin-bottom: 16px;
+}
+
+.dash-replay-btn {
+    width: 100%;
+    background: rgba(139, 92, 246, 0.08);
+    border: 1px solid rgba(139, 92, 246, 0.2);
+    color: #a78bfa;
+    padding: 11px;
+    border-radius: 10px;
+    font-weight: 700;
+    font-size: 13px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: all 0.15s;
+    font-family: inherit;
+}
+
+.dash-replay-btn:hover {
+    background: rgba(139, 92, 246, 0.15);
+    border-color: rgba(139, 92, 246, 0.35);
+}
+
+.dash-replay-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+/* SESSION HISTORY SECTION */
+.dash-history-section {
+    margin-top: 16px;
+    border-top: 1px solid rgba(255, 255, 255, 0.04);
+    padding-top: 16px;
+}
+
+.dash-history-toggle {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    padding: 8px 4px;
+    border-radius: 8px;
+    transition: background 0.15s;
+}
+
+.dash-history-toggle:hover {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.dash-history-chevron {
+    color: #475569;
+    font-size: 14px;
+    transition: transform 0.15s;
+}
+
+.dash-history-content {
+    padding-top: 8px;
+}
+
+.dash-history-empty {
+    text-align: center;
+    padding: 20px 16px;
+    font-size: 12px;
+    color: #475569;
+}
+
+.dash-history-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+    transition: background 0.15s;
+    border-radius: 6px;
+}
+
+.dash-history-row:hover {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.dash-history-row:last-child {
+    border-bottom: none;
+}
+
+.dash-history-date {
+    font-size: 11px;
+    color: #94a3b8;
+    font-weight: 600;
+    min-width: 85px;
+}
+
+.dash-history-meta {
+    font-size: 11px;
+    color: #64748b;
+    flex: 1;
+}
+
+.dash-history-pnl {
+    font-size: 12px;
+    font-weight: 700;
+    min-width: 80px;
+    text-align: right;
+}
+
+.dash-history-replay {
+    background: rgba(139, 92, 246, 0.08);
+    border: 1px solid rgba(139, 92, 246, 0.2);
+    color: #a78bfa;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 10px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.15s;
+    font-family: inherit;
+    white-space: nowrap;
+}
+
+.dash-history-replay:hover {
+    background: rgba(139, 92, 246, 0.15);
+    border-color: rgba(139, 92, 246, 0.35);
+}
+
+.dash-history-replay svg {
+    width: 12px;
+    height: 12px;
+}
+
+/* ELITE ANALYSIS SUB-SECTIONS */
+.dash-elite-subsection {
+    margin-bottom: 12px;
+}
+
+.dash-elite-subsection-label {
+    font-size: 9px;
+    font-weight: 700;
+    color: #3f4a5a;
+    letter-spacing: 1.2px;
+    margin-bottom: 8px;
+    margin-top: 12px;
+}
+
+.dash-elite-subsection-label:first-child {
+    margin-top: 0;
+}
+
+.dash-emotion-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.dash-emotion-table th {
+    font-size: 9px;
+    font-weight: 700;
+    color: #3f4a5a;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    text-align: left;
+    padding: 6px 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.dash-emotion-table td {
+    font-size: 11px;
+    color: #cbd5e1;
+    padding: 6px 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+}
+
 /* SHARED UTILITIES */
 .win { color: #10b981; }
 .loss { color: #ef4444; }
@@ -7808,6 +8074,850 @@ canvas#equity-canvas {
         </div>
     `;
   }
+
+  // src/modules/ui/session-replay.js
+  init_store();
+  var SESSION_REPLAY_CSS = `
+.replay-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.9);
+    z-index: 2147483647;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    pointer-events: auto;
+}
+
+.replay-modal {
+    background: linear-gradient(145deg, #0d1117, #161b22);
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    border-radius: 16px;
+    width: 800px;
+    max-width: 95vw;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5);
+}
+
+.replay-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid rgba(139, 92, 246, 0.2);
+    background: rgba(139, 92, 246, 0.05);
+}
+
+.replay-header-left {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.replay-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    font-weight: 800;
+    color: #a78bfa;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.replay-title svg {
+    width: 20px;
+    height: 20px;
+}
+
+.replay-subtitle {
+    font-size: 11px;
+    color: #64748b;
+    font-weight: 500;
+    padding-left: 30px;
+}
+
+.replay-close {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #94a3b8;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    flex-shrink: 0;
+}
+
+.replay-close:hover {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.3);
+    color: #ef4444;
+}
+
+.replay-stats {
+    display: flex;
+    gap: 20px;
+    padding: 12px 20px;
+    background: rgba(0, 0, 0, 0.3);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.replay-stat {
+    text-align: center;
+}
+
+.replay-stat .k {
+    font-size: 10px;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
+
+.replay-stat .v {
+    font-size: 16px;
+    font-weight: 700;
+    color: #f8fafc;
+}
+
+.replay-equity-section {
+    padding: 16px 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.replay-equity-section .dash-section-label {
+    font-size: 9px;
+    font-weight: 700;
+    color: #3f4a5a;
+    letter-spacing: 1.2px;
+    margin-bottom: 8px;
+}
+
+#replay-equity-canvas {
+    width: 100%;
+    height: 120px;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.replay-filters {
+    display: flex;
+    gap: 8px;
+    padding: 12px 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    flex-wrap: wrap;
+}
+
+.filter-btn {
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: transparent;
+    color: #64748b;
+}
+
+.filter-btn:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.filter-btn.active {
+    background: rgba(139, 92, 246, 0.2);
+    border-color: rgba(139, 92, 246, 0.5);
+    color: #a78bfa;
+}
+
+.filter-btn.trade { --accent: #14b8a6; }
+.filter-btn.alert { --accent: #ef4444; }
+.filter-btn.discipline { --accent: #f59e0b; }
+.filter-btn.milestone { --accent: #10b981; }
+
+.filter-btn.active.trade { background: rgba(20, 184, 166, 0.2); border-color: rgba(20, 184, 166, 0.5); color: #14b8a6; }
+.filter-btn.active.alert { background: rgba(239, 68, 68, 0.2); border-color: rgba(239, 68, 68, 0.5); color: #ef4444; }
+.filter-btn.active.discipline { background: rgba(245, 158, 11, 0.2); border-color: rgba(245, 158, 11, 0.5); color: #f59e0b; }
+.filter-btn.active.milestone { background: rgba(16, 185, 129, 0.2); border-color: rgba(16, 185, 129, 0.5); color: #10b981; }
+
+.replay-timeline {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 20px;
+}
+
+.replay-timeline::-webkit-scrollbar { width: 4px; }
+.replay-timeline::-webkit-scrollbar-track { background: transparent; }
+.replay-timeline::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.08); border-radius: 2px; }
+
+.timeline-empty {
+    text-align: center;
+    padding: 40px 20px;
+    color: #64748b;
+}
+
+.timeline-empty svg {
+    width: 48px;
+    height: 48px;
+    margin-bottom: 12px;
+    opacity: 0.5;
+}
+
+.timeline-event {
+    display: flex;
+    gap: 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+    transition: background 0.2s;
+    cursor: pointer;
+    border-radius: 6px;
+}
+
+.timeline-event:hover {
+    background: rgba(255, 255, 255, 0.02);
+    margin: 0 -8px;
+    padding: 12px 8px;
+}
+
+.timeline-event.selected {
+    background: rgba(139, 92, 246, 0.08);
+    margin: 0 -8px;
+    padding: 12px 8px;
+    border-color: rgba(139, 92, 246, 0.15);
+}
+
+.timeline-event:last-child {
+    border-bottom: none;
+}
+
+.event-time {
+    flex-shrink: 0;
+    width: 60px;
+    font-size: 11px;
+    color: #64748b;
+    font-weight: 500;
+}
+
+.event-icon {
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.event-icon.trade { background: rgba(20, 184, 166, 0.15); color: #14b8a6; }
+.event-icon.alert { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+.event-icon.discipline { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+.event-icon.milestone { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+.event-icon.system { background: rgba(99, 102, 241, 0.15); color: #6366f1; }
+
+.event-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.event-type {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
+
+.event-type.trade { color: #14b8a6; }
+.event-type.alert { color: #ef4444; }
+.event-type.discipline { color: #f59e0b; }
+.event-type.milestone { color: #10b981; }
+.event-type.system { color: #6366f1; }
+
+.event-message {
+    font-size: 13px;
+    color: #e2e8f0;
+    line-height: 1.4;
+}
+
+.event-data {
+    display: flex;
+    gap: 12px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+}
+
+.event-tag {
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.05);
+    color: #94a3b8;
+}
+
+.event-tag.win { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+.event-tag.loss { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+
+.replay-detail-drawer {
+    padding: 12px 20px;
+    background: rgba(139, 92, 246, 0.04);
+    border-top: 1px solid rgba(139, 92, 246, 0.1);
+    border-bottom: 1px solid rgba(139, 92, 246, 0.1);
+}
+
+.replay-detail-drawer .detail-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: #a78bfa;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+}
+
+.replay-detail-drawer .detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+}
+
+.replay-detail-drawer .detail-item {
+    font-size: 11px;
+}
+
+.replay-detail-drawer .detail-item .dk {
+    color: #64748b;
+    margin-bottom: 2px;
+}
+
+.replay-detail-drawer .detail-item .dv {
+    color: #e2e8f0;
+    font-weight: 600;
+}
+
+.replay-footer {
+    padding: 12px 20px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.replay-count {
+    font-size: 11px;
+    color: #64748b;
+}
+
+.replay-mode-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.replay-mode-badge.paper { color: #14b8a6; }
+.replay-mode-badge.shadow { color: #a78bfa; }
+
+.replay-elite-note {
+    font-size: 10px;
+    color: #475569;
+    padding: 8px 20px;
+    text-align: center;
+    border-top: 1px solid rgba(255, 255, 255, 0.03);
+}
+`;
+  var SessionReplay = {
+    isOpen: false,
+    activeFilters: ["TRADE", "ALERT", "DISCIPLINE", "MILESTONE"],
+    // State for replay
+    replaySession: null,
+    // Archived session object (null = current session)
+    replayEvents: [],
+    // Resolved events
+    replayTradesMap: {},
+    // Trade ID → trade object
+    selectedEventIdx: null,
+    // For equity curve highlight
+    open() {
+      this.replaySession = null;
+      this.selectedEventIdx = null;
+      this._resolveCurrentSessionData();
+      this.isOpen = true;
+      this.render();
+    },
+    openForSession(archivedSession) {
+      if (!archivedSession)
+        return;
+      if (archivedSession.status === "active") {
+        console.warn("[SessionReplay] Cannot replay active session");
+        return;
+      }
+      this.replaySession = archivedSession;
+      this.selectedEventIdx = null;
+      this._resolveHistoricalSessionData(archivedSession);
+      this.isOpen = true;
+      this.render();
+    },
+    close() {
+      this.isOpen = false;
+      this.replaySession = null;
+      this.replayEvents = [];
+      this.replayTradesMap = {};
+      this.selectedEventIdx = null;
+      const overlay = OverlayManager.getShadowRoot().querySelector(".replay-overlay");
+      if (overlay)
+        overlay.remove();
+    },
+    toggle() {
+      if (this.isOpen)
+        this.close();
+      else
+        this.open();
+    },
+    // --- Data Resolution ---
+    _resolveCurrentSessionData() {
+      const state = Store.state;
+      this.replayEvents = Analytics.getEventLog(state, { limit: 100 });
+      this.replayTradesMap = Store.getActiveTrades() || {};
+    },
+    _resolveHistoricalSessionData(session) {
+      if (session.eventSnapshot && session.eventSnapshot.length > 0) {
+        this.replayEvents = session.eventSnapshot;
+      } else {
+        this.replayEvents = this._reconstructEventsFromTrades(session);
+      }
+      const isShadow = session.mode === "shadow" || session.walletBalance !== void 0;
+      const tradesMap = isShadow ? Store.state.shadowTrades : Store.state.trades;
+      this.replayTradesMap = {};
+      (session.trades || []).forEach((id) => {
+        if (tradesMap[id])
+          this.replayTradesMap[id] = tradesMap[id];
+      });
+    },
+    _reconstructEventsFromTrades(session) {
+      const isShadow = session.mode === "shadow" || session.walletBalance !== void 0;
+      const tradesMap = isShadow ? Store.state.shadowTrades : Store.state.trades;
+      const events = [];
+      (session.trades || []).forEach((id) => {
+        const t = tradesMap[id];
+        if (!t)
+          return;
+        const priceStr = t.fillPriceUsd ? `$${t.fillPriceUsd.toFixed(6)}` : "?";
+        events.push({
+          id: `synth_${t.id}`,
+          ts: t.ts,
+          type: t.side,
+          category: "TRADE",
+          message: `${t.side} ${t.symbol || "?"} @ ${priceStr}`,
+          data: {
+            tradeId: t.id,
+            symbol: t.symbol,
+            realizedPnlSol: t.realizedPnlSol,
+            strategy: t.strategy,
+            solAmount: t.solAmount,
+            fillPriceUsd: t.fillPriceUsd
+          }
+        });
+      });
+      return events.sort((a, b) => a.ts - b.ts);
+    },
+    // --- Rendering ---
+    render() {
+      const root = OverlayManager.getShadowRoot();
+      let overlay = root.querySelector(".replay-overlay");
+      if (!overlay) {
+        overlay = document.createElement("div");
+        overlay.className = "replay-overlay";
+        if (!root.getElementById("replay-styles")) {
+          const style = document.createElement("style");
+          style.id = "replay-styles";
+          style.textContent = SESSION_REPLAY_CSS;
+          root.appendChild(style);
+        }
+        root.appendChild(overlay);
+      }
+      const state = Store.state;
+      const isElite = FeatureManager.isElite(state);
+      const session = this.replaySession || Store.getActiveSession();
+      const events = this.getFilteredEvents(isElite);
+      const eventStats = this._computeEventStats();
+      const hasEquityData = (session.equityHistory || []).length >= 2;
+      const sessionMode = session.mode || (Store.isShadowMode() ? "shadow" : "paper");
+      const modeLabel = sessionMode === "shadow" ? "Real trades (observed)" : "Paper session";
+      const sessionPnl = session.realized || 0;
+      const tradeCount = (session.trades || []).length;
+      const durationMs = (session.endTime || Date.now()) - (session.startTime || Date.now());
+      const durationMin = Math.max(1, Math.floor(durationMs / 6e4));
+      overlay.innerHTML = `
+      <div class="replay-modal">
+        <div class="replay-header">
+          <div class="replay-header-left">
+            <div class="replay-title">
+              ${ICONS.REPLAY || ICONS.BRAIN}
+              <span>Session Replay</span>
+            </div>
+            <div class="replay-subtitle">${modeLabel}</div>
+          </div>
+          <button class="replay-close">${ICONS.X}</button>
+        </div>
+
+        <div class="replay-stats">
+          <div class="replay-stat">
+            <div class="k">Duration</div>
+            <div class="v">${durationMin}m</div>
+          </div>
+          <div class="replay-stat">
+            <div class="k">Trades</div>
+            <div class="v" style="color:#14b8a6;">${tradeCount}</div>
+          </div>
+          <div class="replay-stat">
+            <div class="k">P&L</div>
+            <div class="v" style="color:${sessionPnl >= 0 ? "#10b981" : "#ef4444"};">${sessionPnl >= 0 ? "+" : ""}${sessionPnl.toFixed(4)} SOL</div>
+          </div>
+          <div class="replay-stat">
+            <div class="k">Events</div>
+            <div class="v">${eventStats.total}</div>
+          </div>
+        </div>
+
+        ${hasEquityData ? `
+        <div class="replay-equity-section">
+          <div class="dash-section-label">EQUITY CURVE</div>
+          <canvas id="replay-equity-canvas"></canvas>
+        </div>
+        ` : ""}
+
+        ${isElite ? `
+        <div class="replay-filters">
+          <button class="filter-btn trade ${this.activeFilters.includes("TRADE") ? "active" : ""}" data-filter="TRADE">
+            Trades (${eventStats.trades})
+          </button>
+          <button class="filter-btn alert ${this.activeFilters.includes("ALERT") ? "active" : ""}" data-filter="ALERT">
+            Alerts (${eventStats.alerts})
+          </button>
+          <button class="filter-btn discipline ${this.activeFilters.includes("DISCIPLINE") ? "active" : ""}" data-filter="DISCIPLINE">
+            Discipline (${eventStats.discipline})
+          </button>
+          <button class="filter-btn milestone ${this.activeFilters.includes("MILESTONE") ? "active" : ""}" data-filter="MILESTONE">
+            Milestones (${eventStats.milestones})
+          </button>
+        </div>
+        ` : ""}
+
+        <div class="replay-timeline">
+          ${events.length > 0 ? this.renderEvents(events) : this.renderEmpty()}
+        </div>
+
+        ${this.selectedEventIdx !== null && isElite ? this.renderDetailDrawer(events) : ""}
+
+        <div class="replay-footer">
+          <div class="replay-count">Showing ${events.length} events</div>
+          <div class="replay-mode-badge ${sessionMode}">${sessionMode === "shadow" ? "Shadow" : "Paper"}</div>
+        </div>
+
+        ${!isElite ? `
+        <div class="replay-elite-note">Full timeline with discipline, alerts, and interactive analysis available in Elite</div>
+        ` : ""}
+      </div>
+    `;
+      this.bindEvents(overlay);
+      if (hasEquityData) {
+        setTimeout(() => this.drawEquityCurve(overlay, session), 100);
+      }
+    },
+    renderEmpty() {
+      return `
+      <div class="timeline-empty">
+        ${ICONS.TARGET}
+        <div style="font-size:14px; font-weight:600; margin-bottom:4px;">No events recorded</div>
+        <div style="font-size:12px;">This session has no event data for replay.</div>
+      </div>
+    `;
+    },
+    renderEvents(events) {
+      return events.map((event, idx) => {
+        const time = new Date(event.ts).toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit"
+        });
+        const category = (event.category || "TRADE").toLowerCase();
+        const icon = this.getEventIcon(event.category);
+        const dataTags = this.renderEventData(event);
+        const selectedClass = this.selectedEventIdx === idx ? "selected" : "";
+        return `
+          <div class="timeline-event ${selectedClass}" data-event-idx="${idx}">
+            <div class="event-time">${time}</div>
+            <div class="event-icon ${category}">${icon}</div>
+            <div class="event-content">
+              <div class="event-type ${category}">${event.type}</div>
+              <div class="event-message">${event.message}</div>
+              ${dataTags ? `<div class="event-data">${dataTags}</div>` : ""}
+            </div>
+          </div>
+        `;
+      }).join("");
+    },
+    renderEventData(event) {
+      const data = event.data || {};
+      const tags = [];
+      if (data.symbol)
+        tags.push(`<span class="event-tag">${data.symbol}</span>`);
+      if (data.strategy && data.strategy !== "MANUAL")
+        tags.push(`<span class="event-tag">${data.strategy}</span>`);
+      if (data.realizedPnlSol !== void 0 && data.realizedPnlSol !== null) {
+        const pnl = data.realizedPnlSol;
+        const cls = pnl >= 0 ? "win" : "loss";
+        tags.push(
+          `<span class="event-tag ${cls}">${pnl >= 0 ? "+" : ""}${pnl.toFixed(4)} SOL</span>`
+        );
+      }
+      if (data.penalty)
+        tags.push(`<span class="event-tag">-${data.penalty} pts</span>`);
+      if (data.winStreak)
+        tags.push(`<span class="event-tag win">${data.winStreak}W Streak</span>`);
+      if (data.tradeCount)
+        tags.push(`<span class="event-tag">${data.tradeCount} trades</span>`);
+      return tags.join("");
+    },
+    renderDetailDrawer(events) {
+      const event = events[this.selectedEventIdx];
+      if (!event)
+        return "";
+      const data = event.data || {};
+      let details = "";
+      if (data.symbol) {
+        details += `<div class="detail-item"><div class="dk">Symbol</div><div class="dv">${data.symbol}</div></div>`;
+      }
+      if (data.fillPriceUsd) {
+        details += `<div class="detail-item"><div class="dk">Price</div><div class="dv">$${data.fillPriceUsd.toFixed(6)}</div></div>`;
+      }
+      if (data.solAmount) {
+        details += `<div class="detail-item"><div class="dk">Amount</div><div class="dv">${data.solAmount.toFixed(4)} SOL</div></div>`;
+      }
+      if (data.strategy) {
+        details += `<div class="detail-item"><div class="dk">Strategy</div><div class="dv">${data.strategy}</div></div>`;
+      }
+      if (data.realizedPnlSol !== void 0 && data.realizedPnlSol !== null) {
+        const pnl = data.realizedPnlSol;
+        const color = pnl >= 0 ? "#10b981" : "#ef4444";
+        details += `<div class="detail-item"><div class="dk">Realized P&L</div><div class="dv" style="color:${color};">${pnl >= 0 ? "+" : ""}${pnl.toFixed(4)} SOL</div></div>`;
+      }
+      if (data.penalty) {
+        details += `<div class="detail-item"><div class="dk">Penalty</div><div class="dv" style="color:#f59e0b;">-${data.penalty} pts</div></div>`;
+      }
+      if (!details)
+        return "";
+      return `
+      <div class="replay-detail-drawer">
+        <div class="detail-title">Event Details</div>
+        <div class="detail-grid">${details}</div>
+      </div>
+    `;
+    },
+    getEventIcon(category) {
+      switch (category) {
+        case "TRADE":
+          return ICONS.TARGET;
+        case "ALERT":
+          return ICONS.TILT;
+        case "DISCIPLINE":
+          return ICONS.BRAIN;
+        case "MILESTONE":
+          return ICONS.WIN;
+        default:
+          return ICONS.ZERO;
+      }
+    },
+    // --- Equity Curve ---
+    drawEquityCurve(root, session) {
+      const canvas = root.querySelector("#replay-equity-canvas");
+      if (!canvas)
+        return;
+      const ctx = canvas.getContext("2d");
+      const history = session.equityHistory || [];
+      if (history.length < 2)
+        return;
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = canvas.clientWidth * dpr;
+      canvas.height = canvas.clientHeight * dpr;
+      ctx.scale(dpr, dpr);
+      const w = canvas.clientWidth;
+      const h = canvas.clientHeight;
+      const padding = 16;
+      const points = history.map((e) => e.equity);
+      const timestamps = history.map((e) => e.ts);
+      const min = Math.min(...points) * 0.99;
+      const max = Math.max(...points) * 1.01;
+      const range = max - min || 1;
+      ctx.clearRect(0, 0, w, h);
+      ctx.beginPath();
+      ctx.strokeStyle = "#14b8a6";
+      ctx.lineWidth = 1.5;
+      ctx.lineJoin = "round";
+      history.forEach((entry, i) => {
+        const x = padding + i / (history.length - 1) * (w - padding * 2);
+        const y = h - padding - (entry.equity - min) / range * (h - padding * 2);
+        if (i === 0)
+          ctx.moveTo(x, y);
+        else
+          ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+      const grad = ctx.createLinearGradient(0, 0, 0, h);
+      grad.addColorStop(0, "rgba(20, 184, 166, 0.15)");
+      grad.addColorStop(1, "rgba(20, 184, 166, 0)");
+      ctx.lineTo(w - padding, h - padding);
+      ctx.lineTo(padding, h - padding);
+      ctx.fillStyle = grad;
+      ctx.fill();
+      const isElite = FeatureManager.isElite(Store.state);
+      if (isElite && this.replayEvents.length > 0) {
+        this._drawEventMarkers(ctx, w, h, padding, history, timestamps, min, range);
+      }
+      if (this.selectedEventIdx !== null && isElite) {
+        const events = this.getFilteredEvents(isElite);
+        const selectedEvent = events[this.selectedEventIdx];
+        if (selectedEvent) {
+          this._drawSelectedHighlight(ctx, w, h, padding, history, timestamps, min, range, selectedEvent.ts);
+        }
+      }
+    },
+    _drawEventMarkers(ctx, w, h, padding, history, timestamps, min, range) {
+      const events = this.replayEvents;
+      const tsMin = timestamps[0];
+      const tsMax = timestamps[timestamps.length - 1];
+      const tsRange = tsMax - tsMin || 1;
+      events.forEach((event) => {
+        if (event.category !== "DISCIPLINE" && event.category !== "ALERT")
+          return;
+        const x = padding + (event.ts - tsMin) / tsRange * (w - padding * 2);
+        if (x < padding || x > w - padding)
+          return;
+        let nearestIdx = 0;
+        let nearestDist = Infinity;
+        timestamps.forEach((ts, i) => {
+          const dist = Math.abs(ts - event.ts);
+          if (dist < nearestDist) {
+            nearestDist = dist;
+            nearestIdx = i;
+          }
+        });
+        const y = h - padding - (history[nearestIdx].equity - min) / range * (h - padding * 2);
+        const color = event.category === "DISCIPLINE" ? "#f59e0b" : "#ef4444";
+        ctx.beginPath();
+        ctx.arc(x, y, 4, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.strokeStyle = "rgba(0,0,0,0.3)";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      });
+    },
+    _drawSelectedHighlight(ctx, w, h, padding, history, timestamps, min, range, eventTs) {
+      const tsMin = timestamps[0];
+      const tsMax = timestamps[timestamps.length - 1];
+      const tsRange = tsMax - tsMin || 1;
+      const x = padding + (eventTs - tsMin) / tsRange * (w - padding * 2);
+      if (x < padding || x > w - padding)
+        return;
+      ctx.beginPath();
+      ctx.strokeStyle = "rgba(167, 139, 250, 0.5)";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.moveTo(x, padding);
+      ctx.lineTo(x, h - padding);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      let nearestIdx = 0;
+      let nearestDist = Infinity;
+      timestamps.forEach((ts, i) => {
+        const dist = Math.abs(ts - eventTs);
+        if (dist < nearestDist) {
+          nearestDist = dist;
+          nearestIdx = i;
+        }
+      });
+      const y = h - padding - (history[nearestIdx].equity - min) / range * (h - padding * 2);
+      ctx.beginPath();
+      ctx.arc(x, y, 6, 0, Math.PI * 2);
+      ctx.fillStyle = "#a78bfa";
+      ctx.fill();
+      ctx.strokeStyle = "#0d1117";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    },
+    // --- Filtering ---
+    getFilteredEvents(isElite) {
+      const events = this.replayEvents || [];
+      if (!isElite) {
+        return events.filter((e) => e.category === "TRADE");
+      }
+      return events.filter((e) => this.activeFilters.includes(e.category));
+    },
+    _computeEventStats() {
+      const events = this.replayEvents || [];
+      return {
+        total: events.length,
+        trades: events.filter((e) => e.category === "TRADE").length,
+        alerts: events.filter((e) => e.category === "ALERT").length,
+        discipline: events.filter((e) => e.category === "DISCIPLINE").length,
+        milestones: events.filter((e) => e.category === "MILESTONE").length
+      };
+    },
+    toggleFilter(category) {
+      const idx = this.activeFilters.indexOf(category);
+      if (idx > -1) {
+        this.activeFilters.splice(idx, 1);
+      } else {
+        this.activeFilters.push(category);
+      }
+      this.render();
+    },
+    selectEvent(idx) {
+      this.selectedEventIdx = this.selectedEventIdx === idx ? null : idx;
+      this.render();
+    },
+    // --- Event Bindings ---
+    bindEvents(overlay) {
+      const closeBtn = overlay.querySelector(".replay-close");
+      if (closeBtn) {
+        closeBtn.onclick = () => this.close();
+      }
+      overlay.onclick = (e) => {
+        if (e.target === overlay)
+          this.close();
+      };
+      overlay.querySelectorAll(".filter-btn").forEach((btn) => {
+        btn.onclick = () => {
+          const filter = btn.getAttribute("data-filter");
+          this.toggleFilter(filter);
+        };
+      });
+      const isElite = FeatureManager.isElite(Store.state);
+      if (isElite) {
+        overlay.querySelectorAll(".timeline-event").forEach((el) => {
+          el.onclick = () => {
+            const idx = parseInt(el.getAttribute("data-event-idx"), 10);
+            if (!isNaN(idx))
+              this.selectEvent(idx);
+          };
+        });
+      }
+    }
+  };
 
   // src/modules/ui/dashboard.js
   var Dashboard = {
@@ -7920,6 +9030,149 @@ canvas#equity-canvas {
         hasExits: exits.length > 0
       };
     },
+    computeEliteAnalysis(state) {
+      const session = Store.getActiveSession();
+      const tradesMap = Store.getActiveTrades();
+      const tradeIds = session.trades || [];
+      const allTrades = tradeIds.map((id) => tradesMap[id]).filter(Boolean).sort((a, b) => a.ts - b.ts);
+      const buyTrades = allTrades.filter((t) => t.side === "BUY");
+      const sellTrades = allTrades.filter((t) => t.side === "SELL");
+      let consistencyScore = null;
+      try {
+        if (typeof Analytics.calculateConsistencyScore === "function") {
+          consistencyScore = Analytics.calculateConsistencyScore(state);
+        }
+      } catch (e) {
+      }
+      const plansUsed = buyTrades.filter((t) => t.riskDefined || t.tradePlan).length;
+      const plansUsedPct = buyTrades.length > 0 ? Math.round(plansUsed / buyTrades.length * 100) : 0;
+      const stopViolations = sellTrades.filter((t) => t.planAdherence?.stopViolated).length;
+      const targetHits = sellTrades.filter((t) => t.planAdherence?.hitTarget).length;
+      const intervals = [];
+      for (let i = 1; i < allTrades.length; i++) {
+        intervals.push(allTrades[i].ts - allTrades[i - 1].ts);
+      }
+      const avgInterval = intervals.length > 0 ? intervals.reduce((a, b) => a + b, 0) / intervals.length : 0;
+      const avgPacingMin = Math.round(avgInterval / 6e4);
+      const emotionMap = {};
+      allTrades.forEach((t) => {
+        if (t.emotion) {
+          if (!emotionMap[t.emotion])
+            emotionMap[t.emotion] = { count: 0, pnl: 0, wins: 0, losses: 0 };
+          emotionMap[t.emotion].count++;
+          if (t.side === "SELL") {
+            const pnl = t.realizedPnlSol || 0;
+            emotionMap[t.emotion].pnl += pnl;
+            if (pnl > 0)
+              emotionMap[t.emotion].wins++;
+            else if (pnl < 0)
+              emotionMap[t.emotion].losses++;
+          }
+        }
+      });
+      return {
+        consistencyScore,
+        plansUsedPct,
+        stopViolations,
+        targetHits,
+        avgPacingMin,
+        emotionMap
+      };
+    },
+    renderEliteAnalysis(state, isElite, behavior) {
+      if (!isElite) {
+        return `
+        <div class="dash-elite-grid">
+          ${renderEliteLockedCard("Consistency Score", "Track how steadily you trade across sessions.")}
+          ${renderEliteLockedCard("Plan Adherence", "See how often you follow your stops and targets.")}
+          ${renderEliteLockedCard("Emotion Breakdown", "Understand which emotions lead to wins vs losses.")}
+        </div>
+      `;
+      }
+      const ea = this.computeEliteAnalysis(state);
+      const session = Store.getActiveSession();
+      let html = "";
+      html += `<div class="dash-elite-subsection-label">SESSION QUALITY</div>`;
+      html += `<div class="dash-elite-grid">
+      <div class="dash-metric-card">
+        <div class="dash-metric-k">Discipline Score</div>
+        <div class="dash-metric-v" style="color:#8b5cf6;">${session.disciplineScore || 100}</div>
+      </div>`;
+      if (ea.consistencyScore !== null) {
+        html += `<div class="dash-metric-card">
+        <div class="dash-metric-k">Consistency</div>
+        <div class="dash-metric-v" style="color:#8b5cf6;">${typeof ea.consistencyScore === "number" ? ea.consistencyScore.toFixed(0) : "\u2014"}/100</div>
+      </div>`;
+      }
+      html += `<div class="dash-metric-card">
+      <div class="dash-metric-k">Behavior Profile</div>
+      <div class="dash-metric-v" style="color:#8b5cf6;">${behavior?.profile || "Disciplined"}</div>
+    </div>`;
+      html += `<div class="dash-metric-card">
+      <div class="dash-metric-k">Trade Pacing</div>
+      <div class="dash-metric-v" style="color:#818cf8;">${ea.avgPacingMin > 0 ? ea.avgPacingMin + "m avg" : "\u2014"}</div>
+    </div>`;
+      html += `</div>`;
+      html += `<div class="dash-elite-subsection-label">PLAN ADHERENCE</div>`;
+      html += `<div class="dash-elite-grid">
+      <div class="dash-metric-card">
+        <div class="dash-metric-k">Plans Used</div>
+        <div class="dash-metric-v" style="color:#818cf8;">${ea.plansUsedPct}%</div>
+      </div>
+      <div class="dash-metric-card">
+        <div class="dash-metric-k">Stop Violations</div>
+        <div class="dash-metric-v loss">${ea.stopViolations}</div>
+      </div>
+      <div class="dash-metric-card">
+        <div class="dash-metric-k">Targets Hit</div>
+        <div class="dash-metric-v win">${ea.targetHits}</div>
+      </div>
+    </div>`;
+      const emotions = Object.entries(ea.emotionMap);
+      if (emotions.length > 0) {
+        html += `<div class="dash-elite-subsection-label">EMOTION BREAKDOWN</div>`;
+        html += `<table class="dash-emotion-table">
+        <tr><th>Emotion</th><th>Trades</th><th>Net P&L</th></tr>`;
+        emotions.forEach(([emo, data]) => {
+          const pnlClass = data.pnl >= 0 ? "win" : "loss";
+          html += `<tr>
+          <td>${emo}</td>
+          <td>${data.count}</td>
+          <td class="${pnlClass}">${data.pnl >= 0 ? "+" : ""}${data.pnl.toFixed(4)} SOL</td>
+        </tr>`;
+        });
+        html += `</table>`;
+      }
+      return html;
+    },
+    renderSessionHistory() {
+      const history = Store.getActiveSessionHistory() || [];
+      if (history.length === 0) {
+        return `<div class="dash-history-empty">No completed sessions yet.</div>`;
+      }
+      const tradesMap = Store.getActiveTrades() || {};
+      return history.slice().reverse().map((sess, reverseIdx) => {
+        const realIdx = history.length - 1 - reverseIdx;
+        const date = new Date(sess.startTime || 0);
+        const dateStr = date.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        const tradeCount = (sess.trades || []).length;
+        const durationMs = (sess.endTime || sess.startTime || 0) - (sess.startTime || 0);
+        const durationMin = Math.max(1, Math.floor(durationMs / 6e4));
+        const pnl = sess.realized || 0;
+        const pnlClass = pnl >= 0 ? "win" : "loss";
+        const pnlStr = `${pnl >= 0 ? "+" : ""}${pnl.toFixed(4)}`;
+        return `
+          <div class="dash-history-row">
+            <div class="dash-history-date">${dateStr}</div>
+            <div class="dash-history-meta">${tradeCount} trades \xB7 ${durationMin}m</div>
+            <div class="dash-history-pnl ${pnlClass}">${pnlStr}</div>
+            <button class="dash-history-replay" data-history-idx="${realIdx}">
+              ${ICONS.REPLAY} Replay
+            </button>
+          </div>
+        `;
+      }).join("");
+    },
     render() {
       const root = OverlayManager.getShadowRoot();
       let overlay = root.querySelector(".paper-dashboard-overlay");
@@ -7956,6 +9209,7 @@ canvas#equity-canvas {
       };
       const isEmpty = stats.totalTrades === 0;
       const isElite = FeatureManager.isElite(state);
+      const hasTrades = (session.trades || []).length > 0;
       const subtext = state.settings.tradingMode === "shadow" ? "Real trades analyzed" : "Paper session results";
       overlay.innerHTML = `
             <div class="paper-dashboard-modal">
@@ -8036,6 +9290,14 @@ canvas#equity-canvas {
                         </div>
                     </div>
 
+                    ${hasTrades ? `
+                    <div class="dash-replay-section">
+                        <button class="dash-replay-btn" id="dashboard-replay-btn">
+                            ${ICONS.REPLAY} Replay session
+                        </button>
+                    </div>
+                    ` : ""}
+
                     <div class="dash-share-section">
                         <button class="dash-share-btn" id="dashboard-share-btn">
                             <span style="font-size:16px;">\u{1D54F}</span>
@@ -8047,34 +9309,25 @@ canvas#equity-canvas {
                     <div class="dash-elite-section">
                         <div class="dash-elite-toggle" id="dash-elite-toggle">
                             <div class="dash-elite-toggle-left">
-                                <span class="dash-section-label" style="margin-bottom:0;">ADVANCED INSIGHTS</span>
+                                <span class="dash-section-label" style="margin-bottom:0;">ELITE ANALYSIS</span>
                                 <span class="dash-elite-badge">Elite</span>
                             </div>
                             <span class="dash-elite-chevron" id="dash-elite-chevron">\u25B8</span>
                         </div>
                         <div class="dash-elite-content" id="dash-elite-content" style="display:none;">
-                            ${isElite ? `
-                            <div class="dash-elite-grid">
-                                <div class="dash-metric-card">
-                                    <div class="dash-metric-k">Discipline Score</div>
-                                    <div class="dash-metric-v" style="color:#8b5cf6;">${session.disciplineScore || 100}</div>
-                                </div>
-                                <div class="dash-metric-card">
-                                    <div class="dash-metric-k">Consistency</div>
-                                    <div class="dash-metric-v" style="color:#8b5cf6;">\u2014</div>
-                                </div>
-                                <div class="dash-metric-card">
-                                    <div class="dash-metric-k">Behavior Profile</div>
-                                    <div class="dash-metric-v" style="color:#8b5cf6;">${behavior?.profile || "Disciplined"}</div>
-                                </div>
+                            ${this.renderEliteAnalysis(state, isElite, behavior)}
+                        </div>
+                    </div>
+
+                    <div class="dash-history-section">
+                        <div class="dash-history-toggle" id="dash-history-toggle">
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <span class="dash-section-label" style="margin-bottom:0;">SESSION HISTORY</span>
                             </div>
-                            ` : `
-                            <div class="dash-elite-grid">
-                                ${renderEliteLockedCard("Discipline Scoring", "Track how well you stick to your trading rules with an objective score.")}
-                                ${renderEliteLockedCard("Risk Metrics", "Advanced risk-adjusted performance metrics for serious traders.")}
-                                ${renderEliteLockedCard("Behavioral Patterns", "Understand how your emotional state affects your trading outcomes.")}
-                            </div>
-                            `}
+                            <span class="dash-history-chevron" id="dash-history-chevron">\u25B8</span>
+                        </div>
+                        <div class="dash-history-content" id="dash-history-content" style="display:none;">
+                            ${this.renderSessionHistory()}
                         </div>
                     </div>
                 </div>
@@ -8101,6 +9354,19 @@ canvas#equity-canvas {
           const text = Analytics.generateXShareText(state);
           const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
           window.open(url, "_blank");
+        };
+      }
+      const replayBtn = overlay.querySelector("#dashboard-replay-btn");
+      if (replayBtn) {
+        replayBtn.onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          self.close();
+          if (session.status === "completed") {
+            SessionReplay.openForSession(session);
+          } else {
+            SessionReplay.open();
+          }
         };
       }
       const notesInput = overlay.querySelector("#dash-session-notes");
@@ -8143,6 +9409,32 @@ canvas#equity-canvas {
             eliteChevron.textContent = open ? "\u25B8" : "\u25BE";
         });
       }
+      const historyToggle = overlay.querySelector("#dash-history-toggle");
+      const historyContent = overlay.querySelector("#dash-history-content");
+      const historyChevron = overlay.querySelector("#dash-history-chevron");
+      if (historyToggle && historyContent) {
+        historyToggle.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const open = historyContent.style.display !== "none";
+          historyContent.style.display = open ? "none" : "block";
+          if (historyChevron)
+            historyChevron.textContent = open ? "\u25B8" : "\u25BE";
+        });
+      }
+      overlay.querySelectorAll(".dash-history-replay").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const idx = parseInt(btn.getAttribute("data-history-idx"), 10);
+          const history = Store.getActiveSessionHistory() || [];
+          const targetSession = history[idx];
+          if (targetSession) {
+            self.close();
+            SessionReplay.openForSession(targetSession);
+          }
+        });
+      });
       if (hasEquityData) {
         setTimeout(() => this.drawEquityCurve(overlay, state), 100);
       }
@@ -8342,6 +9634,25 @@ canvas#equity-canvas {
     color: #64748b;
     margin-top: 4px;
 }
+
+.insights-nodata {
+    font-size: 12px;
+    color: #475569;
+    padding: 14px 16px;
+    background: rgba(255, 255, 255, 0.015);
+    border: 1px solid rgba(255, 255, 255, 0.03);
+    border-radius: 10px;
+    text-align: center;
+}
+
+.insights-disclaimer {
+    font-size: 10px;
+    color: #334155;
+    text-align: center;
+    margin-top: 20px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.03);
+}
 `;
   var Insights = {
     isOpen: false,
@@ -8392,6 +9703,7 @@ canvas#equity-canvas {
                 </div>
                 <div class="insights-scroll">
                     ${isElite ? this.renderEliteContent(state) : this.renderFreeContent()}
+                    <div class="insights-disclaimer">Based on your recorded sessions. Not financial advice.</div>
                 </div>
             </div>
         `;
@@ -8425,7 +9737,9 @@ canvas#equity-canvas {
             "ELITE_SESSION_REPLAY",
             "ELITE_AI_DEBRIEF",
             "ELITE_MARKET_CONTEXT",
-            "ELITE_TRADE_PLAN"
+            "ELITE_TRADE_PLAN",
+            "ELITE_TIME_ANALYSIS",
+            "ELITE_MARKETCAP_ANALYSIS"
           ]
         }
       ];
@@ -8455,37 +9769,145 @@ canvas#equity-canvas {
     renderEliteContent(state) {
       const session = Store.getActiveSession();
       const behavior = Store.getActiveBehavior();
-      return `
-            <div class="insights-section-label">SESSION OVERVIEW</div>
-            <div class="insights-grid">
-                <div class="insights-elite-card">
-                    <div class="insights-elite-card-title">Discipline Score</div>
-                    <div class="insights-elite-card-value">${session.disciplineScore || 100}</div>
-                    <div class="insights-elite-card-desc">How well you followed your trading rules this session.</div>
-                </div>
-                <div class="insights-elite-card">
-                    <div class="insights-elite-card-title">Behavior Profile</div>
-                    <div class="insights-elite-card-value">${behavior.profile || "Disciplined"}</div>
-                    <div class="insights-elite-card-desc">Your current trading behavior classification.</div>
-                </div>
-            </div>
-
-            <div class="insights-section-label">BEHAVIORAL PATTERNS</div>
-            <div class="insights-grid">
-                <div class="insights-elite-card">
-                    <div class="insights-elite-card-title">Tilt Events</div>
-                    <div class="insights-elite-card-value">${behavior.tiltFrequency || 0}</div>
-                </div>
-                <div class="insights-elite-card">
-                    <div class="insights-elite-card-title">FOMO Trades</div>
-                    <div class="insights-elite-card-value">${behavior.fomoTrades || 0}</div>
-                </div>
-                <div class="insights-elite-card">
-                    <div class="insights-elite-card-title">Panic Sells</div>
-                    <div class="insights-elite-card-value">${behavior.panicSells || 0}</div>
-                </div>
-            </div>
-        `;
+      let html = "";
+      html += `
+      <div class="insights-section-label">SESSION OVERVIEW</div>
+      <div class="insights-grid">
+        <div class="insights-elite-card">
+          <div class="insights-elite-card-title">Discipline Score</div>
+          <div class="insights-elite-card-value">${session.disciplineScore || 100}</div>
+          <div class="insights-elite-card-desc">How well you followed your trading rules this session.</div>
+        </div>
+        <div class="insights-elite-card">
+          <div class="insights-elite-card-title">Behavior Profile</div>
+          <div class="insights-elite-card-value">${behavior.profile || "Disciplined"}</div>
+          <div class="insights-elite-card-desc">Your current trading behavior classification.</div>
+        </div>
+      </div>
+    `;
+      html += `
+      <div class="insights-section-label">BEHAVIORAL PATTERNS</div>
+      <div class="insights-grid">
+        <div class="insights-elite-card">
+          <div class="insights-elite-card-title">Tilt Events</div>
+          <div class="insights-elite-card-value">${behavior.tiltFrequency || 0}</div>
+        </div>
+        <div class="insights-elite-card">
+          <div class="insights-elite-card-title">FOMO Trades</div>
+          <div class="insights-elite-card-value">${behavior.fomoTrades || 0}</div>
+        </div>
+        <div class="insights-elite-card">
+          <div class="insights-elite-card-title">Panic Sells</div>
+          <div class="insights-elite-card-value">${behavior.panicSells || 0}</div>
+        </div>
+      </div>
+    `;
+      html += this._renderTimeOfDaySection(state);
+      html += this._renderMarketCapSection(state);
+      return html;
+    },
+    // --- Time-of-Day Analysis ---
+    _computeTimeOfDayAnalysis(state) {
+      const tradesMap = Store.getActiveTrades() || {};
+      const allTrades = Object.values(tradesMap);
+      const sellTrades = allTrades.filter((t) => t.side === "SELL");
+      const hourBuckets = {};
+      for (let h = 0; h < 24; h++) {
+        hourBuckets[h] = { wins: 0, losses: 0, pnl: 0, total: 0 };
+      }
+      sellTrades.forEach((t) => {
+        const hour = new Date(t.ts).getHours();
+        hourBuckets[hour].total++;
+        hourBuckets[hour].pnl += t.realizedPnlSol || 0;
+        if ((t.realizedPnlSol || 0) > 0)
+          hourBuckets[hour].wins++;
+        else if ((t.realizedPnlSol || 0) < 0)
+          hourBuckets[hour].losses++;
+      });
+      const qualified = Object.entries(hourBuckets).filter(([_, b]) => b.total >= 5).map(([hour, b]) => ({
+        hour: parseInt(hour, 10),
+        total: b.total,
+        winRate: b.total > 0 ? (b.wins / b.total * 100).toFixed(0) : "0",
+        pnl: b.pnl
+      })).sort((a, b) => b.pnl - a.pnl);
+      return qualified;
+    },
+    _renderTimeOfDaySection(state) {
+      const timeAnalysis = this._computeTimeOfDayAnalysis(state);
+      let html = `<div class="insights-section-label">BEST SESSION TIMES</div>`;
+      if (timeAnalysis.length === 0) {
+        html += `<div class="insights-nodata">Not enough data yet. Complete more sessions to unlock time-of-day analysis.</div>`;
+        return html;
+      }
+      html += `<div class="insights-grid">`;
+      timeAnalysis.slice(0, 3).forEach((slot) => {
+        const hourStr = `${String(slot.hour).padStart(2, "0")}:00 \u2013 ${String((slot.hour + 1) % 24).padStart(2, "0")}:00`;
+        const pnlSign = slot.pnl >= 0 ? "+" : "";
+        html += `
+        <div class="insights-elite-card">
+          <div class="insights-elite-card-title">${hourStr}</div>
+          <div class="insights-elite-card-value">${slot.winRate}% win rate</div>
+          <div class="insights-elite-card-desc">${slot.total} trades, ${pnlSign}${slot.pnl.toFixed(4)} SOL net</div>
+        </div>
+      `;
+      });
+      html += `</div>`;
+      return html;
+    },
+    // --- Market Cap Bucket Analysis ---
+    _computeMarketCapAnalysis(state) {
+      const tradesMap = Store.getActiveTrades() || {};
+      const sellTrades = Object.values(tradesMap).filter((t) => t.side === "SELL");
+      const buckets = [
+        { label: "< $1M", min: 0, max: 1e6, wins: 0, losses: 0, pnl: 0, count: 0 },
+        { label: "$1M \u2013 $5M", min: 1e6, max: 5e6, wins: 0, losses: 0, pnl: 0, count: 0 },
+        { label: "$5M \u2013 $20M", min: 5e6, max: 2e7, wins: 0, losses: 0, pnl: 0, count: 0 },
+        { label: "$20M \u2013 $100M", min: 2e7, max: 1e8, wins: 0, losses: 0, pnl: 0, count: 0 },
+        { label: "> $100M", min: 1e8, max: Infinity, wins: 0, losses: 0, pnl: 0, count: 0 }
+      ];
+      let hasMarketCapData = false;
+      sellTrades.forEach((t) => {
+        const mc = t.marketCapUsdAtFill;
+        if (!mc || mc <= 0)
+          return;
+        hasMarketCapData = true;
+        for (const bucket of buckets) {
+          if (mc >= bucket.min && mc < bucket.max) {
+            bucket.count++;
+            bucket.pnl += t.realizedPnlSol || 0;
+            if ((t.realizedPnlSol || 0) > 0)
+              bucket.wins++;
+            else if ((t.realizedPnlSol || 0) < 0)
+              bucket.losses++;
+            break;
+          }
+        }
+      });
+      if (!hasMarketCapData)
+        return null;
+      return buckets.filter((b) => b.count > 0);
+    },
+    _renderMarketCapSection(state) {
+      const mcAnalysis = this._computeMarketCapAnalysis(state);
+      let html = `<div class="insights-section-label">PERFORMANCE BY MARKET CAP</div>`;
+      if (!mcAnalysis) {
+        html += `<div class="insights-nodata">Market cap insights will appear once market cap data is available for your trades.</div>`;
+        return html;
+      }
+      html += `<div class="insights-grid">`;
+      mcAnalysis.forEach((bucket) => {
+        const winRate = bucket.count > 0 ? (bucket.wins / bucket.count * 100).toFixed(0) : "0";
+        const pnlSign = bucket.pnl >= 0 ? "+" : "";
+        html += `
+        <div class="insights-elite-card">
+          <div class="insights-elite-card-title">${bucket.label}</div>
+          <div class="insights-elite-card-value">${winRate}% win rate</div>
+          <div class="insights-elite-card-desc">${bucket.count} trades, ${pnlSign}${bucket.pnl.toFixed(4)} SOL net</div>
+        </div>
+      `;
+      });
+      html += `</div>`;
+      return html;
     }
   };
 
@@ -9063,6 +10485,10 @@ canvas#equity-canvas {
                     <div class="k">DISCIPLINE</div>
                     <div class="v" data-k="discipline">100</div>
                 </div>
+                <div class="stat platform-pnl" style="display:none;">
+                    <div class="k">LIVE P&L</div>
+                    <div class="v" data-k="platformPnl">-</div>
+                </div>
               </div>
               <div class="positionsPanel">
                 <div class="positionsHeader" data-act="togglePositions">
@@ -9222,7 +10648,8 @@ canvas#equity-canvas {
         inp.disabled = true;
         inp.style.opacity = "0.4";
         inp.placeholder = "Auto";
-        inp.value = session.balance > 0 ? Trading.fmtSol(session.balance) : "Auto";
+        const startDisplay = session.walletBalance || session.balance;
+        inp.value = startDisplay > 0 ? Trading.fmtSol(startDisplay) : "Auto";
       } else {
         inp.disabled = false;
         inp.style.opacity = "";
@@ -9262,7 +10689,7 @@ canvas#equity-canvas {
       const totalPnl = realized + unrealized;
       const posArr2 = Object.values(positions || {});
       const totalInvestedSol = posArr2.reduce((sum, pos) => sum + (pos.totalSolSpent || 0), 0);
-      const startBalance = isShadow ? totalInvestedSol || session.balance || 1 : s.settings.startSol || 10;
+      const startBalance = isShadow ? session.totalSolInvested || totalInvestedSol || session.walletBalance || session.balance || 1 : s.settings.startSol || 10;
       const sessionPct = totalPnl / startBalance * 100;
       const pnlEl = root.querySelector('[data-k="pnl"]');
       const pnlUnitEl = root.querySelector('[data-k="pnlUnit"]');
@@ -9292,6 +10719,27 @@ canvas#equity-canvas {
       const discStatEl = root.querySelector(".stat.discipline");
       if (discStatEl) {
         discStatEl.style.display = discFlags.visible && !discFlags.gated ? "" : "none";
+      }
+      const platformPnlStat = root.querySelector(".stat.platform-pnl");
+      if (platformPnlStat) {
+        if (isShadow) {
+          platformPnlStat.style.display = "";
+          const pPnl = Market.platformPnl;
+          const pPnlFresh = Market.platformPnlTs && Date.now() - Market.platformPnlTs < 15e3;
+          const pPnlEl = root.querySelector('[data-k="platformPnl"]');
+          if (pPnlEl) {
+            if (pPnl !== null && pPnlFresh) {
+              const sign = pPnl >= 0 ? "+" : "";
+              pPnlEl.textContent = `${sign}$${Math.abs(pPnl).toFixed(3)}`;
+              pPnlEl.style.color = pPnl >= 0 ? "#10b981" : "#ef4444";
+            } else {
+              pPnlEl.textContent = "-";
+              pPnlEl.style.color = "#64748b";
+            }
+          }
+        } else {
+          platformPnlStat.style.display = "none";
+        }
       }
       const tokenSymbolEl = root.querySelector('[data-k="tokenSymbol"]');
       if (tokenSymbolEl) {
@@ -9642,6 +11090,16 @@ canvas#equity-canvas {
     },
     renderQuickButtons(isBuy) {
       const values = isBuy ? Store.state.settings.quickBuySols : Store.state.settings.quickSellPcts;
+      const suffix = isBuy ? " SOL" : "%";
+      if (this.buyHudEdit) {
+        let html = values.map(
+          (v, i) => `
+            <button class="qbtn qbtn-edit" data-act="remove-preset" data-idx="${i}">${v}${suffix} <span class="qbtn-x">\xD7</span></button>
+        `
+        ).join("");
+        html += `<button class="qbtn qbtn-add" data-act="add-preset">+</button>`;
+        return html;
+      }
       return values.map(
         (v) => `
             <button class="qbtn" data-act="quick" data-val="${v}">${v}${isBuy ? " SOL" : "%"}</button>
@@ -9713,7 +11171,21 @@ canvas#equity-canvas {
         }
         if (act === "edit") {
           this.buyHudEdit = !this.buyHudEdit;
-          this.mountBuyHud();
+          this.mountBuyHud(null, true);
+        }
+        if (act === "remove-preset") {
+          const idx = parseInt(actEl.getAttribute("data-idx"), 10);
+          const isBuy = this.buyHudTab === "buy";
+          const key = isBuy ? "quickBuySols" : "quickSellPcts";
+          const arr = Store.state.settings[key];
+          if (arr.length > 1) {
+            arr.splice(idx, 1);
+            await Store.save();
+            this.mountBuyHud(null, true);
+          }
+        }
+        if (act === "add-preset") {
+          this._showAddPresetInput(root);
         }
         if (act === "toggle-plan") {
           this.tradePlanExpanded = !this.tradePlanExpanded;
@@ -9976,6 +11448,52 @@ canvas#equity-canvas {
         targetEl.value = "";
       if (thesisEl)
         thesisEl.value = "";
+    },
+    _showAddPresetInput(root) {
+      const quickRow = root.querySelector(".quickRow");
+      if (!quickRow || quickRow.querySelector(".preset-add-input"))
+        return;
+      const isBuy = this.buyHudTab === "buy";
+      const wrap = document.createElement("div");
+      wrap.style.cssText = "display:flex; gap:4px; margin-top:6px; align-items:center;";
+      wrap.innerHTML = `
+      <input class="preset-add-input field" type="text" inputmode="decimal"
+        placeholder="${isBuy ? "e.g. 0.5" : "e.g. 50"}"
+        style="flex:1; padding:6px 8px; font-size:12px;">
+      <button class="qbtn" data-act="confirm-add" style="padding:4px 10px; font-size:12px;">Add</button>
+    `;
+      quickRow.appendChild(wrap);
+      const input = wrap.querySelector(".preset-add-input");
+      input.focus();
+      const confirmAdd = async () => {
+        const val = parseFloat(input.value);
+        if (isNaN(val) || val <= 0) {
+          wrap.remove();
+          return;
+        }
+        const key = isBuy ? "quickBuySols" : "quickSellPcts";
+        const arr = Store.state.settings[key];
+        if (!arr.includes(val)) {
+          arr.push(val);
+          arr.sort((a, b) => a - b);
+          await Store.save();
+        }
+        this.mountBuyHud(null, true);
+      };
+      wrap.querySelector('[data-act="confirm-add"]').onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        confirmAdd();
+      };
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          confirmAdd();
+        }
+        if (e.key === "Escape") {
+          wrap.remove();
+        }
+      });
     },
     async executeTrade(root) {
       const field2 = root.querySelector('input[data-k="field"]');
@@ -11443,6 +12961,7 @@ canvas#equity-canvas {
   var ShadowTradeIngestion = {
     initialized: false,
     walletBalanceFetched: false,
+    _pendingSignatures: /* @__PURE__ */ new Set(),
     init() {
       if (this.initialized)
         return;
@@ -11458,9 +12977,16 @@ canvas#equity-canvas {
           console.log(`[ShadowIngestion] Bridge swap event received: ${e.data.side} ${e.data.mint?.slice(0, 8) || "?"}`);
           this.handleDetectedTrade(e.data);
         }
+        if (e.data.type === "SHADOW_SWAP_SIGNATURE") {
+          this.resolveSwapSignature(e.data);
+        }
         if (e.data.type === "WALLET_ADDRESS_DETECTED") {
           console.log(`[ShadowIngestion] Wallet address message received: ${e.data.walletAddress?.slice(0, 8) || "none"}`);
           this.handleWalletAddress(e.data.walletAddress);
+        }
+        if (e.data.type === "PADRE_PNL_TICK" || e.data.type === "AXIOM_PNL_TICK") {
+          Market.platformPnl = e.data.tpnl;
+          Market.platformPnlTs = e.data.ts;
         }
       });
       const storedAddr = Store.state?.shadow?.walletAddress;
@@ -11470,7 +12996,107 @@ canvas#equity-canvas {
       } else {
         console.log("[ShadowIngestion] No stored wallet \u2014 waiting for bridge detection");
       }
-      console.log("[ShadowIngestion] Initialized \u2014 listening for bridge swap events");
+      console.log("[ShadowIngestion] Initialized \u2014 event-driven swap detection active");
+    },
+    // --- Event-Driven Swap Resolution (Layer 2) ---
+    // Called when wallet hook fires but no cached quote was available.
+    // Makes a single getTransaction RPC call to resolve the trade details.
+    async resolveSwapSignature(data) {
+      const { signature, mint, symbol } = data;
+      if (!signature || typeof signature !== "string" || signature.length < 30) {
+        console.warn("[ShadowIngestion] Invalid swap signature:", signature?.slice(0, 20));
+        return;
+      }
+      const existingTrade = Object.values(Store.state?.shadowTrades || {}).find(
+        (t) => t.signature === signature
+      );
+      if (existingTrade) {
+        console.log(`[ShadowIngestion] Signature already recorded, skipping: ${signature.slice(0, 16)}`);
+        return;
+      }
+      if (this._pendingSignatures.has(signature)) {
+        console.log(`[ShadowIngestion] Already resolving signature, skipping: ${signature.slice(0, 16)}`);
+        return;
+      }
+      this._pendingSignatures.add(signature);
+      const walletAddress = Store.state?.shadow?.walletAddress;
+      if (!walletAddress) {
+        console.warn("[ShadowIngestion] Cannot resolve tx \u2014 no wallet address");
+        this._pendingSignatures.delete(signature);
+        return;
+      }
+      console.log(
+        `[ShadowIngestion] Swap signature received: ${signature.slice(0, 16)}... \u2014 resolving via RPC`
+      );
+      const delays = [1500, 3e3, 5e3];
+      try {
+        for (let attempt = 0; attempt < delays.length; attempt++) {
+          await new Promise((r) => setTimeout(r, delays[attempt]));
+          const alreadyRecorded = Object.values(Store.state?.shadowTrades || {}).find(
+            (t) => t.signature === signature
+          );
+          if (alreadyRecorded) {
+            console.log(
+              `[ShadowIngestion] Signature resolved by fast path, skipping RPC attempt ${attempt + 1}`
+            );
+            return;
+          }
+          try {
+            const response = await new Promise((resolve, reject) => {
+              const timeout = setTimeout(
+                () => reject(new Error("sendMessage timeout (12s)")),
+                12e3
+              );
+              chrome.runtime.sendMessage(
+                {
+                  type: "RESOLVE_SWAP_TX",
+                  signature,
+                  walletAddress
+                },
+                (resp) => {
+                  clearTimeout(timeout);
+                  if (chrome.runtime.lastError)
+                    reject(chrome.runtime.lastError);
+                  else
+                    resolve(resp);
+                }
+              );
+            });
+            if (!response || !response.ok) {
+              console.warn(
+                `[ShadowIngestion] RPC resolve attempt ${attempt + 1} error:`,
+                response?.error
+              );
+              continue;
+            }
+            if (!response.swap) {
+              console.log(
+                `[ShadowIngestion] RPC attempt ${attempt + 1}: tx not indexed yet`
+              );
+              continue;
+            }
+            const swap = response.swap;
+            if ((!swap.priceUsd || swap.priceUsd <= 0) && Market.price > 0) {
+              swap.priceUsd = Market.price;
+            }
+            console.log(
+              `[ShadowIngestion] RPC resolved: ${swap.side} ${swap.solAmount?.toFixed(4)} SOL \u2192 ${swap.mint?.slice(0, 8)} (attempt ${attempt + 1})`
+            );
+            await this.handleDetectedTrade(swap);
+            return;
+          } catch (e) {
+            console.warn(
+              `[ShadowIngestion] RPC resolve attempt ${attempt + 1} failed:`,
+              e?.message || e
+            );
+          }
+        }
+        console.warn(
+          `[ShadowIngestion] Failed to resolve tx after ${delays.length} attempts: ${signature.slice(0, 16)}`
+        );
+      } finally {
+        this._pendingSignatures.delete(signature);
+      }
     },
     // --- Wallet Address Detection ---
     async handleWalletAddress(addr) {
@@ -11513,6 +13139,7 @@ canvas#equity-canvas {
         if (response && response.ok && response.balance > 0) {
           session.balance = response.balance;
           session.equity = response.balance;
+          session.walletBalance = response.balance;
           await Store.save();
           console.log(
             `[ShadowIngestion] Wallet balance: ${response.balance.toFixed(4)} SOL`
@@ -11535,18 +13162,32 @@ canvas#equity-canvas {
       const state = Store.state;
       if (!state)
         return;
-      const { side, mint, symbol, solAmount, tokenAmount, priceUsd, signature } = data;
+      const { side, mint, symbol, tokenAmount, priceUsd, signature } = data;
+      let solAmount = data.solAmount;
+      if ((!solAmount || solAmount <= 0) && data.usdAmount > 0) {
+        const solUsd = PnlCalculator.getSolPrice();
+        if (solUsd > 0) {
+          solAmount = data.usdAmount / solUsd;
+          console.log(
+            `[ShadowIngestion] USD\u2192SOL: $${data.usdAmount.toFixed(4)} / $${solUsd.toFixed(2)} = ${solAmount.toFixed(6)} SOL`
+          );
+        } else {
+          console.warn("[ShadowIngestion] Cannot convert USD\u2192SOL \u2014 no SOL price available");
+          return;
+        }
+      }
       if (!mint || !solAmount || solAmount <= 0) {
         console.warn("[ShadowIngestion] Invalid swap data:", data);
         return;
       }
+      data.solAmount = solAmount;
       const existingTrade = Object.values(state.shadowTrades || {}).find(
         (t) => t.signature === signature
       );
       if (existingTrade) {
         return;
       }
-      const src = data.source === "helius" ? "Helius" : "Bridge";
+      const src = data.source === "helius" ? "RPC" : "Bridge";
       console.log(
         `[ShadowIngestion] Processing ${side} via ${src} \u2014 ${symbol || mint.slice(0, 8)}, ${solAmount.toFixed(4)} SOL`
       );
@@ -11619,9 +13260,11 @@ canvas#equity-canvas {
         priceSource: "shadow_swap",
         strategy: "Real Trade",
         signature,
-        mode: "shadow"
+        mode: "shadow",
+        tradeSource: "REAL_SHADOW"
       });
       session.balance -= solAmount;
+      session.totalSolInvested = (session.totalSolInvested || 0) + solAmount;
       try {
         const trade = state.shadowTrades[fillId];
         if (trade) {
@@ -11689,7 +13332,8 @@ canvas#equity-canvas {
         strategy: "Real Trade",
         signature,
         realizedPnlSol: pnlEventSol,
-        mode: "shadow"
+        mode: "shadow",
+        tradeSource: "REAL_SHADOW"
       });
       session.balance += proceedsSol;
       session.realized = (session.realized || 0) + pnlEventSol;
@@ -11742,6 +13386,7 @@ canvas#equity-canvas {
         });
         if (response && response.ok && response.balance > 0) {
           session.balance = response.balance;
+          session.walletBalance = response.balance;
           console.log(
             `[ShadowIngestion] Wallet balance detected: ${response.balance.toFixed(4)} SOL`
           );
@@ -11751,6 +13396,7 @@ canvas#equity-canvas {
         console.warn("[ShadowIngestion] Wallet balance fetch failed:", e);
       }
       session.balance = firstTradeAmount * 10;
+      session.walletBalance = session.balance;
       console.log(
         `[ShadowIngestion] Wallet balance estimated: ~${session.balance.toFixed(4)} SOL`
       );
@@ -11758,6 +13404,7 @@ canvas#equity-canvas {
     cleanup() {
       this.initialized = false;
       this.walletBalanceFetched = false;
+      this._pendingSignatures = /* @__PURE__ */ new Set();
       console.log("[ShadowIngestion] Cleanup complete");
     }
   };
