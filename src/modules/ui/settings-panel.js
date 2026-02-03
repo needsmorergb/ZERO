@@ -1,5 +1,5 @@
 /**
- * ZERØ Settings Panel
+ * ZERO Settings Panel
  * Extended settings with Elite feature cards and Privacy & Data panel.
  */
 
@@ -92,8 +92,8 @@ export const SettingsPanel = {
                 <div class="settings-section-title">Share anonymous diagnostics</div>
 
                 <div class="privacy-info-box">
-                    <p>ZERØ stores your paper trading data locally on your device by default.</p>
-                    <p>You can optionally enable diagnostics to help improve ZERØ and unlock deeper features over time. Diagnostics help us understand session flow, feature usage, and where tools break down — not your private trading decisions.</p>
+                    <p>ZERO stores your paper trading data locally on your device by default.</p>
+                    <p>You can optionally enable diagnostics to help improve ZERO and unlock deeper features over time. Diagnostics help us understand session flow, feature usage, and where tools break down -- not your private trading decisions.</p>
                     <ul style="margin:8px 0 8px 16px; padding:0; list-style-type:disc; color:#94a3b8; font-size:11px;">
                         <li>Improves Elite features</li>
                         <li>Helps analytics become more accurate</li>
@@ -158,7 +158,7 @@ export const SettingsPanel = {
                 <div class="settings-btn-row">
                     <button class="settings-action-btn" data-setting-act="viewPayload">View sample payload</button>
                     <button class="settings-action-btn danger" data-setting-act="deleteQueue">Delete queued uploads</button>
-                    <button class="settings-action-btn danger" data-setting-act="deleteLocal">Delete local ZERØ data</button>
+                    <button class="settings-action-btn danger" data-setting-act="deleteLocal">Delete local ZERO data</button>
                 </div>
 
                 <!-- Debug Logging -->
@@ -187,7 +187,7 @@ export const SettingsPanel = {
                     ? (() => {
                         const ls = License.getStatus();
                         const planLabel = License.getPlanLabel();
-                        const hasLicense = ls.status !== "none" && ls.maskedKey;
+                        const hasAuth = ls.whopLinked || (ls.status !== "none" && ls.maskedKey);
                         return `
                 <div style="padding:12px 16px; background:rgba(16,185,129,0.05); border:1px solid rgba(16,185,129,0.15); border-radius:10px; margin-bottom:12px;">
                     <div style="font-size:12px; font-weight:600; color:#10b981; display:flex; align-items:center; gap:8px;">
@@ -195,17 +195,21 @@ export const SettingsPanel = {
                         ${planLabel ? `<span style="font-size:9px; padding:1px 6px; border-radius:3px; background:rgba(139,92,246,0.12); color:#a78bfa; font-weight:700;">${planLabel}</span>` : ""}
                     </div>
                     ${
-                      hasLicense
+                      hasAuth
                         ? `
                     <div style="font-size:11px; color:#64748b; margin-top:6px; display:flex; flex-direction:column; gap:3px;">
-                        <div>License: <span style="color:#94a3b8; font-family:monospace;">${ls.maskedKey}</span></div>
+                        ${
+                          ls.whopLinked
+                            ? `<div>Signed in via <span style="color:#94a3b8;">Whop</span></div>`
+                            : `<div>License: <span style="color:#94a3b8; font-family:monospace;">${ls.maskedKey}</span></div>`
+                        }
                         ${ls.lastVerified ? `<div>Verified: ${new Date(ls.lastVerified).toLocaleDateString()}</div>` : ""}
                         ${ls.expiresAt ? `<div>Renews: ${new Date(ls.expiresAt).toLocaleDateString()}</div>` : ""}
                         ${ls.plan === "founders" ? `<div style="color:#a78bfa;">Lifetime access</div>` : ""}
                     </div>
                     <div style="display:flex; gap:8px; margin-top:10px;">
                         <button data-setting-act="manageMembership" class="settings-action-btn" style="font-size:11px; padding:5px 10px;">Manage on Whop</button>
-                        <button data-setting-act="deactivateLicense" class="settings-action-btn danger" style="font-size:11px; padding:5px 10px;">Deactivate</button>
+                        <button data-setting-act="deactivateLicense" class="settings-action-btn danger" style="font-size:11px; padding:5px 10px;">${ls.whopLinked ? "Sign Out" : "Deactivate"}</button>
                     </div>
                     `
                         : `
@@ -224,11 +228,10 @@ export const SettingsPanel = {
                 <button data-setting-act="showUpgradeModal" style="width:100%; background:linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color:white; border:none; padding:10px 16px; border-radius:8px; font-weight:700; font-size:13px; cursor:pointer; margin-bottom:8px;">
                     Upgrade to Elite
                 </button>
-                `
-                }
+                `}
 
                 <div style="margin-top:20px; text-align:center; font-size:11px; color:#64748b;">
-                    ZERØ v${Store.state.version || "2.0.0"}
+                    ZERO v${Store.state.version || "2.0.0"}
                 </div>
             </div>
         `;
@@ -377,9 +380,9 @@ export const SettingsPanel = {
     modal.style.zIndex = "2147483648";
     modal.innerHTML = `
             <div class="confirm-modal" style="max-width:420px;">
-                <h3>Help improve ZERØ (optional)</h3>
+                <h3>Help improve ZERO (optional)</h3>
                 <p style="font-size:13px; line-height:1.6;">
-                    By enabling diagnostics, ZERØ will automatically send anonymized session logs, simulated trades, and feature interaction events to help improve accuracy, performance, and future features.
+                    By enabling diagnostics, ZERO will automatically send anonymized session logs, simulated trades, and feature interaction events to help improve accuracy, performance, and future features.
                 </p>
                 <p style="font-size:13px; line-height:1.6; margin-top:8px;">
                     This is optional, off by default, and can be disabled at any time.
@@ -497,7 +500,7 @@ export const SettingsPanel = {
     modal.innerHTML = `
             <div class="confirm-modal">
                 <h3>Delete all local data?</h3>
-                <p>This will permanently delete all ZERØ diagnostics data, event logs, and upload queue from your browser. Your trading session data (stored under a separate key) is unaffected.</p>
+                <p>This will permanently delete all ZERO diagnostics data, event logs, and upload queue from your browser. Your trading session data (stored under a separate key) is unaffected.</p>
                 <div class="confirm-modal-buttons">
                     <button class="confirm-modal-btn cancel">Cancel</button>
                     <button class="confirm-modal-btn confirm">Delete</button>
@@ -516,23 +519,30 @@ export const SettingsPanel = {
   },
 
   _showDeactivateConfirm(parent) {
+    const isWhop = License.isWhopLinked();
+    const title = isWhop ? "Sign out of Elite?" : "Deactivate Elite?";
+    const desc = isWhop
+      ? "This will sign you out of your Whop account in this browser and revert to the Free tier. You can sign back in anytime."
+      : "This will remove your license key from this browser and revert to the Free tier. You can re-activate anytime with your license key.";
+    const btnLabel = isWhop ? "Sign Out" : "Deactivate";
+
     const modal = document.createElement("div");
     modal.className = "confirm-modal-overlay";
     modal.style.zIndex = "2147483648";
     modal.innerHTML = `
             <div class="confirm-modal">
-                <h3>Deactivate Elite?</h3>
-                <p>This will remove your license key from this browser and revert to the Free tier. You can re-activate anytime with your license key.</p>
+                <h3>${title}</h3>
+                <p>${desc}</p>
                 <div class="confirm-modal-buttons">
                     <button class="confirm-modal-btn cancel">Cancel</button>
-                    <button class="confirm-modal-btn confirm">Deactivate</button>
+                    <button class="confirm-modal-btn confirm">${btnLabel}</button>
                 </div>
             </div>
         `;
     parent.appendChild(modal);
     modal.querySelector(".cancel").onclick = () => modal.remove();
     modal.querySelector(".confirm").onclick = async () => {
-      await License.deactivate();
+      await License.signOut();
       modal.remove();
       parent.remove();
       // Re-open settings to reflect new state

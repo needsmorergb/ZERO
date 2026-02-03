@@ -68,7 +68,9 @@
           // License / Whop Membership
           license: {
             key: null,
-            // Whop license key (mem_xxx or license string)
+            // Legacy license key (backward compat)
+            whopUserId: null,
+            // Whop user ID from OAuth (primary)
             valid: false,
             // Last known validation result
             lastVerified: null,
@@ -76,7 +78,7 @@
             expiresAt: null,
             // ISO string or null (founders = lifetime)
             status: "none",
-            // 'none' | 'active' | 'expired' | 'cancelled' | 'error'
+            // 'none' | 'active' | 'expired' | 'cancelled' | 'error' | 'no_access'
             plan: null
             // 'monthly' | 'annual' | 'founders'
           }
@@ -7132,7 +7134,14 @@ input:checked + .slider:before {
       return elapsed < GRACE_MS;
     },
     /**
-     * Get the stored license key.
+     * Check if the user is signed in with Whop OAuth.
+     * @returns {boolean}
+     */
+    isWhopLinked() {
+      return !!Store.state?.settings?.license?.whopUserId;
+    },
+    /**
+     * Get the stored license key (legacy).
      * @returns {string|null}
      */
     getKey() {
@@ -7140,21 +7149,29 @@ input:checked + .slider:before {
     },
     /**
      * Get license status for UI display.
-     * @returns {{ status: string, plan: string|null, expiresAt: string|null, lastVerified: number|null, maskedKey: string|null }}
+     * @returns {{ status: string, plan: string|null, expiresAt: string|null, lastVerified: number|null, maskedKey: string|null, whopLinked: boolean }}
      */
     getStatus() {
       const license = Store.state?.settings?.license;
-      if (!license || !license.key) {
-        return { status: "none", plan: null, expiresAt: null, lastVerified: null, maskedKey: null };
+      if (!license) {
+        return { status: "none", plan: null, expiresAt: null, lastVerified: null, maskedKey: null, whopLinked: false };
       }
-      const key = license.key;
-      const maskedKey = key.length > 4 ? "****" + key.slice(-4) : "****";
+      const whopLinked = !!license.whopUserId;
+      const hasKey = !!license.key;
+      if (!whopLinked && !hasKey) {
+        return { status: "none", plan: null, expiresAt: null, lastVerified: null, maskedKey: null, whopLinked: false };
+      }
+      let maskedKey = null;
+      if (hasKey) {
+        maskedKey = license.key.length > 4 ? "****" + license.key.slice(-4) : "****";
+      }
       return {
         status: license.status || "none",
         plan: license.plan || null,
         expiresAt: license.expiresAt || null,
         lastVerified: license.lastVerified || null,
-        maskedKey
+        maskedKey,
+        whopLinked
       };
     },
     /**
@@ -7172,7 +7189,53 @@ input:checked + .slider:before {
       return "";
     },
     /**
+     * Sign in with Whop OAuth — opens popup, verifies membership.
+     * @returns {Promise<{ ok: boolean, error?: string }>}
+     */
+    async loginWithWhop() {
+      Logger.info("[License] Starting Whop OAuth login...");
+      try {
+        const response = await new Promise((resolve) => {
+          chrome.runtime.sendMessage(
+            { type: "WHOP_OAUTH_LOGIN" },
+            (res) => {
+              if (chrome.runtime.lastError) {
+                resolve({ ok: false, error: chrome.runtime.lastError.message });
+                return;
+              }
+              resolve(res || { ok: false, error: "no_response" });
+            }
+          );
+        });
+        if (response.ok && response.userId) {
+          const m = response.membership || {};
+          Store.state.settings.license.whopUserId = response.userId;
+          Store.state.settings.license.key = null;
+          Store.state.settings.license.valid = m.valid || false;
+          Store.state.settings.license.status = m.status || (m.valid ? "active" : "no_access");
+          Store.state.settings.license.plan = m.plan || null;
+          Store.state.settings.license.expiresAt = m.expiresAt || null;
+          Store.state.settings.license.lastVerified = Date.now();
+          Store.state.settings.tier = m.valid ? "elite" : "free";
+          await Store.save();
+          if (m.valid) {
+            Logger.info("[License] Whop OAuth login successful \u2014 Elite activated");
+            return { ok: true };
+          } else {
+            Logger.warn("[License] Whop OAuth login succeeded but no membership found");
+            return { ok: false, error: "no_membership" };
+          }
+        }
+        Logger.warn("[License] Whop OAuth login failed:", response.error);
+        return { ok: false, error: response.error || "login_failed" };
+      } catch (e) {
+        Logger.error("[License] Whop OAuth login error:", e);
+        return { ok: false, error: "network_error" };
+      }
+    },
+    /**
      * Activate a license key — stores it and triggers verification.
+     * Legacy flow for backward compatibility.
      * @param {string} key - Whop license key or membership ID
      * @returns {Promise<{ ok: boolean, error?: string }>}
      */
@@ -7201,13 +7264,14 @@ input:checked + .slider:before {
       return result;
     },
     /**
-     * Deactivate the license — clears key and reverts to Free.
+     * Sign out — clears Whop user ID and license key, reverts to Free.
      * @returns {Promise<void>}
      */
-    async deactivate() {
-      Logger.info("[License] Deactivating...");
+    async signOut() {
+      Logger.info("[License] Signing out...");
       Store.state.settings.license = {
         key: null,
+        whopUserId: null,
         valid: false,
         lastVerified: null,
         expiresAt: null,
@@ -7218,17 +7282,28 @@ input:checked + .slider:before {
       await Store.save();
     },
     /**
-     * Re-validate the stored license key against the server.
+     * Deactivate the license — alias for signOut (backward compat).
+     * @returns {Promise<void>}
+     */
+    async deactivate() {
+      return this.signOut();
+    },
+    /**
+     * Re-validate the stored membership against the server.
+     * Uses whopUserId if available, falls back to licenseKey.
      * @returns {Promise<{ ok: boolean, error?: string }>}
      */
     async revalidate() {
-      const key = Store.state?.settings?.license?.key;
-      if (!key)
+      const license = Store.state?.settings?.license;
+      const userId = license?.whopUserId;
+      const key = license?.key;
+      if (!userId && !key)
         return { ok: false, error: "no_key" };
       Logger.info("[License] Revalidating...");
       try {
+        const msg = userId ? { type: "VERIFY_LICENSE", userId } : { type: "VERIFY_LICENSE", licenseKey: key };
         const response = await new Promise((resolve) => {
-          chrome.runtime.sendMessage({ type: "VERIFY_LICENSE", licenseKey: key }, (res) => {
+          chrome.runtime.sendMessage(msg, (res) => {
             if (chrome.runtime.lastError) {
               resolve({ ok: false, error: chrome.runtime.lastError.message });
               return;
@@ -7247,7 +7322,6 @@ input:checked + .slider:before {
           await Store.save();
           return { ok: m.valid, error: m.valid ? void 0 : "membership_inactive" };
         }
-        const license = Store.state.settings.license;
         if (license.valid && license.lastVerified) {
           const GRACE_MS = 72 * 60 * 60 * 1e3;
           const elapsed = Date.now() - license.lastVerified;
@@ -7272,7 +7346,9 @@ input:checked + .slider:before {
      */
     needsRevalidation() {
       const license = Store.state?.settings?.license;
-      if (!license || !license.key)
+      if (!license)
+        return false;
+      if (!license.whopUserId && !license.key)
         return false;
       if (!license.lastVerified)
         return true;
@@ -7373,28 +7449,20 @@ input:checked + .slider:before {
 
                 <div class="paywall-pricing" style="text-align:center; margin:16px 0 8px; font-size:12px; color:#94a3b8; line-height:1.6;">
                     <span style="color:#f8fafc; font-weight:600;">$19/mo</span> &middot;
-                    <span style="color:#f8fafc; font-weight:600;">$149/yr</span>
+                    <span style="color:#f8fafc; font-weight:600;">$149/yr</span> &middot;
+                    <span style="color:#a78bfa; font-weight:600;">$299 Founders Lifetime</span>
                 </div>
 
                 <div class="paywall-actions" style="display:flex; flex-direction:column; gap:8px;">
                     <button class="paywall-btn primary" data-act="purchase" style="background:linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color:white; border:none; padding:12px 20px; border-radius:8px; font-weight:700; font-size:14px; cursor:pointer;">
                         Get Elite on Whop
                     </button>
-                    <button class="paywall-btn text" data-act="show-key-input" style="background:none; border:none; color:#8b5cf6; font-size:12px; cursor:pointer; padding:6px;">
-                        I have a license key
+                    <button class="paywall-btn" data-act="whop-login" style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.12); color:#f8fafc; padding:10px 20px; border-radius:8px; font-weight:600; font-size:13px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px;">
+                        Already purchased? Sign in with Whop
                     </button>
                 </div>
 
-                <div class="paywall-key-section" style="display:none; margin-top:12px;">
-                    <div style="display:flex; gap:8px;">
-                        <input type="text" class="paywall-license-input" placeholder="Enter license key (mem_xxx...)" maxlength="64"
-                            style="flex:1; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:6px; padding:10px 12px; color:#f8fafc; font-size:13px; outline:none;">
-                        <button class="paywall-btn" data-act="activate" style="background:rgba(139,92,246,0.15); border:1px solid rgba(139,92,246,0.3); color:#a78bfa; padding:10px 16px; border-radius:6px; font-weight:600; font-size:13px; cursor:pointer; white-space:nowrap;">
-                            Activate
-                        </button>
-                    </div>
-                    <div class="paywall-key-status" style="margin-top:8px; font-size:12px; min-height:18px;"></div>
-                </div>
+                <div class="paywall-login-status" style="margin-top:8px; font-size:12px; min-height:18px; text-align:center;"></div>
 
                 <div class="paywall-footer">
                     <p style="font-size:11px; color:#475569; margin-top:12px;">Manage your membership at whop.com/orders</p>
@@ -7408,37 +7476,21 @@ input:checked + .slider:before {
         if (e.target.closest('[data-act="purchase"]')) {
           License.openPurchasePage();
         }
-        if (e.target.closest('[data-act="show-key-input"]')) {
-          const keySection = overlay.querySelector(".paywall-key-section");
-          if (keySection) {
-            keySection.style.display = keySection.style.display === "none" ? "block" : "none";
-            const input = keySection.querySelector(".paywall-license-input");
-            if (input)
-              input.focus();
-          }
-        }
-        if (e.target.closest('[data-act="activate"]')) {
-          const input = overlay.querySelector(".paywall-license-input");
-          const statusEl = overlay.querySelector(".paywall-key-status");
-          const key = input?.value?.trim();
-          if (!key) {
-            if (statusEl) {
-              statusEl.textContent = "Please enter a license key";
-              statusEl.style.color = "#f59e0b";
-            }
-            return;
-          }
-          const btn = e.target.closest('[data-act="activate"]');
+        if (e.target.closest('[data-act="whop-login"]')) {
+          const btn = e.target.closest('[data-act="whop-login"]');
+          const statusEl = overlay.querySelector(".paywall-login-status");
           const origText = btn.textContent;
-          btn.textContent = "Verifying...";
+          btn.textContent = "Signing in...";
           btn.disabled = true;
+          btn.style.opacity = "0.6";
           if (statusEl) {
-            statusEl.textContent = "Verifying your license...";
+            statusEl.textContent = "Opening Whop login...";
             statusEl.style.color = "#94a3b8";
           }
-          const result = await License.activate(key);
+          const result = await License.loginWithWhop();
           btn.textContent = origText;
           btn.disabled = false;
+          btn.style.opacity = "1";
           if (result.ok) {
             if (statusEl) {
               statusEl.textContent = "Elite activated!";
@@ -7447,10 +7499,10 @@ input:checked + .slider:before {
             this._showSuccessToast(License.getPlanLabel());
             setTimeout(() => overlay.remove(), 1500);
           } else {
-            const errorMsg = result.error === "invalid_key" ? "Invalid license key" : result.error === "invalid_product" ? "Key not for this product" : result.error === "membership_inactive" ? "Membership is not active" : "Verification failed \u2014 try again";
+            const errorMsg = result.error === "no_membership" ? "No active membership found \u2014 purchase Elite first" : result.error === "user_cancelled" ? "" : result.error === "state_mismatch" ? "Security error \u2014 try again" : result.error === "token_exchange_failed" ? "Login failed \u2014 try again" : result.error === "user_id_not_found" ? "Could not verify identity \u2014 try again" : "Sign in failed \u2014 try again";
             if (statusEl) {
               statusEl.textContent = errorMsg;
-              statusEl.style.color = "#ef4444";
+              statusEl.style.color = errorMsg ? "#ef4444" : "transparent";
             }
           }
         }
@@ -9990,8 +10042,8 @@ canvas#equity-canvas {
                 <div class="settings-section-title">Share anonymous diagnostics</div>
 
                 <div class="privacy-info-box">
-                    <p>ZER\xD8 stores your paper trading data locally on your device by default.</p>
-                    <p>You can optionally enable diagnostics to help improve ZER\xD8 and unlock deeper features over time. Diagnostics help us understand session flow, feature usage, and where tools break down \u2014 not your private trading decisions.</p>
+                    <p>ZERO stores your paper trading data locally on your device by default.</p>
+                    <p>You can optionally enable diagnostics to help improve ZERO and unlock deeper features over time. Diagnostics help us understand session flow, feature usage, and where tools break down -- not your private trading decisions.</p>
                     <ul style="margin:8px 0 8px 16px; padding:0; list-style-type:disc; color:#94a3b8; font-size:11px;">
                         <li>Improves Elite features</li>
                         <li>Helps analytics become more accurate</li>
@@ -10044,7 +10096,7 @@ canvas#equity-canvas {
                 <div class="settings-btn-row">
                     <button class="settings-action-btn" data-setting-act="viewPayload">View sample payload</button>
                     <button class="settings-action-btn danger" data-setting-act="deleteQueue">Delete queued uploads</button>
-                    <button class="settings-action-btn danger" data-setting-act="deleteLocal">Delete local ZER\xD8 data</button>
+                    <button class="settings-action-btn danger" data-setting-act="deleteLocal">Delete local ZERO data</button>
                 </div>
 
                 <!-- Debug Logging -->
@@ -10071,23 +10123,23 @@ canvas#equity-canvas {
                 ${FeatureManager.isElite(Store.state) ? (() => {
         const ls = License.getStatus();
         const planLabel = License.getPlanLabel();
-        const hasLicense = ls.status !== "none" && ls.maskedKey;
+        const hasAuth = ls.whopLinked || ls.status !== "none" && ls.maskedKey;
         return `
                 <div style="padding:12px 16px; background:rgba(16,185,129,0.05); border:1px solid rgba(16,185,129,0.15); border-radius:10px; margin-bottom:12px;">
                     <div style="font-size:12px; font-weight:600; color:#10b981; display:flex; align-items:center; gap:8px;">
                         Elite Active
                         ${planLabel ? `<span style="font-size:9px; padding:1px 6px; border-radius:3px; background:rgba(139,92,246,0.12); color:#a78bfa; font-weight:700;">${planLabel}</span>` : ""}
                     </div>
-                    ${hasLicense ? `
+                    ${hasAuth ? `
                     <div style="font-size:11px; color:#64748b; margin-top:6px; display:flex; flex-direction:column; gap:3px;">
-                        <div>License: <span style="color:#94a3b8; font-family:monospace;">${ls.maskedKey}</span></div>
+                        ${ls.whopLinked ? `<div>Signed in via <span style="color:#94a3b8;">Whop</span></div>` : `<div>License: <span style="color:#94a3b8; font-family:monospace;">${ls.maskedKey}</span></div>`}
                         ${ls.lastVerified ? `<div>Verified: ${new Date(ls.lastVerified).toLocaleDateString()}</div>` : ""}
                         ${ls.expiresAt ? `<div>Renews: ${new Date(ls.expiresAt).toLocaleDateString()}</div>` : ""}
                         ${ls.plan === "founders" ? `<div style="color:#a78bfa;">Lifetime access</div>` : ""}
                     </div>
                     <div style="display:flex; gap:8px; margin-top:10px;">
                         <button data-setting-act="manageMembership" class="settings-action-btn" style="font-size:11px; padding:5px 10px;">Manage on Whop</button>
-                        <button data-setting-act="deactivateLicense" class="settings-action-btn danger" style="font-size:11px; padding:5px 10px;">Deactivate</button>
+                        <button data-setting-act="deactivateLicense" class="settings-action-btn danger" style="font-size:11px; padding:5px 10px;">${ls.whopLinked ? "Sign Out" : "Deactivate"}</button>
                     </div>
                     ` : `
                     <div style="font-size:11px; color:#64748b; margin-top:4px;">All advanced insights and behavioral analytics are unlocked.</div>
@@ -10106,7 +10158,7 @@ canvas#equity-canvas {
                 `}
 
                 <div style="margin-top:20px; text-align:center; font-size:11px; color:#64748b;">
-                    ZER\xD8 v${Store.state.version || "2.0.0"}
+                    ZERO v${Store.state.version || "2.0.0"}
                 </div>
             </div>
         `;
@@ -10240,9 +10292,9 @@ canvas#equity-canvas {
       modal.style.zIndex = "2147483648";
       modal.innerHTML = `
             <div class="confirm-modal" style="max-width:420px;">
-                <h3>Help improve ZER\xD8 (optional)</h3>
+                <h3>Help improve ZERO (optional)</h3>
                 <p style="font-size:13px; line-height:1.6;">
-                    By enabling diagnostics, ZER\xD8 will automatically send anonymized session logs, simulated trades, and feature interaction events to help improve accuracy, performance, and future features.
+                    By enabling diagnostics, ZERO will automatically send anonymized session logs, simulated trades, and feature interaction events to help improve accuracy, performance, and future features.
                 </p>
                 <p style="font-size:13px; line-height:1.6; margin-top:8px;">
                     This is optional, off by default, and can be disabled at any time.
@@ -10355,7 +10407,7 @@ canvas#equity-canvas {
       modal.innerHTML = `
             <div class="confirm-modal">
                 <h3>Delete all local data?</h3>
-                <p>This will permanently delete all ZER\xD8 diagnostics data, event logs, and upload queue from your browser. Your trading session data (stored under a separate key) is unaffected.</p>
+                <p>This will permanently delete all ZERO diagnostics data, event logs, and upload queue from your browser. Your trading session data (stored under a separate key) is unaffected.</p>
                 <div class="confirm-modal-buttons">
                     <button class="confirm-modal-btn cancel">Cancel</button>
                     <button class="confirm-modal-btn confirm">Delete</button>
@@ -10374,23 +10426,27 @@ canvas#equity-canvas {
       });
     },
     _showDeactivateConfirm(parent) {
+      const isWhop = License.isWhopLinked();
+      const title = isWhop ? "Sign out of Elite?" : "Deactivate Elite?";
+      const desc = isWhop ? "This will sign you out of your Whop account in this browser and revert to the Free tier. You can sign back in anytime." : "This will remove your license key from this browser and revert to the Free tier. You can re-activate anytime with your license key.";
+      const btnLabel = isWhop ? "Sign Out" : "Deactivate";
       const modal = document.createElement("div");
       modal.className = "confirm-modal-overlay";
       modal.style.zIndex = "2147483648";
       modal.innerHTML = `
             <div class="confirm-modal">
-                <h3>Deactivate Elite?</h3>
-                <p>This will remove your license key from this browser and revert to the Free tier. You can re-activate anytime with your license key.</p>
+                <h3>${title}</h3>
+                <p>${desc}</p>
                 <div class="confirm-modal-buttons">
                     <button class="confirm-modal-btn cancel">Cancel</button>
-                    <button class="confirm-modal-btn confirm">Deactivate</button>
+                    <button class="confirm-modal-btn confirm">${btnLabel}</button>
                 </div>
             </div>
         `;
       parent.appendChild(modal);
       modal.querySelector(".cancel").onclick = () => modal.remove();
       modal.querySelector(".confirm").onclick = async () => {
-        await License.deactivate();
+        await License.signOut();
         modal.remove();
         parent.remove();
         this.show();
