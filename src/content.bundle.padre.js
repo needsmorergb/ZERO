@@ -8090,6 +8090,7 @@ canvas#equity-canvas {
     align-items: center;
     justify-content: center;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    pointer-events: auto;
 }
 
 .replay-modal {
