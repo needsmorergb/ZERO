@@ -32,11 +32,12 @@ const DEFAULTS = {
 
     // License / Whop Membership
     license: {
-      key: null, // Whop license key (mem_xxx or license string)
+      key: null, // Legacy license key (backward compat)
+      whopUserId: null, // Whop user ID from OAuth (primary)
       valid: false, // Last known validation result
       lastVerified: null, // Timestamp (ms) of last successful verification
       expiresAt: null, // ISO string or null (founders = lifetime)
-      status: "none", // 'none' | 'active' | 'expired' | 'cancelled' | 'error'
+      status: "none", // 'none' | 'active' | 'expired' | 'cancelled' | 'error' | 'no_access'
       plan: null, // 'monthly' | 'annual' | 'founders'
     },
   },

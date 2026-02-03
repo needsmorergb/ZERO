@@ -2,12 +2,17 @@
  * ZERØ License Module
  * Manages Whop membership verification for Elite tier access.
  *
- * Flow:
+ * Primary flow (OAuth):
+ *   User clicks "Sign in with Whop" → License.loginWithWhop()
+ *     → WHOP_OAUTH_LOGIN message to background.js
+ *     → background opens OAuth popup, exchanges code via worker
+ *     → Worker checks has_access, returns userId + membership
+ *     → License stores whopUserId + tier
+ *
+ * Legacy flow (license key — backward compat):
  *   User enters license key → License.activate(key)
  *     → VERIFY_LICENSE message to background.js
- *     → background.js POSTs to api.get-zero.xyz/verify-membership
- *     → Worker calls Whop API, validates, caches, returns result
- *     → License updates Store with tier + validation timestamp
+ *     → Worker calls Whop memberships API
  *
  * Revalidation:
  *   On boot (if lastVerified > 24h) and periodically via chrome.alarm.
@@ -36,7 +41,15 @@ export const License = {
   },
 
   /**
-   * Get the stored license key.
+   * Check if the user is signed in with Whop OAuth.
+   * @returns {boolean}
+   */
+  isWhopLinked() {
+    return !!Store.state?.settings?.license?.whopUserId;
+  },
+
+  /**
+   * Get the stored license key (legacy).
    * @returns {string|null}
    */
   getKey() {
@@ -45,16 +58,25 @@ export const License = {
 
   /**
    * Get license status for UI display.
-   * @returns {{ status: string, plan: string|null, expiresAt: string|null, lastVerified: number|null, maskedKey: string|null }}
+   * @returns {{ status: string, plan: string|null, expiresAt: string|null, lastVerified: number|null, maskedKey: string|null, whopLinked: boolean }}
    */
   getStatus() {
     const license = Store.state?.settings?.license;
-    if (!license || !license.key) {
-      return { status: "none", plan: null, expiresAt: null, lastVerified: null, maskedKey: null };
+    if (!license) {
+      return { status: "none", plan: null, expiresAt: null, lastVerified: null, maskedKey: null, whopLinked: false };
     }
 
-    const key = license.key;
-    const maskedKey = key.length > 4 ? "****" + key.slice(-4) : "****";
+    const whopLinked = !!license.whopUserId;
+    const hasKey = !!license.key;
+
+    if (!whopLinked && !hasKey) {
+      return { status: "none", plan: null, expiresAt: null, lastVerified: null, maskedKey: null, whopLinked: false };
+    }
+
+    let maskedKey = null;
+    if (hasKey) {
+      maskedKey = license.key.length > 4 ? "****" + license.key.slice(-4) : "****";
+    }
 
     return {
       status: license.status || "none",
@@ -62,6 +84,7 @@ export const License = {
       expiresAt: license.expiresAt || null,
       lastVerified: license.lastVerified || null,
       maskedKey,
+      whopLinked,
     };
   },
 
@@ -78,7 +101,58 @@ export const License = {
   },
 
   /**
+   * Sign in with Whop OAuth — opens popup, verifies membership.
+   * @returns {Promise<{ ok: boolean, error?: string }>}
+   */
+  async loginWithWhop() {
+    Logger.info("[License] Starting Whop OAuth login...");
+
+    try {
+      const response = await new Promise((resolve) => {
+        chrome.runtime.sendMessage(
+          { type: "WHOP_OAUTH_LOGIN" },
+          (res) => {
+            if (chrome.runtime.lastError) {
+              resolve({ ok: false, error: chrome.runtime.lastError.message });
+              return;
+            }
+            resolve(res || { ok: false, error: "no_response" });
+          }
+        );
+      });
+
+      if (response.ok && response.userId) {
+        const m = response.membership || {};
+        Store.state.settings.license.whopUserId = response.userId;
+        Store.state.settings.license.key = null; // Clear legacy key if any
+        Store.state.settings.license.valid = m.valid || false;
+        Store.state.settings.license.status = m.status || (m.valid ? "active" : "no_access");
+        Store.state.settings.license.plan = m.plan || null;
+        Store.state.settings.license.expiresAt = m.expiresAt || null;
+        Store.state.settings.license.lastVerified = Date.now();
+        Store.state.settings.tier = m.valid ? "elite" : "free";
+        await Store.save();
+
+        if (m.valid) {
+          Logger.info("[License] Whop OAuth login successful — Elite activated");
+          return { ok: true };
+        } else {
+          Logger.warn("[License] Whop OAuth login succeeded but no membership found");
+          return { ok: false, error: "no_membership" };
+        }
+      }
+
+      Logger.warn("[License] Whop OAuth login failed:", response.error);
+      return { ok: false, error: response.error || "login_failed" };
+    } catch (e) {
+      Logger.error("[License] Whop OAuth login error:", e);
+      return { ok: false, error: "network_error" };
+    }
+  },
+
+  /**
    * Activate a license key — stores it and triggers verification.
+   * Legacy flow for backward compatibility.
    * @param {string} key - Whop license key or membership ID
    * @returns {Promise<{ ok: boolean, error?: string }>}
    */
@@ -116,13 +190,14 @@ export const License = {
   },
 
   /**
-   * Deactivate the license — clears key and reverts to Free.
+   * Sign out — clears Whop user ID and license key, reverts to Free.
    * @returns {Promise<void>}
    */
-  async deactivate() {
-    Logger.info("[License] Deactivating...");
+  async signOut() {
+    Logger.info("[License] Signing out...");
     Store.state.settings.license = {
       key: null,
+      whopUserId: null,
       valid: false,
       lastVerified: null,
       expiresAt: null,
@@ -134,18 +209,34 @@ export const License = {
   },
 
   /**
-   * Re-validate the stored license key against the server.
+   * Deactivate the license — alias for signOut (backward compat).
+   * @returns {Promise<void>}
+   */
+  async deactivate() {
+    return this.signOut();
+  },
+
+  /**
+   * Re-validate the stored membership against the server.
+   * Uses whopUserId if available, falls back to licenseKey.
    * @returns {Promise<{ ok: boolean, error?: string }>}
    */
   async revalidate() {
-    const key = Store.state?.settings?.license?.key;
-    if (!key) return { ok: false, error: "no_key" };
+    const license = Store.state?.settings?.license;
+    const userId = license?.whopUserId;
+    const key = license?.key;
+
+    if (!userId && !key) return { ok: false, error: "no_key" };
 
     Logger.info("[License] Revalidating...");
 
     try {
+      const msg = userId
+        ? { type: "VERIFY_LICENSE", userId }
+        : { type: "VERIFY_LICENSE", licenseKey: key };
+
       const response = await new Promise((resolve) => {
-        chrome.runtime.sendMessage({ type: "VERIFY_LICENSE", licenseKey: key }, (res) => {
+        chrome.runtime.sendMessage(msg, (res) => {
           if (chrome.runtime.lastError) {
             resolve({ ok: false, error: chrome.runtime.lastError.message });
             return;
@@ -167,7 +258,6 @@ export const License = {
       }
 
       // API error — keep cached validity within grace period
-      const license = Store.state.settings.license;
       if (license.valid && license.lastVerified) {
         const GRACE_MS = 72 * 60 * 60 * 1000;
         const elapsed = Date.now() - license.lastVerified;
@@ -195,9 +285,10 @@ export const License = {
    */
   needsRevalidation() {
     const license = Store.state?.settings?.license;
-    if (!license || !license.key) return false;
+    if (!license) return false;
+    if (!license.whopUserId && !license.key) return false;
     if (!license.lastVerified) return true;
-    return Date.now() - license.lastVerified > REVALIDATION_INTERVAL_MS;
+    return (Date.now() - license.lastVerified) > REVALIDATION_INTERVAL_MS;
   },
 
   /**

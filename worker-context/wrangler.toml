@@ -10,6 +10,8 @@ compatibility_date = "2024-12-01"
 TWITTER154_ENABLED = "true"
 WHOP_PRODUCT_ID_ELITE = "prod_MV6E6MyAvkrXl"
 WHOP_PRODUCT_ID_FOUNDERS = "prod_tyyX0AEmzOZON"
+WHOP_CLIENT_ID = "app_AOtaaGKLyuCGt1"
+# OAuth client secret — deploy via: wrangler secret put WHOP_CLIENT_SECRET
 
 # KV namespace for handle rename tracking
 # Create with: wrangler kv:namespace create HANDLE_TRACKING
