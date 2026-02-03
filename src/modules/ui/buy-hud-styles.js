@@ -180,6 +180,38 @@ export const BUY_HUD_CSS = `
   color: #14b8a6;
 }
 
+#${IDS.buyHud} .qbtn-edit {
+  position: relative;
+  border-color: rgba(239, 68, 68, 0.2);
+  padding-right: 22px;
+}
+
+#${IDS.buyHud} .qbtn-edit:hover {
+  border-color: rgba(239, 68, 68, 0.5);
+  background: rgba(239, 68, 68, 0.08);
+  color: #f87171;
+}
+
+#${IDS.buyHud} .qbtn-x {
+  font-size: 13px;
+  font-weight: 700;
+  color: #ef4444;
+  margin-left: 4px;
+}
+
+#${IDS.buyHud} .qbtn-add {
+  border-style: dashed;
+  border-color: rgba(20,184,166,0.25);
+  color: #14b8a6;
+  font-size: 14px;
+  padding: 8px 14px;
+}
+
+#${IDS.buyHud} .qbtn-add:hover {
+  background: rgba(20,184,166,0.1);
+  border-color: rgba(20,184,166,0.4);
+}
+
 #${IDS.buyHud} .strategyRow {
   margin-top: 12px;
 }

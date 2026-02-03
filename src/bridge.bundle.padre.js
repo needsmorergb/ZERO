@@ -139,6 +139,27 @@
     }
     return null;
   }
+  function tryDetectRpcSignature(json, args, ctx) {
+    if (json?.jsonrpc !== "2.0")
+      return;
+    if (!json.result || typeof json.result !== "string")
+      return;
+    if (json.result.length < 64 || json.result.length > 100)
+      return;
+    if (!/^[1-9A-HJ-NP-Za-km-z]+$/.test(json.result))
+      return;
+    const signature = json.result;
+    console.log(
+      `[ZER\xD8] RPC sendTransaction detected \u2014 sig=${signature.slice(0, 16)}...`
+    );
+    send({
+      type: "SHADOW_SWAP_SIGNATURE",
+      signature,
+      mint: ctx.mint || null,
+      symbol: ctx.symbol || null,
+      ts: Date.now()
+    });
+  }
   function parseSwapQueryParams(url) {
     try {
       const u = new URL(url, "https://placeholder.com");
@@ -280,6 +301,20 @@
     }
     return null;
   }
+  function _bs58encode(bytes) {
+    const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+    let num = 0n;
+    for (const b of bytes)
+      num = num * 256n + BigInt(b);
+    let str = "";
+    while (num > 0n) {
+      str = ALPHABET[Number(num % 58n)] + str;
+      num /= 58n;
+    }
+    for (let i = 0; i < bytes.length && bytes[i] === 0; i++)
+      str = "1" + str;
+    return str;
+  }
   function setupSwapDetection(ctx) {
     const WALLET_PROVIDERS = {
       "window.solana": () => window.solana,
@@ -291,7 +326,7 @@
     const hookProvider = (provider, name) => {
       if (!provider || _hooked.has(name))
         return;
-      const methods = ["signAndSendTransaction", "sendTransaction"];
+      const methods = ["signAndSendTransaction", "sendTransaction", "signTransaction"];
       for (const method of methods) {
         if (typeof provider[method] !== "function")
           continue;
@@ -307,16 +342,32 @@
             let signature = null;
             if (typeof result === "string") {
               signature = result;
-            } else if (result?.signature) {
+            } else if (result?.signature && typeof result.signature === "string") {
               signature = result.signature;
-            } else if (result?.publicKey && result?.signature === void 0) {
-              signature = null;
+            }
+            if (!signature) {
+              try {
+                const sigs = result?.signatures;
+                if (Array.isArray(sigs) && sigs[0] instanceof Uint8Array && sigs[0].length === 64) {
+                  if (sigs[0].some((b) => b !== 0))
+                    signature = _bs58encode(sigs[0]);
+                }
+                if (!signature && result?.signature instanceof Uint8Array && result.signature.length === 64) {
+                  if (result.signature.some((b) => b !== 0))
+                    signature = _bs58encode(result.signature);
+                }
+              } catch {
+              }
             }
             if (typeof signature === "string" && signature.length >= 30) {
               console.log(
                 `[ZER\xD8] SwapDetection: ${method} returned sig=${signature.slice(0, 16)}...`
               );
               processSignature(signature, ctx);
+            } else {
+              console.warn(
+                `[ZER\xD8] SwapDetection: ${method} called but no sig extracted. type=${typeof result}, keys=${result ? Object.keys(result).join(",") : "null"}`
+              );
             }
           } catch (hookErr) {
             console.warn("[ZER\xD8] SwapDetection: post-tx processing error:", hookErr);
@@ -343,20 +394,17 @@
           `[ZER\xD8] SwapDetection: Matched quote \u2014 ${side} ${symbol || mint.slice(0, 8)}, ${solAmount.toFixed(4)} SOL, sig=${signature.slice(0, 12)}...`
         );
       } else {
-        if (!ctx2.mint) {
-          console.warn(
-            "[ZER\xD8] SwapDetection: No cached quote and no ctx.mint \u2014 cannot determine trade"
-          );
-          return;
-        }
-        mint = ctx2.mint;
-        symbol = ctx2.symbol;
-        side = "BUY";
-        solAmount = 0;
-        tokenAmount = 0;
-        console.warn(
-          `[ZER\xD8] SwapDetection: No cached quote \u2014 using ctx.mint=${mint.slice(0, 8)}, defaulting to BUY`
+        console.log(
+          `[ZER\xD8] SwapDetection: No cached quote \u2014 sending sig for RPC resolve: ${signature.slice(0, 16)}...`
         );
+        send({
+          type: "SHADOW_SWAP_SIGNATURE",
+          signature,
+          mint: ctx2.mint || null,
+          symbol: ctx2.symbol || null,
+          ts: Date.now()
+        });
+        return;
       }
       send({
         type: "SHADOW_TRADE_DETECTED",
@@ -630,9 +678,9 @@
       mc: /^(?:MC|MCap|Market\s*Cap)$/i,
       liquidity: /^(?:Liq|Liquidity)$/i,
       tpnl: /^T\.?\s*PNL$/i,
-      invested: /^Invested$/i,
-      sold: /^Sold$/i,
-      remaining: /^Remaining$/i
+      invested: /^(?:Invested|Total\s*Invested|Inv|Buy\s*Value|Cost)$/i,
+      sold: /^(?:Sold|Total\s*Sold|Sell\s*Value)$/i,
+      remaining: /^(?:Remaining|Holdings?|Balance)$/i
     };
     const parseHeaderValue = (text) => {
       const neg = text.includes("-") ? -1 : 1;
@@ -654,6 +702,58 @@
         val *= 1e9;
       return val * neg;
     };
+    const _posCache = {
+      investedValEl: null,
+      soldValEl: null,
+      remainingValEl: null,
+      tpnlValEl: null,
+      lastDeepScan: 0,
+      DEEP_SCAN_INTERVAL: 3e3
+      // Re-discover elements every 3s
+    };
+    let _aggressiveScrapeUntil = 0;
+    const POS_FIELD_KEYS = [
+      ["invested", "investedValEl"],
+      ["sold", "soldValEl"],
+      ["remaining", "remainingValEl"],
+      ["tpnl", "tpnlValEl"]
+    ];
+    function deepScanPositionFields() {
+      const allEls = document.querySelectorAll("span, div, p, td, th, dt, dd, label");
+      const limit = Math.min(allEls.length, 8e3);
+      const posLabels = {
+        invested: HEADER_LABELS.invested,
+        sold: HEADER_LABELS.sold,
+        remaining: HEADER_LABELS.remaining,
+        tpnl: HEADER_LABELS.tpnl
+      };
+      for (let i = 0; i < limit; i++) {
+        const el = allEls[i];
+        if (el.children.length > 3)
+          continue;
+        const text = el.textContent?.trim();
+        if (!text || text.length > 20)
+          continue;
+        for (const [key, pattern] of Object.entries(posLabels)) {
+          if (!pattern.test(text))
+            continue;
+          const cacheKey = key + "ValEl";
+          if (_posCache[cacheKey] && _posCache[cacheKey].isConnected)
+            continue;
+          const valueEl = el.nextElementSibling || el.parentElement?.nextElementSibling?.querySelector("span, div, p") || el.parentElement?.nextElementSibling || (i + 1 < limit ? allEls[i + 1] : null);
+          if (!valueEl)
+            continue;
+          _posCache[cacheKey] = valueEl;
+        }
+      }
+    }
+    function readCachedPosField(cacheKey) {
+      const el = _posCache[cacheKey];
+      if (!el || !el.isConnected)
+        return void 0;
+      const val = parseHeaderValue(el.textContent?.trim() || "");
+      return val !== null ? val : void 0;
+    }
     const scrapePadreHeader = () => {
       try {
         const results = {};
@@ -680,7 +780,31 @@
             const parsed = parseHeaderValue(valText);
             if (parsed !== null) {
               results[key] = parsed;
+              const cacheKey = key + "ValEl";
+              if (cacheKey in _posCache)
+                _posCache[cacheKey] = valueEl;
             }
+          }
+        }
+        for (const [key, cacheKey] of POS_FIELD_KEYS) {
+          if (results[key] !== void 0)
+            continue;
+          const val = readCachedPosField(cacheKey);
+          if (val !== void 0)
+            results[key] = val;
+        }
+        const now = Date.now();
+        const isAggressive = now < _aggressiveScrapeUntil;
+        const shouldDeepScan = now - _posCache.lastDeepScan > _posCache.DEEP_SCAN_INTERVAL || isAggressive;
+        if (shouldDeepScan && (results.invested === void 0 || results.sold === void 0)) {
+          _posCache.lastDeepScan = now;
+          deepScanPositionFields();
+          for (const [key, cacheKey] of POS_FIELD_KEYS) {
+            if (results[key] !== void 0)
+              continue;
+            const val = readCachedPosField(cacheKey);
+            if (val !== void 0)
+              results[key] = val;
           }
         }
         return Object.keys(results).length > 0 ? results : null;
@@ -688,16 +812,147 @@
       }
       return null;
     };
+    const _td = {
+      lastInvested: null,
+      // null = never seen
+      lastSold: null,
+      // null = never seen
+      lastMint: null,
+      settledAt: 0,
+      // timestamp when mint change is "settled" (DOM stabilized)
+      MIN_DELTA: 5e-3,
+      // $0.005 minimum to filter noise
+      SETTLE_MS: 1500
+      // wait 1.5s after mint change before detecting
+    };
+    function invalidatePosCache() {
+      _posCache.investedValEl = null;
+      _posCache.soldValEl = null;
+      _posCache.remainingValEl = null;
+      _posCache.tpnlValEl = null;
+      _posCache.lastDeepScan = 0;
+    }
+    function detectHeaderTrade(h) {
+      const mint = ctx.mint;
+      if (!mint)
+        return;
+      if (mint !== _td.lastMint) {
+        _td.lastMint = mint;
+        _td.settledAt = Date.now() + _td.SETTLE_MS;
+        _td.lastInvested = h.invested !== void 0 ? h.invested : null;
+        _td.lastSold = h.sold !== void 0 ? h.sold : null;
+        console.log(
+          `[ZER\xD8] Header trade tracking reset \u2014 mint=${mint.slice(0, 8)}, invested=${_td.lastInvested}, sold=${_td.lastSold}, fields: ${JSON.stringify(Object.keys(h))}`
+        );
+        return;
+      }
+      if (Date.now() < _td.settledAt)
+        return;
+      const invested = h.invested;
+      const sold = h.sold;
+      if (invested !== void 0 && invested > 0) {
+        if (_td.lastInvested === null) {
+          if (invested > _td.MIN_DELTA) {
+            console.log(`[ZER\xD8] Header BUY (first): +$${invested.toFixed(4)} for ${ctx.symbol || mint.slice(0, 8)}`);
+            _td.lastInvested = invested;
+            invalidatePosCache();
+            send({
+              type: "SHADOW_TRADE_DETECTED",
+              side: "BUY",
+              mint,
+              symbol: ctx.symbol || null,
+              solAmount: 0,
+              usdAmount: invested,
+              tokenAmount: 0,
+              priceUsd: h.price || 0,
+              signature: `hdr-B-${mint.slice(0, 8)}-${Date.now()}`,
+              source: "padre-header",
+              ts: Date.now()
+            });
+          }
+        } else if (invested > _td.lastInvested) {
+          const delta = invested - _td.lastInvested;
+          _td.lastInvested = invested;
+          invalidatePosCache();
+          if (delta > _td.MIN_DELTA) {
+            console.log(`[ZER\xD8] Header BUY (delta): +$${delta.toFixed(4)} for ${ctx.symbol || mint.slice(0, 8)}`);
+            send({
+              type: "SHADOW_TRADE_DETECTED",
+              side: "BUY",
+              mint,
+              symbol: ctx.symbol || null,
+              solAmount: 0,
+              usdAmount: delta,
+              tokenAmount: 0,
+              priceUsd: h.price || 0,
+              signature: `hdr-B-${mint.slice(0, 8)}-${Date.now()}`,
+              source: "padre-header",
+              ts: Date.now()
+            });
+          }
+        }
+      }
+      if (sold !== void 0 && sold > 0) {
+        if (_td.lastSold === null) {
+          if (sold > _td.MIN_DELTA) {
+            console.log(`[ZER\xD8] Header SELL (first): +$${sold.toFixed(4)} for ${ctx.symbol || mint.slice(0, 8)}`);
+            _td.lastSold = sold;
+            invalidatePosCache();
+            send({
+              type: "SHADOW_TRADE_DETECTED",
+              side: "SELL",
+              mint,
+              symbol: ctx.symbol || null,
+              solAmount: 0,
+              usdAmount: sold,
+              tokenAmount: 0,
+              priceUsd: h.price || 0,
+              signature: `hdr-S-${mint.slice(0, 8)}-${Date.now()}`,
+              source: "padre-header",
+              ts: Date.now()
+            });
+          }
+        } else if (sold > _td.lastSold) {
+          const delta = sold - _td.lastSold;
+          _td.lastSold = sold;
+          invalidatePosCache();
+          if (delta > _td.MIN_DELTA) {
+            console.log(`[ZER\xD8] Header SELL (delta): +$${delta.toFixed(4)} for ${ctx.symbol || mint.slice(0, 8)}`);
+            send({
+              type: "SHADOW_TRADE_DETECTED",
+              side: "SELL",
+              mint,
+              symbol: ctx.symbol || null,
+              solAmount: 0,
+              usdAmount: delta,
+              tokenAmount: 0,
+              priceUsd: h.price || 0,
+              signature: `hdr-S-${mint.slice(0, 8)}-${Date.now()}`,
+              source: "padre-header",
+              ts: Date.now()
+            });
+          }
+        }
+      }
+    }
     let lastHeaderPrice = 0;
     let lastHeaderMCap = 0;
-    let _headerLogOnce = false;
+    let _headerLogMint = null;
+    let _headerDiagTimer = 0;
     const pollPadreHeader = () => {
       const h = scrapePadreHeader();
       if (!h)
         return;
-      if (!_headerLogOnce) {
-        _headerLogOnce = true;
-        console.log("[ZER\xD8] Padre header scrape result:", JSON.stringify(h));
+      if (ctx.mint && ctx.mint !== _headerLogMint) {
+        _headerLogMint = ctx.mint;
+        console.log(`[ZER\xD8] Header scrape [${ctx.mint.slice(0, 8)}]:`, JSON.stringify(h));
+      }
+      const now = Date.now();
+      if (now > _headerDiagTimer) {
+        _headerDiagTimer = now + 1e4;
+        console.log(
+          `[ZER\xD8] Header fields [${(ctx.mint || "?").slice(0, 8)}]: invested=${h.invested}, sold=${h.sold}, tpnl=${h.tpnl}, remaining=${h.remaining}, keys=${JSON.stringify(Object.keys(h))}`
+        );
       }
       if (h.price && h.price > 0 && h.price !== lastHeaderPrice) {
         lastHeaderPrice = h.price;
@@ -726,6 +981,7 @@
       if (h.tpnl !== void 0) {
         send({ type: "PADRE_PNL_TICK", tpnl: h.tpnl, ts: Date.now() });
       }
+      detectHeaderTrade(h);
     };
     setInterval(pollPadreHeader, 200);
     const parseOhlcClose = (text) => {
@@ -821,8 +1077,9 @@
           const url = String(args?.[0]?.url || args?.[0] || "");
           const isApiUrl = /quote|price|ticker|market|candles|kline|chart|pair|swap|route/i.test(url);
           const isSwapUrl = SWAP_URL_PATTERNS.test(url);
+          const isRpcUrl = /rpc|helius|quicknode|alchemy|triton|shyft/i.test(url);
           const contentType = res.headers?.get?.("content-type") || "";
-          const isJson = contentType.includes("json") || isApiUrl || isSwapUrl;
+          const isJson = contentType.includes("json") || isApiUrl || isSwapUrl || isRpcUrl;
           if (isJson) {
             const clone = res.clone();
             clone.json().then((json) => {
@@ -834,6 +1091,7 @@
                 const reqData = parseRequestBody(args);
                 tryHandleSwap(url, json, ctx, reqData);
               }
+              tryDetectRpcSignature(json, args, ctx);
             }).catch((err) => console.warn("[ZER\xD8] Fetch parse error:", err.message, url));
           }
         } catch {
@@ -841,6 +1099,14 @@
         return res;
       };
       console.log("[ZER\xD8] Padre: fetch interception active");
+      const _ourFetch = window.fetch;
+      setTimeout(() => {
+        if (window.fetch === _ourFetch) {
+          console.log("[ZER\xD8] fetch override verified active (post-SES)");
+        } else {
+          console.warn("[ZER\xD8] fetch override was REPLACED (likely SES lockdown)");
+        }
+      }, 3e3);
     } catch (e) {
       console.log("[ZER\xD8] Padre: fetch interception blocked by SES");
     }
@@ -872,6 +1138,7 @@
                 console.log(`[ZER\xD8] Swap URL matched (XHR/Padre): ${url}`);
                 tryHandleSwap(url, json, ctx, xhrReqData);
               }
+              tryDetectRpcSignature(json, [url, { body: sendArgs[0] }], ctx);
             }
           } catch (err) {
             console.warn("[ZER\xD8] Padre XHR handler error:", err.message);
@@ -882,6 +1149,31 @@
       console.log("[ZER\xD8] Padre: XHR interception active");
     } catch (e) {
       console.log("[ZER\xD8] Padre: XHR interception blocked by SES:", e.message);
+    }
+    const PERFOBS_SWAP_PATH = /\/swap|\/execute|\/submit|send-?tx|confirm-?tx|transaction\/send|order\/place|\/jup|\/jupiter|\/raydium/i;
+    const PERFOBS_TX_PATH = /sendTransaction|signTransaction/i;
+    try {
+      const po = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          if (entry.initiatorType !== "fetch" && entry.initiatorType !== "xmlhttprequest")
+            continue;
+          const url = entry.name || "";
+          let pathname = url;
+          try {
+            pathname = new URL(url).pathname;
+          } catch {
+          }
+          if (PERFOBS_SWAP_PATH.test(pathname) || PERFOBS_TX_PATH.test(pathname)) {
+            console.log(`[ZER\xD8] PerfObs: swap/tx request \u2192 ${url.slice(0, 80)}`);
+            _aggressiveScrapeUntil = Date.now() + 5e3;
+            _posCache.lastDeepScan = 0;
+          }
+        }
+      });
+      po.observe({ type: "resource", buffered: false });
+      console.log("[ZER\xD8] PerformanceObserver active for swap detection");
+    } catch (e) {
+      console.log("[ZER\xD8] PerformanceObserver not available:", e.message);
     }
     const setupPriceObserver = () => {
       if (!document.body)
@@ -948,7 +1240,44 @@
       }
     };
     setInterval(pollChartMCap, 200);
+    let _tvExecHooked = false;
+    function hookTvExecutionShapes() {
+      if (_tvExecHooked)
+        return;
+      const tv = findTV();
+      if (!tv || !tv.activeChart)
+        return;
+      try {
+        const chart = tv.activeChart();
+        if (typeof chart.createExecutionShape !== "function")
+          return;
+        const origCreate = chart.createExecutionShape.bind(chart);
+        chart.createExecutionShape = function(...args) {
+          const shape = origCreate(...args);
+          const td = {};
+          for (const [setter, key] of [["setDirection", "dir"], ["setPrice", "price"], ["setText", "text"], ["setTime", "time"]]) {
+            if (typeof shape[setter] === "function") {
+              const orig = shape[setter].bind(shape);
+              shape[setter] = (val) => {
+                td[key] = val;
+                return orig(val);
+              };
+            }
+          }
+          setTimeout(() => {
+            if (td.dir && td.text !== "BUY" && td.text !== "SELL") {
+              console.log(`[ZER\xD8] Padre TV marker: ${td.dir} at MCap=${td.price}, text="${td.text}"`);
+            }
+          }, 0);
+          return shape;
+        };
+        _tvExecHooked = true;
+        console.log("[ZER\xD8] TV createExecutionShape hooked for trade markers");
+      } catch (e) {
+      }
+    }
     const pollTvMCap = async () => {
+      hookTvExecutionShapes();
       if (ctx.refPrice <= 0 || ctx.refMCap <= 0)
         return;
       const tv = findTV();

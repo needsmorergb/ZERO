@@ -100,6 +100,10 @@ export const PnlHud = {
                     <div class="k">DISCIPLINE</div>
                     <div class="v" data-k="discipline">100</div>
                 </div>
+                <div class="stat platform-pnl" style="display:none;">
+                    <div class="k">LIVE P&L</div>
+                    <div class="v" data-k="platformPnl">-</div>
+                </div>
               </div>
               <div class="positionsPanel">
                 <div class="positionsHeader" data-act="togglePositions">
@@ -275,7 +279,8 @@ export const PnlHud = {
       inp.disabled = true;
       inp.style.opacity = "0.4";
       inp.placeholder = "Auto";
-      inp.value = session.balance > 0 ? Trading.fmtSol(session.balance) : "Auto";
+      const startDisplay = session.walletBalance || session.balance;
+      inp.value = startDisplay > 0 ? Trading.fmtSol(startDisplay) : "Auto";
     } else {
       inp.disabled = false;
       inp.style.opacity = "";
@@ -327,7 +332,7 @@ export const PnlHud = {
     const posArr2 = Object.values(positions || {});
     const totalInvestedSol = posArr2.reduce((sum, pos) => sum + (pos.totalSolSpent || 0), 0);
     const startBalance = isShadow
-      ? totalInvestedSol || session.balance || 1
+      ? session.totalSolInvested || totalInvestedSol || session.walletBalance || session.balance || 1
       : s.settings.startSol || 10;
     const sessionPct = (totalPnl / startBalance) * 100;
 
@@ -368,6 +373,29 @@ export const PnlHud = {
 
     if (discStatEl) {
       discStatEl.style.display = discFlags.visible && !discFlags.gated ? "" : "none";
+    }
+
+    // LIVE P&L (Shadow Mode — from Padre/Axiom header scraping)
+    const platformPnlStat = root.querySelector(".stat.platform-pnl");
+    if (platformPnlStat) {
+      if (isShadow) {
+        platformPnlStat.style.display = "";
+        const pPnl = Market.platformPnl;
+        const pPnlFresh = Market.platformPnlTs && (Date.now() - Market.platformPnlTs < 15000);
+        const pPnlEl = root.querySelector('[data-k="platformPnl"]');
+        if (pPnlEl) {
+          if (pPnl !== null && pPnlFresh) {
+            const sign = pPnl >= 0 ? "+" : "";
+            pPnlEl.textContent = `${sign}$${Math.abs(pPnl).toFixed(3)}`;
+            pPnlEl.style.color = pPnl >= 0 ? "#10b981" : "#ef4444";
+          } else {
+            pPnlEl.textContent = "-";
+            pPnlEl.style.color = "#64748b";
+          }
+        }
+      } else {
+        platformPnlStat.style.display = "none";
+      }
     }
 
     // Update token symbol in title

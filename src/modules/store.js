@@ -107,6 +107,8 @@ const DEFAULTS = {
     activeAlerts: [],
     status: "active",
     notes: "",
+    walletBalance: 0,      // Initial wallet balance (set once, never mutated by trades)
+    totalSolInvested: 0,   // Cumulative SOL spent on BUYs (never decreases)
   },
   shadowSessionHistory: [], // Uncapped — real sessions can be long
   shadowTrades: {},
@@ -123,7 +125,7 @@ const DEFAULTS = {
   },
   shadowEventLog: [],
 
-  schemaVersion: 3,
+  schemaVersion: 4,
   version: "2.0.0",
 };
 
@@ -221,6 +223,30 @@ export const Store = {
             if (this.state.schemaVersion < 3) {
               console.log("[ZERØ] Migrating storage schema v2 -> v3 (shadow state)");
               this.state.schemaVersion = 3;
+              this.save();
+            }
+            // v3 -> v4: session replay support (eventSnapshot, tradeSource, mode on sessions)
+            if (this.state.schemaVersion < 4) {
+              console.log("[ZERØ] Migrating storage schema v3 -> v4 (session replay)");
+              // Backfill eventSnapshot on archived sessions
+              for (const hist of [this.state.sessionHistory, this.state.shadowSessionHistory]) {
+                if (Array.isArray(hist)) {
+                  hist.forEach(s => {
+                    if (!s.eventSnapshot) s.eventSnapshot = [];
+                    if (!s.mode) s.mode = hist === this.state.shadowSessionHistory ? "shadow" : "paper";
+                  });
+                }
+              }
+              // Backfill tradeSource on existing trades
+              for (const t of Object.values(this.state.trades || {})) {
+                if (!t.tradeSource) {
+                  t.tradeSource = t.mode === "shadow" ? "REAL_SHADOW" : "PAPER";
+                }
+              }
+              for (const t of Object.values(this.state.shadowTrades || {})) {
+                if (!t.tradeSource) t.tradeSource = "REAL_SHADOW";
+              }
+              this.state.schemaVersion = 4;
               this.save();
             }
           }
@@ -402,9 +428,17 @@ export const Store = {
     if (currentSession && currentSession.trades && currentSession.trades.length > 0) {
       currentSession.endTime = Date.now();
       currentSession.status = "completed";
+      currentSession.mode = isShadow ? "shadow" : "paper";
+
+      // Snapshot the event log for session replay
+      const eventLogKey = isShadow ? "shadowEventLog" : "eventLog";
+      currentSession.eventSnapshot = [...(this.state[eventLogKey] || [])];
 
       if (!this.state[historyKey]) this.state[historyKey] = [];
       this.state[historyKey].push({ ...currentSession });
+
+      // Clear event log for the new session
+      this.state[eventLogKey] = [];
 
       // Paper: keep last 10 sessions. Shadow: uncapped.
       if (!isShadow && this.state[historyKey].length > 10) {
@@ -430,6 +464,8 @@ export const Store = {
       activeAlerts: [],
       status: "active",
       notes: "",
+      walletBalance: 0,
+      totalSolInvested: 0,
     };
 
     // Clear milestone flags

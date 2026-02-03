@@ -139,6 +139,27 @@
     }
     return null;
   }
+  function tryDetectRpcSignature(json, args, ctx) {
+    if (json?.jsonrpc !== "2.0")
+      return;
+    if (!json.result || typeof json.result !== "string")
+      return;
+    if (json.result.length < 64 || json.result.length > 100)
+      return;
+    if (!/^[1-9A-HJ-NP-Za-km-z]+$/.test(json.result))
+      return;
+    const signature = json.result;
+    console.log(
+      `[ZER\xD8] RPC sendTransaction detected \u2014 sig=${signature.slice(0, 16)}...`
+    );
+    send({
+      type: "SHADOW_SWAP_SIGNATURE",
+      signature,
+      mint: ctx.mint || null,
+      symbol: ctx.symbol || null,
+      ts: Date.now()
+    });
+  }
   function parseSwapQueryParams(url) {
     try {
       const u = new URL(url, "https://placeholder.com");
@@ -280,6 +301,20 @@
     }
     return null;
   }
+  function _bs58encode(bytes) {
+    const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+    let num = 0n;
+    for (const b of bytes)
+      num = num * 256n + BigInt(b);
+    let str = "";
+    while (num > 0n) {
+      str = ALPHABET[Number(num % 58n)] + str;
+      num /= 58n;
+    }
+    for (let i = 0; i < bytes.length && bytes[i] === 0; i++)
+      str = "1" + str;
+    return str;
+  }
   function setupSwapDetection(ctx) {
     const WALLET_PROVIDERS = {
       "window.solana": () => window.solana,
@@ -291,7 +326,7 @@
     const hookProvider = (provider, name) => {
       if (!provider || _hooked.has(name))
         return;
-      const methods = ["signAndSendTransaction", "sendTransaction"];
+      const methods = ["signAndSendTransaction", "sendTransaction", "signTransaction"];
       for (const method of methods) {
         if (typeof provider[method] !== "function")
           continue;
@@ -307,16 +342,32 @@
             let signature = null;
             if (typeof result === "string") {
               signature = result;
-            } else if (result?.signature) {
+            } else if (result?.signature && typeof result.signature === "string") {
               signature = result.signature;
-            } else if (result?.publicKey && result?.signature === void 0) {
-              signature = null;
+            }
+            if (!signature) {
+              try {
+                const sigs = result?.signatures;
+                if (Array.isArray(sigs) && sigs[0] instanceof Uint8Array && sigs[0].length === 64) {
+                  if (sigs[0].some((b) => b !== 0))
+                    signature = _bs58encode(sigs[0]);
+                }
+                if (!signature && result?.signature instanceof Uint8Array && result.signature.length === 64) {
+                  if (result.signature.some((b) => b !== 0))
+                    signature = _bs58encode(result.signature);
+                }
+              } catch {
+              }
             }
             if (typeof signature === "string" && signature.length >= 30) {
               console.log(
                 `[ZER\xD8] SwapDetection: ${method} returned sig=${signature.slice(0, 16)}...`
               );
               processSignature(signature, ctx);
+            } else {
+              console.warn(
+                `[ZER\xD8] SwapDetection: ${method} called but no sig extracted. type=${typeof result}, keys=${result ? Object.keys(result).join(",") : "null"}`
+              );
             }
           } catch (hookErr) {
             console.warn("[ZER\xD8] SwapDetection: post-tx processing error:", hookErr);
@@ -343,20 +394,17 @@
           `[ZER\xD8] SwapDetection: Matched quote \u2014 ${side} ${symbol || mint.slice(0, 8)}, ${solAmount.toFixed(4)} SOL, sig=${signature.slice(0, 12)}...`
         );
       } else {
-        if (!ctx2.mint) {
-          console.warn(
-            "[ZER\xD8] SwapDetection: No cached quote and no ctx.mint \u2014 cannot determine trade"
-          );
-          return;
-        }
-        mint = ctx2.mint;
-        symbol = ctx2.symbol;
-        side = "BUY";
-        solAmount = 0;
-        tokenAmount = 0;
-        console.warn(
-          `[ZER\xD8] SwapDetection: No cached quote \u2014 using ctx.mint=${mint.slice(0, 8)}, defaulting to BUY`
+        console.log(
+          `[ZER\xD8] SwapDetection: No cached quote \u2014 sending sig for RPC resolve: ${signature.slice(0, 16)}...`
         );
+        send({
+          type: "SHADOW_SWAP_SIGNATURE",
+          signature,
+          mint: ctx2.mint || null,
+          symbol: ctx2.symbol || null,
+          ts: Date.now()
+        });
+        return;
       }
       send({
         type: "SHADOW_TRADE_DETECTED",
@@ -701,6 +749,80 @@
       }
     };
     setInterval(pollDomPrice, 200);
+    const AXIOM_PNL_LABELS = {
+      tpnl: /^(?:T\.?\s*PNL|PnL|P&L|PNL|Unrealized|UPnL)$/i,
+      invested: /^Invested$/i,
+      sold: /^Sold$/i,
+      remaining: /^(?:Remaining|Position)$/i
+    };
+    const parseStatsValue = (text) => {
+      const neg = text.includes("-") ? -1 : 1;
+      const clean = text.replace(/[^0-9.MKBmkb]/g, "");
+      if (!clean)
+        return null;
+      const m = clean.match(/([0-9.]+)\s*([MKBmkb])?$/);
+      if (!m)
+        return null;
+      let val = parseFloat(m[1]);
+      if (isNaN(val))
+        return null;
+      const suffix = (m[2] || "").toUpperCase();
+      if (suffix === "K")
+        val *= 1e3;
+      else if (suffix === "M")
+        val *= 1e6;
+      else if (suffix === "B")
+        val *= 1e9;
+      return val * neg;
+    };
+    const scrapeAxiomStats = () => {
+      try {
+        const results = {};
+        const allEls = document.querySelectorAll("span, div, p, td, th, dt, dd, label");
+        const limit = Math.min(allEls.length, 2e3);
+        for (let i = 0; i < limit; i++) {
+          const el = allEls[i];
+          if (el.children.length > 3)
+            continue;
+          const text = el.textContent?.trim();
+          if (!text || text.length > 20)
+            continue;
+          for (const [key, pattern] of Object.entries(AXIOM_PNL_LABELS)) {
+            if (results[key] !== void 0)
+              continue;
+            if (!pattern.test(text))
+              continue;
+            const valueEl = el.nextElementSibling || el.parentElement?.nextElementSibling?.querySelector("span, div, p") || el.parentElement?.nextElementSibling || (i + 1 < limit ? allEls[i + 1] : null);
+            if (!valueEl)
+              continue;
+            const valText = valueEl.textContent?.trim();
+            if (!valText)
+              continue;
+            const parsed = parseStatsValue(valText);
+            if (parsed !== null) {
+              results[key] = parsed;
+            }
+          }
+        }
+        return Object.keys(results).length > 0 ? results : null;
+      } catch (e) {
+      }
+      return null;
+    };
+    let _axiomStatsLogOnce = false;
+    const pollAxiomStats = () => {
+      const h = scrapeAxiomStats();
+      if (!h)
+        return;
+      if (!_axiomStatsLogOnce) {
+        _axiomStatsLogOnce = true;
+        console.log("[ZER\xD8] Axiom stats scrape result:", JSON.stringify(h));
+      }
+      if (h.tpnl !== void 0) {
+        send({ type: "AXIOM_PNL_TICK", tpnl: h.tpnl, ts: Date.now() });
+      }
+    };
+    setInterval(pollAxiomStats, 500);
     const parseOhlcClose = (text) => {
       if (!text)
         return null;
@@ -793,8 +915,9 @@
         const url = String(args?.[0]?.url || args?.[0] || "");
         const isApiUrl = /quote|price|ticker|market|candles|kline|chart|pair|swap|route/i.test(url);
         const isSwapUrl = SWAP_URL_PATTERNS.test(url);
+        const isRpcUrl = /rpc|helius|quicknode|alchemy|triton|shyft/i.test(url);
         const contentType = res.headers?.get?.("content-type") || "";
-        const isJson = contentType.includes("json") || isApiUrl || isSwapUrl;
+        const isJson = contentType.includes("json") || isApiUrl || isSwapUrl || isRpcUrl;
         if (isJson) {
           const clone = res.clone();
           clone.json().then((json) => {
@@ -806,6 +929,7 @@
               const reqData = parseRequestBody(args);
               tryHandleSwap(url, json, ctx, reqData);
             }
+            tryDetectRpcSignature(json, args, ctx);
           }).catch((err) => console.warn("[ZER\xD8] Fetch parse error:", err.message, url));
         }
       } catch {
@@ -839,6 +963,7 @@
               console.log(`[ZER\xD8] Swap URL matched (XHR): ${url}`);
               tryHandleSwap(url, json, ctx, xhrReqData);
             }
+            tryDetectRpcSignature(json, [url, { body: sendArgs[0] }], ctx);
           }
         } catch (err) {
           console.warn("[ZER\xD8] XHR handler error:", err.message);
