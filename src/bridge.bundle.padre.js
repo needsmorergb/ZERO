@@ -26,42 +26,33 @@
   }
   function throttleEmit(ctx) {
     const t = Date.now();
-    if (t - ctx.lastEmitAt < ctx.minEmitGapMs)
-      return false;
+    if (t - ctx.lastEmitAt < ctx.minEmitGapMs) return false;
     ctx.lastEmitAt = t;
     return true;
   }
   function looksRelatedByString(rawStr, ctx) {
-    if (!rawStr)
-      return false;
+    if (!rawStr) return false;
     const s = rawStr.slice(0, MAX_SCAN_CHARS);
     const mint = ctx.mint;
     const sym = ctx.symbol;
-    if (mint && s.includes(mint))
-      return true;
-    if (sym && s.toUpperCase().includes(sym.toUpperCase()))
-      return true;
-    if (s.length < 500 && s.match(/"p":\s*0\.0/))
-      return true;
-    if (s.length < 500 && s.match(/"price":\s*0\.0/))
-      return true;
+    if (mint && s.includes(mint)) return true;
+    if (sym && s.toUpperCase().includes(sym.toUpperCase())) return true;
+    if (s.length < 500 && s.match(/"p":\s*0\.0/)) return true;
+    if (s.length < 500 && s.match(/"price":\s*0\.0/)) return true;
     return false;
   }
   function extractPriceUsd(obj) {
-    if (!obj || typeof obj !== "object")
-      return null;
+    if (!obj || typeof obj !== "object") return null;
     const preferred = ["priceUsd", "usdPrice", "price_usd", "markPriceUsd", "lastPriceUsd", "closeUsd"];
     const common = ["price", "last", "lastPrice", "markPrice", "close", "c", "p"];
     let found = null;
     let steps = 0;
     const MAX_STEPS = 500;
     const walk = (x) => {
-      if (!x || found || steps > MAX_STEPS || typeof x !== "object")
-        return;
+      if (!x || found || steps > MAX_STEPS || typeof x !== "object") return;
       steps++;
       if (Array.isArray(x)) {
-        for (const it of x)
-          walk(it);
+        for (const it of x) walk(it);
         return;
       }
       for (const k of preferred) {
@@ -81,8 +72,7 @@
         }
       }
       for (const v of Object.values(x)) {
-        if (found)
-          return;
+        if (found) return;
         walk(v);
       }
     };
@@ -93,8 +83,7 @@
     const isRelated = looksRelatedByString(JSON.stringify(json), ctx);
     const r = extractPriceUsd(json);
     if (r && isRelated) {
-      if (!throttleEmit(ctx))
-        return;
+      if (!throttleEmit(ctx)) return;
       console.log(`[ZER\xD8] Price Intercepted (Network): $${r.price} (from ${url})`);
       send({
         type: "PRICE_TICK",
@@ -108,14 +97,10 @@
     }
   }
   var findTV = () => {
-    if (window.tvWidget && typeof window.tvWidget.activeChart === "function")
-      return window.tvWidget;
-    if (window.tradingViewApi && typeof window.tradingViewApi.activeChart === "function")
-      return window.tradingViewApi;
-    if (window.TradingView && window.TradingView.widget && typeof window.TradingView.widget.activeChart === "function")
-      return window.TradingView.widget;
-    if (window.widget && typeof window.widget.activeChart === "function")
-      return window.widget;
+    if (window.tvWidget && typeof window.tvWidget.activeChart === "function") return window.tvWidget;
+    if (window.tradingViewApi && typeof window.tradingViewApi.activeChart === "function") return window.tradingViewApi;
+    if (window.TradingView && window.TradingView.widget && typeof window.TradingView.widget.activeChart === "function") return window.TradingView.widget;
+    if (window.widget && typeof window.widget.activeChart === "function") return window.widget;
     try {
       for (let i = 0; i < window.frames.length; i++) {
         try {
@@ -168,8 +153,7 @@
               text: isBuy ? "\n\n\n\n\u2191\nB" : "S\n\u2193\n\n\n\n",
               overrides: { color, fontsize: 16, bold: true }
             });
-            if (id)
-              activeMarkers.push({ fmt: "std", id });
+            if (id) activeMarkers.push({ fmt: "std", id });
           }
         } catch (e) {
           console.warn("[ZER\xD8] Marker failed:", e);
@@ -187,8 +171,7 @@
   function setupMessageListener(ctx, opts = {}) {
     const { onPriceReference } = opts;
     window.addEventListener("message", (e) => {
-      if (e.source !== window || !e.data?.[CHANNEL])
-        return;
+      if (e.source !== window || !e.data?.[CHANNEL]) return;
       const d = e.data;
       if (d.type === "PAPER_SET_CONTEXT") {
         const mint = isLikelySolanaMint(d.mint) ? d.mint : null;
@@ -203,8 +186,7 @@
         ctx.refPrice = d.priceUsd || 0;
         ctx.refMCap = d.marketCapUsd || 0;
         console.log(`[ZER\xD8] Price Reference: $${ctx.refPrice}, MCap: $${ctx.refMCap}`);
-        if (onPriceReference)
-          onPriceReference(ctx);
+        if (onPriceReference) onPriceReference(ctx);
       }
       if (d.type === "PAPER_DRAW_MARKER") {
         drawMarker(d.trade);
@@ -229,8 +211,7 @@
               }
             });
             activeMarkers.length = 0;
-            if (chart.removeAllShapes)
-              chart.removeAllShapes();
+            if (chart.removeAllShapes) chart.removeAllShapes();
             console.log("[ZER\xD8] Markers cleared.");
           } catch (err) {
             console.warn("[ZER\xD8] Failed to clear markers:", err);
@@ -250,8 +231,7 @@
         for (const priceEl of priceEls) {
           let fullText = "";
           priceEl.childNodes.forEach((node) => {
-            if (node.nodeType === 3)
-              fullText += node.textContent;
+            if (node.nodeType === 3) fullText += node.textContent;
             else if (node.tagName === "SUB" || node.classList?.contains("subscript") || node.tagName === "SPAN" && node.textContent.length <= 2) {
               const val = node.textContent.trim();
               if (val.match(/^[0-9]$/)) {
@@ -265,34 +245,27 @@
           });
           if (fullText.includes("$") && !fullText.match(/[MBK]\b/i)) {
             const val = parseFloat(fullText.replace(/[^0-9.]/g, ""));
-            if (val > 0 && val < 1e3)
-              return val;
+            if (val > 0 && val < 1e3) return val;
           }
         }
         const titleMatches = [...document.title.matchAll(/\$([0-9.,]+)\s*([MBKmbk])?/g)];
         for (const m of titleMatches) {
-          if (m[2])
-            continue;
+          if (m[2]) continue;
           const val = parseFloat(m[1].replace(/,/g, ""));
-          if (val > 0 && val < 1e3)
-            return val;
+          if (val > 0 && val < 1e3) return val;
         }
         const els = Array.from(document.querySelectorAll("span, div")).slice(0, 500);
         for (const el of els) {
-          if (el.children.length > 5)
-            continue;
+          if (el.children.length > 5) continue;
           const text = el.textContent.trim();
-          if (text.length > 30 || text.length < 3)
-            continue;
+          if (text.length > 30 || text.length < 3) continue;
           if (text.startsWith("$") && !text.match(/[MBK]\b/i)) {
             const val = parseFloat(text.slice(1).replace(/,/g, ""));
-            if (val > 0 && val < 100)
-              return val;
+            if (val > 0 && val < 100) return val;
           }
           if (/^0\.\d{4,}$/.test(text)) {
             const val = parseFloat(text);
-            if (val > 0 && val < 0.01)
-              return val;
+            if (val > 0 && val < 0.01) return val;
           }
         }
       } catch (e) {
@@ -315,25 +288,17 @@
     };
     setInterval(pollDomPrice, 200);
     const parseOhlcClose = (text) => {
-      if (!text)
-        return null;
-      if (!/[OHL]\s*[↓↑]?\s*\$?\s*[0-9]/.test(text))
-        return null;
+      if (!text) return null;
+      if (!/[OHL]\s*[↓↑]?\s*\$?\s*[0-9]/.test(text)) return null;
       const m = text.match(/C\s*[↓↑]?\s*\$?\s*([0-9,.]+)\s*([KMBkmb])?/);
-      if (!m)
-        return null;
+      if (!m) return null;
       let val = parseFloat(m[1].replace(/,/g, ""));
-      if (!val || val <= 0)
-        return null;
+      if (!val || val <= 0) return null;
       const suffix = (m[2] || "").toUpperCase();
-      if (suffix === "K")
-        val *= 1e3;
-      else if (suffix === "M")
-        val *= 1e6;
-      else if (suffix === "B")
-        val *= 1e9;
-      if (val < 100 || val > 1e11)
-        return null;
+      if (suffix === "K") val *= 1e3;
+      else if (suffix === "M") val *= 1e6;
+      else if (suffix === "B") val *= 1e9;
+      if (val < 100 || val > 1e11) return null;
       return val;
     };
     const scrapePadreMCap = () => {
@@ -355,8 +320,7 @@
             );
             for (const el of legendEls) {
               const val = parseOhlcClose(el.textContent);
-              if (val)
-                return val;
+              if (val) return val;
             }
             const yAxisEls = doc.querySelectorAll(
               '[class*="lastPrice"], [class*="lastValue"], [class*="markLine"], [class*="price-axis-last"], [class*="currentPrice"], [class*="pane-legend-line"]'
@@ -367,30 +331,22 @@
               if (m) {
                 let val = parseFloat(m[1].replace(/,/g, ""));
                 const suffix = (m[2] || "").toUpperCase();
-                if (suffix === "K")
-                  val *= 1e3;
-                else if (suffix === "M")
-                  val *= 1e6;
-                else if (suffix === "B")
-                  val *= 1e9;
-                if (val > 100 && val < 1e11)
-                  return val;
+                if (suffix === "K") val *= 1e3;
+                else if (suffix === "M") val *= 1e6;
+                else if (suffix === "B") val *= 1e9;
+                if (val > 100 && val < 1e11) return val;
               }
             }
             const allEls = doc.querySelectorAll("div, span");
             const limit = Math.min(allEls.length, 400);
             for (let i = 0; i < limit; i++) {
               const el = allEls[i];
-              if (el.children.length > 10)
-                continue;
+              if (el.children.length > 10) continue;
               const text = el.textContent;
-              if (!text || text.length > 200 || text.length < 3)
-                continue;
-              if (!text.includes("C ") && !text.includes("C\u2191") && !text.includes("C\u2193"))
-                continue;
+              if (!text || text.length > 200 || text.length < 3) continue;
+              if (!text.includes("C ") && !text.includes("C\u2191") && !text.includes("C\u2193")) continue;
               const val = parseOhlcClose(text);
-              if (val)
-                return val;
+              if (val) return val;
             }
           } catch (e) {
           }
@@ -419,8 +375,7 @@
       console.log("[ZER\xD8] Padre: fetch interception blocked by SES");
     }
     const setupPriceObserver = () => {
-      if (!document.body)
-        return;
+      if (!document.body) return;
       const emitDomPrice = (val) => {
         if (val > 0 && val < 100 && val !== lastDomPrice) {
           lastDomPrice = val;
@@ -434,8 +389,7 @@
         }
       };
       const checkText = (text) => {
-        if (!text || text.length < 2 || text.length > 30)
-          return;
+        if (!text || text.length < 2 || text.length > 30) return;
         text = text.trim();
         if (text.startsWith("$") && !text.match(/[MBK]\b/i)) {
           const val = parseFloat(text.slice(1).replace(/,/g, ""));
@@ -455,8 +409,7 @@
             checkText(m.target.textContent);
           } else if (m.type === "childList") {
             for (const node of m.addedNodes) {
-              if (node.nodeType === 3)
-                checkText(node.textContent);
+              if (node.nodeType === 3) checkText(node.textContent);
               else if (node.nodeType === 1 && !node.children?.length) {
                 checkText(node.textContent);
               }
@@ -477,8 +430,7 @@
       document.addEventListener("DOMContentLoaded", setupPriceObserver);
     }
     window.addEventListener("message", (e) => {
-      if (e.data?.__paper)
-        return;
+      if (e.data?.__paper) return;
       try {
         const raw = typeof e.data === "string" ? e.data : null;
         const obj = typeof e.data === "object" ? e.data : raw ? safe(() => JSON.parse(raw)) : null;
@@ -493,13 +445,10 @@
     });
     let lastChartMCap = 0;
     const pollChartMCap = () => {
-      if (ctx.refPrice <= 0 || ctx.refMCap <= 0)
-        return;
+      if (ctx.refPrice <= 0 || ctx.refMCap <= 0) return;
       const mcap = scrapePadreMCap();
-      if (!mcap)
-        return;
-      if (mcap === lastChartMCap)
-        return;
+      if (!mcap) return;
+      if (mcap === lastChartMCap) return;
       lastChartMCap = mcap;
       const inferredPrice = ctx.refPrice * (mcap / ctx.refMCap);
       if (inferredPrice > 0 && inferredPrice < 1e3) {
@@ -516,11 +465,9 @@
     };
     setInterval(pollChartMCap, 200);
     const pollTvMCap = async () => {
-      if (ctx.refPrice <= 0 || ctx.refMCap <= 0)
-        return;
+      if (ctx.refPrice <= 0 || ctx.refMCap <= 0) return;
       const tv = findTV();
-      if (!tv || !tv.activeChart)
-        return;
+      if (!tv || !tv.activeChart) return;
       try {
         const chart = tv.activeChart();
         if (!ctx._tvApiLogged) {

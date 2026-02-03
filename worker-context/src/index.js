@@ -3,8 +3,10 @@
  * Cloudflare Worker serving token context data for the ZERØ extension.
  *
  * Endpoints:
- *   GET /health                          – liveness check
- *   GET /context?chain=solana&ca=<mint>  – fetch ContextResponseV1
+ *   GET  /health                          – liveness check
+ *   GET  /context?chain=solana&ca=<mint>  – fetch ContextResponseV1
+ *   POST /auth/exchange                   – Whop OAuth code exchange + access check
+ *   POST /verify-membership               – license key or userId verification
  *
  * Data flow:
  *   1. Check Cache API (6h TTL)
@@ -1332,7 +1334,14 @@ async function handleVerifyMembership(request, env) {
         return json({ ok: false, error: 'invalid_json' }, 400);
     }
 
-    const { licenseKey } = body;
+    const { licenseKey, userId } = body;
+
+    // User-ID-based verification (OAuth flow)
+    if (userId && typeof userId === 'string' && userId.length > 2) {
+        return handleVerifyByUserId(userId, env);
+    }
+
+    // Legacy license-key-based verification
     if (!licenseKey || typeof licenseKey !== 'string' || licenseKey.length < 4) {
         return json({ ok: false, error: 'invalid_key' }, 400);
     }
@@ -1419,6 +1428,233 @@ async function handleVerifyMembership(request, env) {
 }
 
 // ---------------------------------------------------------------------------
+// OAuth Code Exchange + User Access Check
+// ---------------------------------------------------------------------------
+
+/**
+ * Decode a JWT payload without verification (we trust Whop's response).
+ * @param {string} jwt
+ * @returns {object|null}
+ */
+function decodeJwtPayload(jwt) {
+    try {
+        const parts = jwt.split('.');
+        if (parts.length !== 3) return null;
+        const payload = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+        const padded = payload + '='.repeat((4 - payload.length % 4) % 4);
+        return JSON.parse(atob(padded));
+    } catch (_) {
+        return null;
+    }
+}
+
+/**
+ * Check if a Whop user has access to our products.
+ * Uses App API Key — no user token needed.
+ * @param {string} userId - Whop user ID (user_xxx)
+ * @param {object} env
+ * @returns {Promise<{ valid: boolean, productId: string|null, accessLevel: string|null }>}
+ */
+async function checkUserAccess(userId, env) {
+    const productIds = [
+        env.WHOP_PRODUCT_ID_ELITE,
+        env.WHOP_PRODUCT_ID_FOUNDERS,
+    ].filter(Boolean);
+
+    for (const pid of productIds) {
+        try {
+            const res = await fetchWithTimeout(
+                `${WHOP_API_BASE}/users/${encodeURIComponent(userId)}/access/${encodeURIComponent(pid)}`,
+                {
+                    headers: {
+                        'Authorization': `Bearer ${env.WHOP_API_KEY}`,
+                        'Accept': 'application/json',
+                    },
+                },
+                8000
+            );
+            if (res.ok) {
+                const data = await res.json();
+                if (data.has_access) {
+                    return { valid: true, productId: pid, accessLevel: data.access_level || 'customer' };
+                }
+            }
+        } catch (_) { /* try next product */ }
+    }
+    return { valid: false, productId: null, accessLevel: null };
+}
+
+/**
+ * Handle POST /auth/exchange
+ * Exchanges OAuth authorization code for tokens, extracts user ID,
+ * and checks membership access.
+ * @param {Request} request
+ * @param {object} env
+ * @returns {Promise<Response>}
+ */
+async function handleAuthExchange(request, env) {
+    if (!env.WHOP_API_KEY || !env.WHOP_CLIENT_ID) {
+        return json({ ok: false, error: 'server_misconfigured' }, 500);
+    }
+
+    // Rate limit by IP
+    const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+    if (await isRateLimited(ip, env)) {
+        return json({ ok: false, error: 'rate_limited' }, 429);
+    }
+
+    let body;
+    try {
+        body = await request.json();
+    } catch (_) {
+        return json({ ok: false, error: 'invalid_json' }, 400);
+    }
+
+    const { code, codeVerifier, redirectUri } = body;
+    if (!code || !codeVerifier || !redirectUri) {
+        return json({ ok: false, error: 'missing_params' }, 400);
+    }
+
+    // Step 1: Exchange authorization code for tokens
+    let tokens;
+    try {
+        const tokenBody = {
+            grant_type: 'authorization_code',
+            code,
+            redirect_uri: redirectUri,
+            client_id: env.WHOP_CLIENT_ID,
+            code_verifier: codeVerifier,
+        };
+        // Include client_secret if available (optional for PKCE but some providers require it)
+        if (env.WHOP_CLIENT_SECRET) {
+            tokenBody.client_secret = env.WHOP_CLIENT_SECRET;
+        }
+
+        const tokenRes = await fetchWithTimeout(
+            'https://api.whop.com/oauth/token',
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(tokenBody),
+            },
+            10000
+        );
+
+        if (!tokenRes.ok) {
+            const errText = await tokenRes.text().catch(() => '');
+            console.error(`[Auth] Token exchange failed: ${tokenRes.status} ${errText}`);
+            return json({ ok: false, error: 'token_exchange_failed' }, 502);
+        }
+
+        tokens = await tokenRes.json();
+    } catch (e) {
+        console.error('[Auth] Token exchange error:', e?.message || e);
+        return json({ ok: false, error: 'token_exchange_error' }, 502);
+    }
+
+    // Step 2: Extract user ID from id_token (JWT sub claim)
+    let userId = null;
+    if (tokens.id_token) {
+        const payload = decodeJwtPayload(tokens.id_token);
+        if (payload?.sub) userId = payload.sub;
+    }
+
+    // Fallback: use access_token to call /me
+    if (!userId && tokens.access_token) {
+        try {
+            const meRes = await fetchWithTimeout(
+                `${WHOP_API_BASE}/me`,
+                {
+                    headers: {
+                        'Authorization': `Bearer ${tokens.access_token}`,
+                        'Accept': 'application/json',
+                    },
+                },
+                8000
+            );
+            if (meRes.ok) {
+                const meData = await meRes.json();
+                userId = meData.id || meData.user_id || null;
+            }
+        } catch (_) { /* proceed without userId */ }
+    }
+
+    if (!userId) {
+        return json({ ok: false, error: 'user_id_not_found' }, 502);
+    }
+
+    // Step 3: Check if user has access to our products
+    const access = await checkUserAccess(userId, env);
+
+    const plan = access.productId === env.WHOP_PRODUCT_ID_FOUNDERS ? 'founders' : (access.valid ? 'monthly' : null);
+    const membership = {
+        valid: access.valid,
+        status: access.valid ? 'active' : 'no_access',
+        plan,
+        tier: access.valid ? 'elite' : 'free',
+        expiresAt: plan === 'founders' ? null : undefined,
+    };
+
+    // Cache in KV by user ID
+    if (env.LICENSE_CACHE && userId) {
+        try {
+            const userCacheKey = `user:${await sha256Hex(userId)}`;
+            await env.LICENSE_CACHE.put(userCacheKey, JSON.stringify({
+                membership,
+                userId,
+                cachedAt: Date.now(),
+            }), { expirationTtl: 86400 });
+        } catch (_) { /* non-critical */ }
+    }
+
+    return json({ ok: true, userId, membership, cachedAt: Date.now() });
+}
+
+/**
+ * Handle user-based membership verification via has_access API.
+ * Called during revalidation when we have a stored userId.
+ * @param {string} userId
+ * @param {object} env
+ * @returns {Promise<Response>}
+ */
+async function handleVerifyByUserId(userId, env) {
+    // Check KV cache first
+    const userCacheKey = `user:${await sha256Hex(userId)}`;
+    if (env.LICENSE_CACHE) {
+        try {
+            const cached = await env.LICENSE_CACHE.get(userCacheKey, { type: 'json' });
+            if (cached && cached.cachedAt && (Date.now() - cached.cachedAt) < 86400000) {
+                console.log('[Whop] Returning cached user access validation');
+                return json({ ok: true, membership: cached.membership, cachedAt: cached.cachedAt, fromCache: true });
+            }
+        } catch (_) { /* cache miss */ }
+    }
+
+    const access = await checkUserAccess(userId, env);
+    const plan = access.productId === env.WHOP_PRODUCT_ID_FOUNDERS ? 'founders' : (access.valid ? 'monthly' : null);
+    const membership = {
+        valid: access.valid,
+        status: access.valid ? 'active' : 'no_access',
+        plan,
+        tier: access.valid ? 'elite' : 'free',
+        expiresAt: plan === 'founders' ? null : undefined,
+    };
+
+    // Cache result
+    if (env.LICENSE_CACHE) {
+        try {
+            await env.LICENSE_CACHE.put(userCacheKey, JSON.stringify({
+                membership,
+                userId,
+                cachedAt: Date.now(),
+            }), { expirationTtl: 86400 });
+        } catch (_) { /* non-critical */ }
+    }
+
+    return json({ ok: true, membership, cachedAt: Date.now(), fromCache: false });
+}
+
+// ---------------------------------------------------------------------------
 // Route: /context
 // ---------------------------------------------------------------------------
 
@@ -1493,7 +1729,13 @@ export default {
             return withCors(response, request);
         }
 
-        // Verify Membership (Whop)
+        // OAuth Code Exchange
+        if (path === '/auth/exchange' && request.method === 'POST') {
+            const response = await handleAuthExchange(request, env);
+            return withCors(response, request);
+        }
+
+        // Verify Membership (Whop) — supports both licenseKey and userId
         if (path === '/verify-membership' && request.method === 'POST') {
             const response = await handleVerifyMembership(request, env);
             return withCors(response, request);

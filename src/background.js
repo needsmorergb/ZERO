@@ -7,6 +7,9 @@ const UPLOAD_INTERVAL_MIN = 15;
 const LICENSE_CHECK_INTERVAL_MIN = 360; // 6 hours
 const LICENSE_REVALIDATION_MS = 24 * 60 * 60 * 1000; // 24 hours
 const VERIFY_ENDPOINT = 'https://api.get-zero.xyz/verify-membership';
+const AUTH_EXCHANGE_ENDPOINT = 'https://api.get-zero.xyz/auth/exchange';
+const WHOP_CLIENT_ID = 'app_AOtaaGKLyuCGt1';
+const WHOP_OAUTH_AUTHORIZE = 'https://api.whop.com/oauth/authorize';
 const BACKOFF_STEPS = [60000, 300000, 900000, 3600000]; // 1m, 5m, 15m, 60m
 
 let cache = { price: null, feedCount: 0, ts: 0 };
@@ -110,20 +113,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return;
     }
 
-    // License verification via Context API Worker
+    // License verification via Context API Worker (supports licenseKey or userId)
     if (msg?.type === "VERIFY_LICENSE") {
-      const { licenseKey } = msg;
-      if (!licenseKey) {
+      const { licenseKey, userId } = msg;
+      if (!licenseKey && !userId) {
         sendResponse({ ok: false, error: 'no_key' });
         return;
       }
       try {
         const ctrl = new AbortController();
         const t = setTimeout(() => ctrl.abort(), 10000);
+        const body = userId ? { userId } : { licenseKey };
         const r = await fetch(VERIFY_ENDPOINT, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ licenseKey }),
+          body: JSON.stringify(body),
           signal: ctrl.signal,
         });
         clearTimeout(t);
@@ -131,6 +135,96 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse(data);
       } catch (e) {
         sendResponse({ ok: false, error: e.toString() });
+      }
+      return;
+    }
+
+    // Whop OAuth login — opens OAuth popup, exchanges code, checks membership
+    if (msg?.type === "WHOP_OAUTH_LOGIN") {
+      try {
+        // Generate PKCE code_verifier (32 random bytes → base64url)
+        const verifierBytes = new Uint8Array(32);
+        crypto.getRandomValues(verifierBytes);
+        const codeVerifier = btoa(String.fromCharCode(...verifierBytes))
+          .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+        // Compute code_challenge = base64url(SHA-256(code_verifier))
+        const encoder = new TextEncoder();
+        const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(codeVerifier));
+        const codeChallenge = btoa(String.fromCharCode(...new Uint8Array(hashBuffer)))
+          .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+        // Generate state and nonce for CSRF protection
+        const stateBytes = new Uint8Array(16);
+        crypto.getRandomValues(stateBytes);
+        const state = Array.from(stateBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+        const nonceBytes = new Uint8Array(16);
+        crypto.getRandomValues(nonceBytes);
+        const nonce = Array.from(nonceBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+
+        const redirectUri = chrome.identity.getRedirectURL();
+
+        const params = new URLSearchParams({
+          response_type: 'code',
+          client_id: WHOP_CLIENT_ID,
+          redirect_uri: redirectUri,
+          scope: 'openid',
+          code_challenge: codeChallenge,
+          code_challenge_method: 'S256',
+          state,
+          nonce,
+        });
+
+        const authUrl = `${WHOP_OAUTH_AUTHORIZE}?${params.toString()}`;
+
+        // Open Chrome OAuth popup
+        const responseUrl = await new Promise((resolve, reject) => {
+          chrome.identity.launchWebAuthFlow(
+            { url: authUrl, interactive: true },
+            (redirectUrl) => {
+              if (chrome.runtime.lastError) {
+                reject(new Error(chrome.runtime.lastError.message));
+                return;
+              }
+              resolve(redirectUrl);
+            }
+          );
+        });
+
+        // Extract authorization code from redirect URL
+        const redirectParams = new URL(responseUrl).searchParams;
+        const code = redirectParams.get('code');
+        const returnedState = redirectParams.get('state');
+
+        if (!code) {
+          sendResponse({ ok: false, error: 'no_auth_code' });
+          return;
+        }
+        if (returnedState !== state) {
+          sendResponse({ ok: false, error: 'state_mismatch' });
+          return;
+        }
+
+        // Exchange code via our worker
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 15000);
+        const r = await fetch(AUTH_EXCHANGE_ENDPOINT, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code, codeVerifier, redirectUri: redirectUri }),
+          signal: ctrl.signal,
+        });
+        clearTimeout(t);
+        const data = await r.json();
+        sendResponse(data);
+      } catch (e) {
+        const errorMsg = e?.message || e?.toString() || 'unknown_error';
+        // User closed the popup
+        if (errorMsg.includes('canceled') || errorMsg.includes('cancelled') || errorMsg.includes('closed')) {
+          sendResponse({ ok: false, error: 'user_cancelled' });
+        } else {
+          sendResponse({ ok: false, error: errorMsg });
+        }
       }
       return;
     }
@@ -234,7 +328,7 @@ function genUUID() {
 
 /**
  * Background license revalidation — called by chrome.alarm every 6 hours.
- * Reads license key from extension storage and re-verifies if stale (>24h).
+ * Reads whopUserId or license key from storage and re-verifies if stale (>24h).
  */
 async function handleLicenseRevalidation() {
   try {
@@ -244,20 +338,27 @@ async function handleLicenseRevalidation() {
         resolve(res[EXT_KEY] || null);
       });
     });
-    if (!data?.settings?.license?.key) return;
 
-    const license = data.settings.license;
+    const license = data?.settings?.license;
+    if (!license) return;
+
+    // Need either whopUserId or legacy key
+    const hasUserId = license.whopUserId && typeof license.whopUserId === 'string';
+    const hasKey = license.key && typeof license.key === 'string';
+    if (!hasUserId && !hasKey) return;
+
     const elapsed = license.lastVerified ? (Date.now() - license.lastVerified) : Infinity;
     if (elapsed < LICENSE_REVALIDATION_MS) return; // Still fresh
 
     console.log('[Background] License revalidation triggered');
 
+    const body = hasUserId ? { userId: license.whopUserId } : { licenseKey: license.key };
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 10000);
     const r = await fetch(VERIFY_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ licenseKey: license.key }),
+      body: JSON.stringify(body),
       signal: ctrl.signal,
     });
     clearTimeout(t);

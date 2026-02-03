@@ -104,21 +104,12 @@ export const Paywall = {
                     <button class="paywall-btn primary" data-act="purchase" style="background:linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color:white; border:none; padding:12px 20px; border-radius:8px; font-weight:700; font-size:14px; cursor:pointer;">
                         Get Elite on Whop
                     </button>
-                    <button class="paywall-btn text" data-act="show-key-input" style="background:none; border:none; color:#8b5cf6; font-size:12px; cursor:pointer; padding:6px;">
-                        I have a license key
+                    <button class="paywall-btn" data-act="whop-login" style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.12); color:#f8fafc; padding:10px 20px; border-radius:8px; font-weight:600; font-size:13px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px;">
+                        Already purchased? Sign in with Whop
                     </button>
                 </div>
 
-                <div class="paywall-key-section" style="display:none; margin-top:12px;">
-                    <div style="display:flex; gap:8px;">
-                        <input type="text" class="paywall-license-input" placeholder="Enter license key (mem_xxx...)" maxlength="64"
-                            style="flex:1; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:6px; padding:10px 12px; color:#f8fafc; font-size:13px; outline:none;">
-                        <button class="paywall-btn" data-act="activate" style="background:rgba(139,92,246,0.15); border:1px solid rgba(139,92,246,0.3); color:#a78bfa; padding:10px 16px; border-radius:6px; font-weight:600; font-size:13px; cursor:pointer; white-space:nowrap;">
-                            Activate
-                        </button>
-                    </div>
-                    <div class="paywall-key-status" style="margin-top:8px; font-size:12px; min-height:18px;"></div>
-                </div>
+                <div class="paywall-login-status" style="margin-top:8px; font-size:12px; min-height:18px; text-align:center;"></div>
 
                 <div class="paywall-footer">
                     <p style="font-size:11px; color:#475569; margin-top:12px;">Manage your membership at whop.com/orders</p>
@@ -136,46 +127,33 @@ export const Paywall = {
                 License.openPurchasePage();
             }
 
-            if (e.target.closest('[data-act="show-key-input"]')) {
-                const keySection = overlay.querySelector('.paywall-key-section');
-                if (keySection) {
-                    keySection.style.display = keySection.style.display === 'none' ? 'block' : 'none';
-                    const input = keySection.querySelector('.paywall-license-input');
-                    if (input) input.focus();
-                }
-            }
-
-            if (e.target.closest('[data-act="activate"]')) {
-                const input = overlay.querySelector('.paywall-license-input');
-                const statusEl = overlay.querySelector('.paywall-key-status');
-                const key = input?.value?.trim();
-                if (!key) {
-                    if (statusEl) { statusEl.textContent = 'Please enter a license key'; statusEl.style.color = '#f59e0b'; }
-                    return;
-                }
-
-                // Show loading state
-                const btn = e.target.closest('[data-act="activate"]');
+            if (e.target.closest('[data-act="whop-login"]')) {
+                const btn = e.target.closest('[data-act="whop-login"]');
+                const statusEl = overlay.querySelector('.paywall-login-status');
                 const origText = btn.textContent;
-                btn.textContent = 'Verifying...';
+                btn.textContent = 'Signing in...';
                 btn.disabled = true;
-                if (statusEl) { statusEl.textContent = 'Verifying your license...'; statusEl.style.color = '#94a3b8'; }
+                btn.style.opacity = '0.6';
+                if (statusEl) { statusEl.textContent = 'Opening Whop login...'; statusEl.style.color = '#94a3b8'; }
 
-                const result = await License.activate(key);
+                const result = await License.loginWithWhop();
 
                 btn.textContent = origText;
                 btn.disabled = false;
+                btn.style.opacity = '1';
 
                 if (result.ok) {
                     if (statusEl) { statusEl.textContent = 'Elite activated!'; statusEl.style.color = '#10b981'; }
                     this._showSuccessToast(License.getPlanLabel());
                     setTimeout(() => overlay.remove(), 1500);
                 } else {
-                    const errorMsg = result.error === 'invalid_key' ? 'Invalid license key'
-                        : result.error === 'invalid_product' ? 'Key not for this product'
-                        : result.error === 'membership_inactive' ? 'Membership is not active'
-                        : 'Verification failed — try again';
-                    if (statusEl) { statusEl.textContent = errorMsg; statusEl.style.color = '#ef4444'; }
+                    const errorMsg = result.error === 'no_membership' ? 'No active membership found — purchase Elite first'
+                        : result.error === 'user_cancelled' ? ''
+                        : result.error === 'state_mismatch' ? 'Security error — try again'
+                        : result.error === 'token_exchange_failed' ? 'Login failed — try again'
+                        : result.error === 'user_id_not_found' ? 'Could not verify identity — try again'
+                        : 'Sign in failed — try again';
+                    if (statusEl) { statusEl.textContent = errorMsg; statusEl.style.color = errorMsg ? '#ef4444' : 'transparent'; }
                 }
             }
         });
