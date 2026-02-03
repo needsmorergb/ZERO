@@ -42,8 +42,7 @@ yarn-error.log*
 *.tmp
 .cache/
 
-# Agent logs and state
-agent-moltbook/logs/*.jsonl
-agent-moltbook/logs/agent-state.json
-agent-moltbook/logs/rate-state.json
-agent-moltbook/logs/seen-tokens.json
+# Internal / private
+tasks/
+agent-moltbook/
+zero-website/
