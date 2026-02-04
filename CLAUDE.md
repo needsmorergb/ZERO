@@ -173,11 +173,60 @@ When only a tx signature is available (no quote data), `SHADOW_SWAP_SIGNATURE` i
 - Trade fills are tagged with `mode: "analysis"` or `mode: "shadow"` and `tradeSource: "REAL_ANALYSIS"` or `"REAL_SHADOW"` for filtering
 - Schema migration v2→v3 initializes shadow fields for existing users
 
+## Whop OAuth Integration
+
+### Architecture
+- **Payment model**: Whop product page (direct checkout link) + OAuth sign-in from the extension
+- **No Whop App Store needed**: The App Store requires an iFrame-loadable web app. ZERO uses Whop purely for payment + membership verification, which works independently of App Store approval. Ignore App Store rejections.
+- **OAuth flow**: PKCE (Proof Key for Code Exchange) without client secret — pure public-client PKCE
+
+### OAuth Flow
+1. User clicks "Sign in with Whop" in paywall (`src/modules/ui/paywall.js`)
+2. `License.loginWithWhop()` sends `WHOP_OAUTH_LOGIN` to background service worker
+3. `background.js` generates PKCE pair, opens `chrome.identity.launchWebAuthFlow()` to Whop authorize endpoint
+4. User authorizes → Chrome redirects with auth code
+5. Background POSTs code + codeVerifier to `https://api.get-zero.xyz/auth/exchange`
+6. Worker exchanges code for tokens via Whop `/oauth/token`, extracts userId from JWT
+7. Worker calls `checkUserAccess(userId)` via Whop `has_access` API
+8. Extension stores `whopUserId`, `tier`, `valid` in chrome.storage
+
+### Configuration
+- **Client ID**: `app_AOtaaGKLyuCGt1` (in `background.js` and `wrangler.toml`)
+- **Product IDs**: Elite `prod_MV6E6MyAvkrXl`, Founders `prod_tyyX0AEmzOZON` (in `wrangler.toml`)
+- **Redirect URI**: `https://<EXTENSION_ID>.chromiumapp.org/` — registered in Whop app OAuth tab. Changes if extension is loaded unpacked without a `key` in manifest.json
+- **Whop App Dashboard**: OAuth tab at the ZERO app page — configure redirect URIs and view client secret here
+
+### Worker Secrets (deployed via `wrangler secret put`)
+| Secret | Required | Purpose |
+|--------|----------|---------|
+| `WHOP_API_KEY` | Yes | Bearer token for `has_access` and membership verification API calls |
+| `WHOP_CLIENT_SECRET` | **No — do not deploy** | PKCE works without it. Whop's client secret lacks `oauth:token_exchange` permission and causes 401 errors if included |
+| `HELIUS_API_KEY` | Yes | Solana RPC + DAS |
+| `TWITTER154_API_KEY` | Yes | X/Twitter enrichment via RapidAPI |
+
+### Key Files
+- `src/background.js` (lines 242-329) — `WHOP_OAUTH_LOGIN` handler, PKCE generation, code exchange
+- `src/modules/license.js` (lines 107-151) — `loginWithWhop()`, stores membership result
+- `src/modules/ui/paywall.js` — Elite upgrade modal, sign-in button, success toast
+- `worker-context/src/index.js` — `handleAuthExchange()` (token exchange + access check), `handleVerifyByUserId()` (revalidation)
+
+### Testing Elite Membership
+- **Dev bypass**: Set `DEV_FORCE_ELITE = true` in `src/modules/store.js` line 1, rebuild — forces Elite tier without OAuth
+- **Real OAuth test**: Owner account has implicit access — just sign in with Whop. No separate purchase needed.
+- **Revalidation**: Background alarm checks every 6 hours, 72-hour grace period if API unreachable
+
+### Whop Pitfalls
+- **Do NOT deploy `WHOP_CLIENT_SECRET`** — pure PKCE works without it; including it causes `invalid_client` / `oauth:token_exchange` permission errors
+- **Extension ID is unstable for unpacked extensions** — redirect URI changes if extension is reloaded. Pin with a `key` in `manifest.json` for production, or update the redirect URI in Whop's OAuth tab after each reload
+- **Owner accounts cannot self-purchase** — Whop greys out the buy button for product admins. Use the OAuth sign-in flow instead (owner gets implicit access via `has_access` API)
+- **Do NOT confuse Company API Key with OAuth Client Secret** — both start with `apik_` but have different permissions. Company key is on the Developer page; OAuth secret is inside the App → OAuth tab
+- **Windows `nul` file hazard** — scripts redirecting to `nul` in Git Bash create an actual file named `nul` (Windows reserved name), which prevents Chrome from loading the extension. Delete with `rm nul` if encountered
+
 ## Deployment
 
 - Extension: Load unpacked from project root in `chrome://extensions/`
 - Context API Worker: Deploy via `npx wrangler deploy` from `worker-context/`
-- Secrets: Set via `wrangler secret put TWITTER154_API_KEY` and `wrangler secret put HELIUS_API_KEY`
+- Secrets: Set via `wrangler secret put TWITTER154_API_KEY` and `wrangler secret put HELIUS_API_KEY` and `wrangler secret put WHOP_API_KEY`
 
 ## Common Mistakes to Avoid
 

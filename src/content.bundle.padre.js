@@ -233,6 +233,7 @@
                 if (chrome.runtime.lastError) {
                   const msg = chrome.runtime.lastError.message;
                   if (msg && !msg.includes("context invalidated")) {
+                    console.warn("[ZER\xD8] Storage load error:", msg);
                   }
                   this.state = JSON.parse(JSON.stringify(DEFAULTS));
                   resolve(this.state);
@@ -242,15 +243,18 @@
                 if (!saved) {
                   this.state = JSON.parse(JSON.stringify(DEFAULTS));
                 } else if (!saved.schemaVersion || saved.schemaVersion < 2) {
+                  console.log("[ZER\xD8] Migrating storage schema v1 -> v2");
                   this.state = this.migrateV1toV2(saved);
                   this.save();
                 } else {
                   this.state = deepMerge(DEFAULTS, saved);
                   if (this.state.schemaVersion < 3) {
+                    console.log("[ZER\xD8] Migrating storage schema v2 -> v3 (shadow state)");
                     this.state.schemaVersion = 3;
                     this.save();
                   }
                   if (this.state.schemaVersion < 4) {
+                    console.log("[ZER\xD8] Migrating storage schema v3 -> v4 (session replay)");
                     for (const hist of [this.state.sessionHistory, this.state.shadowSessionHistory]) {
                       if (Array.isArray(hist)) {
                         hist.forEach((s) => {
@@ -278,6 +282,7 @@
                 resolve(this.state);
               });
             } catch (e) {
+              console.error("[ZER\xD8] Storage load exception:", e);
               if (timeoutId)
                 clearTimeout(timeoutId);
               resolve(JSON.parse(JSON.stringify(DEFAULTS)));
@@ -285,6 +290,7 @@
           });
           const timeout = new Promise((resolve) => {
             timeoutId = setTimeout(() => {
+              console.warn("[ZER\xD8] Storage load timed out, using defaults.");
               if (!this.state)
                 this.state = JSON.parse(JSON.stringify(DEFAULTS));
               resolve(this.state);
@@ -301,12 +307,14 @@
                 if (chrome.runtime.lastError) {
                   const msg = chrome.runtime.lastError.message;
                   if (msg && !msg.includes("context invalidated")) {
+                    console.warn("[ZER\xD8] Storage save error:", msg);
                   }
                 }
                 resolve();
               });
             } catch (e) {
               if (!e.message.includes("context invalidated")) {
+                console.error("[ZER\xD8] Storage save exception:", e);
               }
               resolve();
             }
@@ -567,6 +575,7 @@
           if (chrome.runtime.lastError) {
             const msg = chrome.runtime.lastError.message || "";
             if (!msg.includes("context invalidated")) {
+              console.warn("[DiagStore] get error:", msg);
             }
             resolve(null);
             return;
@@ -575,6 +584,7 @@
         });
       } catch (e) {
         if (!String(e).includes("context invalidated")) {
+          console.error("[DiagStore] get exception:", e);
         }
         resolve(null);
       }
@@ -589,12 +599,14 @@
           if (chrome.runtime.lastError) {
             const msg = chrome.runtime.lastError.message || "";
             if (!msg.includes("context invalidated")) {
+              console.warn("[DiagStore] set error:", msg);
             }
           }
           resolve();
         });
       } catch (e) {
         if (!String(e).includes("context invalidated")) {
+          console.error("[DiagStore] set exception:", e);
         }
         resolve();
       }
@@ -838,18 +850,22 @@
         debug(msg, ...args) {
           if (!this._shouldLog("debug"))
             return;
+          console.debug(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
         },
         info(msg, ...args) {
           if (!this._shouldLog("info"))
             return;
+          console.log(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
         },
         warn(msg, ...args) {
           if (!this._shouldLog("warn"))
             return;
+          console.warn(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
         },
         error(msg, ...args) {
           if (!this._shouldLog("error"))
             return;
+          console.error(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
         },
         cleanArgs(args) {
           return args.map((arg) => {
@@ -4154,13 +4170,16 @@ input:checked + .slider:before {
       }
       this.initialized = true;
       this.platformName = platformName;
+      console.log(`[ZER\xD8] OverlayManager.init() called with platform: "${platformName}"`);
       try {
         this.createShadowRoot();
       } catch (e) {
+        console.warn("[ZER\xD8] Shadow root creation failed:", e);
       }
       try {
         this.injectStyles();
       } catch (e) {
+        console.warn("[ZER\xD8] Style injection failed:", e);
       }
     },
     getShadowRoot() {
@@ -4195,6 +4214,7 @@ input:checked + .slider:before {
         mountTarget.appendChild(this.shadowHost);
         return this.shadowRoot;
       } catch (e) {
+        console.warn("[ZER\xD8] Shadow DOM unavailable, using DOM fallback", e);
         const container = document.createElement("div");
         container.id = "paper-shadow-container";
         container.style.cssText = "position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 2147483647;";
@@ -4851,8 +4871,10 @@ input:checked + .slider:before {
       this.isStale = false;
       this.dexHasData = true;
       if (mint) {
+        console.log(`[MarketData] New Mint: ${mint}. Starting Poll.`);
         this.startPolling();
       } else {
+        console.log(`[MarketData] Mint cleared. Stopping Poll.`);
       }
     },
     startPolling() {
@@ -4876,6 +4898,7 @@ input:checked + .slider:before {
       if (Date.now() - this.lastUpdateTs > 1e4) {
         if (!this.isStale) {
           this.isStale = true;
+          console.warn("[MarketData] Data Stale (no update > 10s)");
           this.notify();
         }
       }
@@ -4909,9 +4932,11 @@ input:checked + .slider:before {
             }
           }
           this.dexHasData = false;
+          console.log(`[MarketData] DexScreener has no data \u2014 switching to Jupiter only`);
         }
         await this.fetchJupiterFallback();
       } catch (e) {
+        console.error("[MarketData] Fetch Exception:", e);
       }
     },
     async fetchJupiterFallback() {
@@ -4924,6 +4949,7 @@ input:checked + .slider:before {
           const jupData = jupResponse.data[this.currentMint];
           const price = parseFloat(jupData.usdPrice) || 0;
           if (price > 0) {
+            console.log(`[MarketData] Jupiter Price: $${price} for ${this.currentMint}`);
             this.data = {
               priceUsd: price,
               marketCapUsd: this.data.marketCapUsd || 0,
@@ -4938,7 +4964,9 @@ input:checked + .slider:before {
             return;
           }
         }
+        console.warn(`[MarketData] No pairs found for ${this.currentMint}`);
       } catch (e) {
+        console.warn("[MarketData] Jupiter fallback failed:", e);
       }
     },
     // Public getter for sync access
@@ -4973,6 +5001,7 @@ input:checked + .slider:before {
     lastChartMCapTs: 0,
     // Dedicated tracker for chart MCap activity
     init() {
+      console.log("[Market] Initializing API-Driven Market Service");
       TokenMarketDataService.subscribe((data) => {
         const now = Date.now();
         const chartMCapActive = now - this.lastChartMCapTs < 3e3;
@@ -5015,6 +5044,7 @@ input:checked + .slider:before {
             const now = Date.now();
             if (this.price > 0 && Math.abs(d.price - this.price) / this.price > 0.8 && d.confidence < 3)
               return;
+            console.log(`[Market] Real-time Price Integration (${d.source}): $${d.price}`);
             this.price = d.price;
             this.priceIsFresh = true;
             this.lastTickTs = now;
@@ -5031,6 +5061,7 @@ input:checked + .slider:before {
     pollContext() {
       const { activeMint, activeSymbol, sourceSite } = TokenContextResolver.resolve();
       if (activeMint !== this.currentMint) {
+        console.log(`[Market] Context Changed: ${this.currentMint} -> ${activeMint} (${sourceSite})`);
         this.currentMint = activeMint;
         this.sourceSite = sourceSite;
         this.currentSymbol = activeSymbol;
@@ -5156,6 +5187,7 @@ input:checked + .slider:before {
      */
     async setMode(mode) {
       if (!MODES[mode.toUpperCase()] && !Object.values(MODES).includes(mode)) {
+        console.warn("[ModeManager] Unknown mode:", mode);
         return false;
       }
       if (mode === MODES.SHADOW && !FeatureManager.isElite(Store.state)) {
@@ -5168,6 +5200,7 @@ input:checked + .slider:before {
           ss.id = mode + "_" + Date.now();
           ss.startTime = Date.now();
           ss.status = "active";
+          console.log(`[ModeManager] ${mode} session initialized:`, ss.id);
         }
       }
       await Store.save();
@@ -5591,6 +5624,7 @@ input:checked + .slider:before {
       if (eventLog.length > 100) {
         eventLog.splice(0, eventLog.length - 100);
       }
+      console.log(`[EVENT LOG] [${category}] ${type}: ${message}`);
       return event;
     },
     logTradeEvent(state, trade) {
@@ -5737,6 +5771,7 @@ input:checked + .slider:before {
       score = Math.max(0, score - penalty);
       session.disciplineScore = score;
       if (penalty > 0) {
+        console.log(`[DISCIPLINE] Score -${penalty} (${reasons.join(", ")})`);
         this.logDisciplineEvent(state, score, penalty, reasons);
       }
       return { score, penalty, reasons };
@@ -5813,9 +5848,11 @@ input:checked + .slider:before {
       if (pnl > 0) {
         session.winStreak = (session.winStreak || 0) + 1;
         session.lossStreak = 0;
+        console.log(`[ZER\xD8] Win! +${pnl.toFixed(4)} SOL. Win streak: ${session.winStreak}`);
       } else if (pnl < 0) {
         session.lossStreak = (session.lossStreak || 0) + 1;
         session.winStreak = 0;
+        console.log(`[ZER\xD8] Loss. ${pnl.toFixed(4)} SOL. Loss streak: ${session.lossStreak}`);
       }
       if (!session.equityHistory)
         session.equityHistory = [];
@@ -5905,6 +5942,10 @@ input:checked + .slider:before {
       const timeSpan = last5[4].ts - last5[0].ts;
       const timeSinceLast = Date.now() - last5[4].ts;
       if (timeSpan < 3e5 && timeSinceLast < 3e5) {
+        console.log(
+          `[ZER\xD8 ALERT] Overtrading Detected: 5 trades in ${(timeSpan / 1e3).toFixed(1)}s`,
+          last5.map((t) => t.id)
+        );
         this.addAlert(
           state,
           "VELOCITY",
@@ -5990,6 +6031,7 @@ input:checked + .slider:before {
       if (session.activeAlerts.length > 3)
         session.activeAlerts.shift();
       this.logAlertEvent(state, type, message);
+      console.log(`[ELITE ALERT] ${type}: ${message}`);
     },
     updateProfile(state) {
       const { behavior: b } = this._resolve(state);
@@ -6236,6 +6278,7 @@ input:checked + .slider:before {
     exportTradesAsCSV(state) {
       const csv = this.exportToCSV(state);
       if (!csv) {
+        console.warn("[Export] No trades to export");
         return false;
       }
       const filename = `zero_trades_${(/* @__PURE__ */ new Date()).toISOString().split("T")[0]}.csv`;
@@ -6735,6 +6778,7 @@ input:checked + .slider:before {
     priceUpdateInterval: null,
     lastPriceSave: 0,
     init() {
+      console.log("[PNL] Initializing WAC PnL Calculator");
       this.fetchSolPrice();
       if (!this.priceUpdateInterval) {
         this.priceUpdateInterval = setInterval(() => {
@@ -6746,6 +6790,7 @@ input:checked + .slider:before {
      * Fetches SOL/USD from Kraken + Coinbase and computes Median.
      */
     async fetchSolPrice() {
+      console.log("[PNL] Fetching SOL Price (Kraken + Coinbase)...");
       const fetchKraken = async () => {
         try {
           const res = await proxyFetch("https://api.kraken.com/0/public/Ticker?pair=SOLUSD", {
@@ -6755,6 +6800,7 @@ input:checked + .slider:before {
             return parseFloat(res.data.result.SOLUSD.c[0]);
           }
         } catch (e) {
+          console.warn("[PNL] Kraken failed", e);
         }
         return null;
       };
@@ -6767,6 +6813,7 @@ input:checked + .slider:before {
             return parseFloat(res.data.data.amount);
           }
         } catch (e) {
+          console.warn("[PNL] Coinbase failed", e);
         }
         return null;
       };
@@ -6782,7 +6829,9 @@ input:checked + .slider:before {
         this.cachedSolPrice = median;
         this.lastValidSolPrice = median;
         this.lastSolPriceFetch = Date.now();
+        console.log(`[PNL] SOL/USD Updated: $${median.toFixed(2)} (Sources: ${validPrices.length})`);
       } else {
+        console.error("[PNL] All SOL price sources failed. Using fallback.");
         if (this.lastValidSolPrice)
           this.cachedSolPrice = this.lastValidSolPrice;
       }
@@ -6824,6 +6873,9 @@ input:checked + .slider:before {
         if (currentMC > 0 && entryMC > 0 && totalSolSpent > 0) {
           const mcRatio = currentMC / entryMC;
           if (mcRatio > 1e5 || mcRatio < 1e-5) {
+            console.warn(
+              `[PNL] ${pos.symbol}: SUSPICIOUS MC RATIO ${mcRatio.toFixed(2)}x (entry=$${entryMC.toFixed(0)}, current=$${currentMC.toFixed(0)}) \u2014 falling back to WAC method`
+            );
           } else {
             const currentValueSol = totalSolSpent * mcRatio;
             const unrealizedPnlSol2 = currentValueSol - totalSolSpent;
@@ -6834,6 +6886,9 @@ input:checked + .slider:before {
               pos.peakPnlPct = pnlPct2;
             totalUnrealizedUsd += unrealizedPnlUsd2;
             totalUnrealizedSol += unrealizedPnlSol2;
+            console.log(
+              `[PNL] ${pos.symbol}: MC Ratio \u2014 entryMC=$${entryMC.toFixed(0)}, currentMC=$${currentMC.toFixed(0)}, ratio=${mcRatio.toFixed(4)}, pnl=${unrealizedPnlSol2.toFixed(4)} SOL (${pnlPct2.toFixed(1)}%)`
+            );
             return;
           }
         }
@@ -6849,6 +6904,9 @@ input:checked + .slider:before {
           pos.peakPnlPct = pnlPct;
         totalUnrealizedUsd += unrealizedPnlUsd;
         totalUnrealizedSol += unrealizedPnlSol;
+        console.log(
+          `[PNL] ${pos.symbol}: WAC fallback \u2014 qty=${pos.qtyTokens.toFixed(2)}, price=$${markPriceUsd.toFixed(6)}, pnl=${unrealizedPnlSol.toFixed(4)} SOL (${pnlPct.toFixed(1)}%)`
+        );
       });
       Analytics.monitorProfitOverstay(state);
       Analytics.detectOvertrading(state);
@@ -6878,6 +6936,9 @@ input:checked + .slider:before {
       if (priceUsd <= 0)
         return { success: false, error: `Price not available (${priceUsd})` };
       const tickAge = Date.now() - Market.lastTickTs;
+      console.log(
+        `[EXEC] BUY DIAG: price=$${priceUsd}, mcap=$${Market.marketCap}, source=${Market.lastSource}, tickAge=${tickAge}ms`
+      );
       const solUsd = PnlCalculator.getSolPrice();
       const buyUsd = solAmount * solUsd;
       const qtyDelta = buyUsd / priceUsd;
@@ -6904,6 +6965,9 @@ input:checked + .slider:before {
       if (pos.entryMarketCapUsdReference === null && Market.marketCap > 0) {
         pos.entryMarketCapUsdReference = Market.marketCap;
       }
+      console.log(
+        `[EXEC] BUY ${symbol}: +${qtyDelta.toFixed(2)} ($${buyUsd.toFixed(2)}) @ $${priceUsd}`
+      );
       const fillData = {
         side: "BUY",
         mint,
@@ -6936,6 +7000,12 @@ input:checked + .slider:before {
         return { success: false, error: "No open position" };
       const pos = state.positions[mint];
       const tickAge = Date.now() - Market.lastTickTs;
+      console.log(
+        `[EXEC] SELL DIAG: price=$${priceUsd}, mcap=$${Market.marketCap}, source=${Market.lastSource}, tickAge=${tickAge}ms`
+      );
+      console.log(
+        `[EXEC] SELL DIAG: avgCost=$${pos.avgCostUsdPerToken}, qty=${pos.qtyTokens}, costBasis=$${pos.costBasisUsd}`
+      );
       const pct = percent === void 0 || percent === null ? 100 : Math.min(Math.max(percent, 0), 100);
       const rawDelta = pos.qtyTokens * (pct / 100);
       const qtyDelta = Math.min(rawDelta, pos.qtyTokens);
@@ -6955,6 +7025,9 @@ input:checked + .slider:before {
         pos.avgCostUsdPerToken = 0;
         pos.entryMarketCapUsdReference = null;
       }
+      console.log(
+        `[EXEC] SELL ${symbol}: -${qtyDelta.toFixed(2)} ($${proceedsUsd.toFixed(2)}) PnL: $${pnlEventUsd.toFixed(2)}`
+      );
       const proceedsSol = proceedsUsd / solUsd;
       const pnlEventSol = pnlEventUsd / solUsd;
       const fillData = {
@@ -7385,10 +7458,6 @@ input:checked + .slider:before {
                     <span style="color:#a78bfa; font-weight:600;">$299 Founders Lifetime</span>
                 </div>
 
-                <div style="text-align:center; margin:4px 0 8px;">
-                    <span style="display:inline-block; font-size:10px; font-weight:700; letter-spacing:1.5px; color:#a78bfa; background:rgba(139,92,246,0.1); border:1px solid rgba(139,92,246,0.2); padding:3px 10px; border-radius:4px;">COMING SOON</span>
-                    <div style="font-size:11px; color:#64748b; margin-top:4px;">Elite is launching shortly. Sign up to be first in line.</div>
-                </div>
 
                 <div class="paywall-actions" style="display:flex; flex-direction:column; gap:8px;">
                     <button class="paywall-btn primary" data-act="purchase" style="background:linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color:white; border:none; padding:12px 20px; border-radius:8px; font-weight:700; font-size:14px; cursor:pointer;">
@@ -7430,11 +7499,13 @@ input:checked + .slider:before {
           btn.style.opacity = "1";
           if (result.ok) {
             if (statusEl) {
-              statusEl.textContent = "Elite activated!";
-              statusEl.style.color = "#10b981";
+              statusEl.innerHTML = `<span style="display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:700; letter-spacing:1.2px; color:#a78bfa; text-transform:uppercase;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              ELITE ACTIVATED
+            </span>`;
             }
             this._showSuccessToast(License.getPlanLabel());
-            setTimeout(() => overlay.remove(), 1500);
+            setTimeout(() => overlay.remove(), 2e3);
           } else {
             const errorMsg = result.error === "no_membership" ? "No active membership found \u2014 purchase Elite first" : result.error === "user_cancelled" ? "" : result.error === "state_mismatch" ? "Security error \u2014 try again" : result.error === "token_exchange_failed" ? "Login failed \u2014 try again" : result.error === "user_id_not_found" ? "Could not verify identity \u2014 try again" : "Elite is launching soon \u2014 check back shortly!";
             if (statusEl) {
@@ -7453,23 +7524,43 @@ input:checked + .slider:before {
       const root = OverlayManager.getShadowRoot();
       const toast = document.createElement("div");
       toast.className = "paywall-toast";
-      toast.textContent = planLabel ? `Elite Activated (${planLabel})` : "Elite Activated";
+      const label = planLabel ? planLabel.toUpperCase() : "";
+      toast.innerHTML = `
+      <div style="display:flex; align-items:center; gap:10px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e0d4ff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        <div>
+          <div style="font-size:13px; font-weight:700; letter-spacing:1.5px; color:#f0eaff;">ELITE ACTIVATED</div>
+          ${label ? `<div style="font-size:10px; font-weight:500; letter-spacing:0.8px; color:rgba(224,212,255,0.6); margin-top:1px;">${label}</div>` : ""}
+        </div>
+      </div>
+    `;
       toast.style.cssText = `
-            position: fixed;
-            top: 80px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(16,185,129,0.9);
-            color: white;
-            padding: 12px 24px;
-            border-radius: 8px;
-            font-weight: 600;
-            font-size: 14px;
-            z-index: 2147483647;
-            pointer-events: none;
-        `;
+      position: fixed;
+      top: 80px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-8px);
+      background: linear-gradient(135deg, rgba(139,92,246,0.95) 0%, rgba(99,102,241,0.95) 100%);
+      color: white;
+      padding: 14px 28px;
+      border-radius: 10px;
+      border: 1px solid rgba(167,139,250,0.3);
+      box-shadow: 0 0 24px rgba(139,92,246,0.4), 0 8px 32px rgba(0,0,0,0.3);
+      z-index: 2147483647;
+      pointer-events: none;
+      opacity: 0;
+      animation: zt-in 0.35s ease-out forwards;
+    `;
+      const style = document.createElement("style");
+      style.textContent = `@keyframes zt-in { to { opacity:1; transform:translateX(-50%) translateY(0); } }`;
+      toast.appendChild(style);
       root.appendChild(toast);
-      setTimeout(() => toast.remove(), 3e3);
+      setTimeout(() => {
+        toast.style.animation = "zt-out 0.3s ease-in forwards";
+        const outStyle = document.createElement("style");
+        outStyle.textContent = `@keyframes zt-out { to { opacity:0; transform:translateX(-50%) translateY(-8px); } }`;
+        toast.appendChild(outStyle);
+        setTimeout(() => toast.remove(), 300);
+      }, 3e3);
     },
     isFeatureLocked(featureName) {
       if (!FeatureManager)
@@ -8450,6 +8541,7 @@ canvas#equity-canvas {
       if (!archivedSession)
         return;
       if (archivedSession.status === "active") {
+        console.warn("[SessionReplay] Cannot replay active session");
         return;
       }
       this.replaySession = archivedSession;
@@ -10604,6 +10696,7 @@ canvas#equity-canvas {
       const shareText = Analytics.generateXShareText(Store.state);
       const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}`;
       window.open(url, "_blank", "width=550,height=420");
+      console.log("[PNL HUD] Sharing session to X");
     },
     async updatePnlHud() {
       const root = OverlayManager.getContainer().querySelector("#" + IDS.pnlHud);
@@ -10949,11 +11042,13 @@ canvas#equity-canvas {
       const positions = Store.getActivePositions();
       const pos = positions[mint];
       if (!pos) {
+        console.error("[PnlHud] Position not found for mint:", mint);
         return;
       }
       const tokenInfo = { symbol: pos.symbol, mint: pos.mint };
       const result = await Trading.sell(pct, "Quick Sell", tokenInfo);
       if (result.success) {
+        console.log(`[PnlHud] Quick sell ${pct}% of ${pos.symbol} successful`);
         if (result.trade && result.trade.id) {
           const activeTrades = Store.getActiveTrades();
           const fullTrade = activeTrades && activeTrades[result.trade.id] ? activeTrades[result.trade.id] : Store.state.fills ? Store.state.fills.find((f) => f.id === result.trade.id) : null;
@@ -10971,6 +11066,7 @@ canvas#equity-canvas {
           window.ZeroHUD.updateAll();
         }
       } else {
+        console.error("[PnlHud] Quick sell failed:", result.error);
       }
     }
   };
@@ -11601,8 +11697,10 @@ canvas#equity-canvas {
         if (!ctx.fetchedAt)
           ctx.fetchedAt = (/* @__PURE__ */ new Date()).toISOString();
         _cacheAndPersist(ca, ctx);
+        console.log("[MarketContext] context loaded", ca.slice(0, 8));
         return ctx;
       }
+      console.warn("[MarketContext] API response not ok, attempting rehydration");
       const stored = await _rehydrateFromStorage(ca);
       if (stored) {
         _markStale(stored);
@@ -11611,6 +11709,7 @@ canvas#equity-canvas {
       return _emptyResponse(ca);
     } catch (e) {
       const msg = e?.message || "";
+      console.warn("[MarketContext] Fetch failed, attempting rehydration:", msg);
       const stored = await _rehydrateFromStorage(ca);
       if (stored) {
         _markStale(stored);
@@ -12140,6 +12239,7 @@ canvas#equity-canvas {
         };
         this.notify();
       } catch (e) {
+        console.warn("[NarrativeTrust] Fetch failed:", e?.message || e);
         this.loading = false;
         if (this.data.mint !== mint) {
           this._setEmptyState(mint);
@@ -12952,18 +13052,21 @@ canvas#equity-canvas {
         return;
       this.initialized = true;
       const isReal = Store.isRealTradingMode();
+      console.log(`[ShadowIngestion] Mode: ${isReal ? Store.isShadowMode() ? "SHADOW" : "ANALYSIS" : Store.state?.settings?.tradingMode || "unknown"}`);
       window.addEventListener("message", (e) => {
         if (e.source !== window)
           return;
         if (!e.data?.__paper)
           return;
         if (e.data.type === "SHADOW_TRADE_DETECTED") {
+          console.log(`[ShadowIngestion] Bridge swap event received: ${e.data.side} ${e.data.mint?.slice(0, 8) || "?"}`);
           this.handleDetectedTrade(e.data);
         }
         if (e.data.type === "SHADOW_SWAP_SIGNATURE") {
           this.resolveSwapSignature(e.data);
         }
         if (e.data.type === "WALLET_ADDRESS_DETECTED") {
+          console.log(`[ShadowIngestion] Wallet address message received: ${e.data.walletAddress?.slice(0, 8) || "none"}`);
           this.handleWalletAddress(e.data.walletAddress);
         }
         if (e.data.type === "PADRE_PNL_TICK" || e.data.type === "AXIOM_PNL_TICK") {
@@ -12973,9 +13076,12 @@ canvas#equity-canvas {
       });
       const storedAddr = Store.state?.shadow?.walletAddress;
       if (storedAddr) {
+        console.log(`[ShadowIngestion] Stored wallet found: ${storedAddr.slice(0, 8)}...`);
         this.proactiveFetchBalance();
       } else {
+        console.log("[ShadowIngestion] No stored wallet \u2014 waiting for bridge detection");
       }
+      console.log("[ShadowIngestion] Initialized \u2014 event-driven swap detection active");
     },
     // --- Event-Driven Swap Resolution (Layer 2) ---
     // Called when wallet hook fires but no cached quote was available.
@@ -12983,23 +13089,30 @@ canvas#equity-canvas {
     async resolveSwapSignature(data) {
       const { signature, mint, symbol } = data;
       if (!signature || typeof signature !== "string" || signature.length < 30) {
+        console.warn("[ShadowIngestion] Invalid swap signature:", signature?.slice(0, 20));
         return;
       }
       const existingTrade = Object.values(Store.state?.shadowTrades || {}).find(
         (t) => t.signature === signature
       );
       if (existingTrade) {
+        console.log(`[ShadowIngestion] Signature already recorded, skipping: ${signature.slice(0, 16)}`);
         return;
       }
       if (this._pendingSignatures.has(signature)) {
+        console.log(`[ShadowIngestion] Already resolving signature, skipping: ${signature.slice(0, 16)}`);
         return;
       }
       this._pendingSignatures.add(signature);
       const walletAddress = Store.state?.shadow?.walletAddress;
       if (!walletAddress) {
+        console.warn("[ShadowIngestion] Cannot resolve tx \u2014 no wallet address");
         this._pendingSignatures.delete(signature);
         return;
       }
+      console.log(
+        `[ShadowIngestion] Swap signature received: ${signature.slice(0, 16)}... \u2014 resolving via RPC`
+      );
       const delays = [1500, 3e3, 5e3];
       try {
         for (let attempt = 0; attempt < delays.length; attempt++) {
@@ -13008,6 +13121,9 @@ canvas#equity-canvas {
             (t) => t.signature === signature
           );
           if (alreadyRecorded) {
+            console.log(
+              `[ShadowIngestion] Signature resolved by fast path, skipping RPC attempt ${attempt + 1}`
+            );
             return;
           }
           try {
@@ -13032,20 +13148,37 @@ canvas#equity-canvas {
               );
             });
             if (!response || !response.ok) {
+              console.warn(
+                `[ShadowIngestion] RPC resolve attempt ${attempt + 1} error:`,
+                response?.error
+              );
               continue;
             }
             if (!response.swap) {
+              console.log(
+                `[ShadowIngestion] RPC attempt ${attempt + 1}: tx not indexed yet`
+              );
               continue;
             }
             const swap = response.swap;
             if ((!swap.priceUsd || swap.priceUsd <= 0) && Market.price > 0) {
               swap.priceUsd = Market.price;
             }
+            console.log(
+              `[ShadowIngestion] RPC resolved: ${swap.side} ${swap.solAmount?.toFixed(4)} SOL \u2192 ${swap.mint?.slice(0, 8)} (attempt ${attempt + 1})`
+            );
             await this.handleDetectedTrade(swap);
             return;
           } catch (e) {
+            console.warn(
+              `[ShadowIngestion] RPC resolve attempt ${attempt + 1} failed:`,
+              e?.message || e
+            );
           }
         }
+        console.warn(
+          `[ShadowIngestion] Failed to resolve tx after ${delays.length} attempts: ${signature.slice(0, 16)}`
+        );
       } finally {
         this._pendingSignatures.delete(signature);
       }
@@ -13061,6 +13194,7 @@ canvas#equity-canvas {
         return;
       shadow.walletAddress = addr;
       await Store.save();
+      console.log(`[ShadowIngestion] Wallet address stored: ${addr.slice(0, 8)}...`);
       this.proactiveFetchBalance();
     },
     async proactiveFetchBalance() {
@@ -13092,17 +13226,22 @@ canvas#equity-canvas {
           session.equity = response.balance;
           session.walletBalance = response.balance;
           await Store.save();
+          console.log(
+            `[ShadowIngestion] Wallet balance: ${response.balance.toFixed(4)} SOL`
+          );
           if (window.ZeroHUD && window.ZeroHUD.updateAll) {
             window.ZeroHUD.updateAll();
           }
         }
       } catch (e) {
+        console.warn("[ShadowIngestion] Proactive balance fetch failed:", e);
         this.walletBalanceFetched = false;
       }
     },
     // --- Trade Processing ---
     async handleDetectedTrade(data) {
       if (!Store.isRealTradingMode()) {
+        console.log(`[ShadowIngestion] Trade ignored \u2014 not in real trading mode (current: ${Store.state?.settings?.tradingMode || "?"})`);
         return;
       }
       const state = Store.state;
@@ -13114,11 +13253,16 @@ canvas#equity-canvas {
         const solUsd = PnlCalculator.getSolPrice();
         if (solUsd > 0) {
           solAmount = data.usdAmount / solUsd;
+          console.log(
+            `[ShadowIngestion] USD\u2192SOL: $${data.usdAmount.toFixed(4)} / $${solUsd.toFixed(2)} = ${solAmount.toFixed(6)} SOL`
+          );
         } else {
+          console.warn("[ShadowIngestion] Cannot convert USD\u2192SOL \u2014 no SOL price available");
           return;
         }
       }
       if (!mint || !solAmount || solAmount <= 0) {
+        console.warn("[ShadowIngestion] Invalid swap data:", data);
         return;
       }
       data.solAmount = solAmount;
@@ -13129,6 +13273,9 @@ canvas#equity-canvas {
         return;
       }
       const src = data.source === "helius" ? "RPC" : "Bridge";
+      console.log(
+        `[ShadowIngestion] Processing ${side} via ${src} \u2014 ${symbol || mint.slice(0, 8)}, ${solAmount.toFixed(4)} SOL`
+      );
       if (side === "BUY") {
         await this.recordShadowBuy(state, data);
       } else if (side === "SELL") {
@@ -13160,6 +13307,7 @@ canvas#equity-canvas {
           tokenPriceUsd = buyUsd / qtyDelta;
         }
       } else {
+        console.warn("[ShadowIngestion] Cannot determine token quantity \u2014 no price or amount");
         return;
       }
       if (!state.shadowPositions[mint]) {
@@ -13209,13 +13357,18 @@ canvas#equity-canvas {
           Analytics.logTradeEvent(state, trade);
         }
       } catch (e) {
+        console.warn("[ShadowIngestion] Analytics error:", e);
       }
+      console.log(
+        `[ShadowIngestion] BUY recorded: ${pos.symbol} +${qtyDelta.toFixed(2)} tokens, ${solAmount.toFixed(4)} SOL`
+      );
     },
     async recordShadowSell(state, data) {
       const { mint, symbol, solAmount, tokenAmount, priceUsd, signature } = data;
       const session = state.shadowSession;
       const pos = state.shadowPositions[mint];
       if (!pos || pos.qtyTokens <= 0) {
+        console.warn(`[ShadowIngestion] SELL for unknown/empty position: ${mint.slice(0, 8)}`);
         return;
       }
       const solUsd = PnlCalculator.getSolPrice();
@@ -13231,6 +13384,7 @@ canvas#equity-canvas {
         qtyDelta = sellUsd / tokenPriceUsd;
         qtyDelta = Math.min(qtyDelta, pos.qtyTokens);
       } else {
+        console.warn("[ShadowIngestion] Cannot determine sell quantity");
         return;
       }
       if (qtyDelta <= 0)
@@ -13276,7 +13430,11 @@ canvas#equity-canvas {
           Analytics.logTradeEvent(state, trade);
         }
       } catch (e) {
+        console.warn("[ShadowIngestion] Analytics error:", e);
       }
+      console.log(
+        `[ShadowIngestion] SELL recorded: ${pos.symbol} -${qtyDelta.toFixed(2)} tokens, PnL: ${pnlEventSol.toFixed(4)} SOL`
+      );
     },
     recordShadowFill(state, fillData) {
       if (!state.shadowTrades)
@@ -13314,17 +13472,25 @@ canvas#equity-canvas {
         if (response && response.ok && response.balance > 0) {
           session.balance = response.balance;
           session.walletBalance = response.balance;
+          console.log(
+            `[ShadowIngestion] Wallet balance detected: ${response.balance.toFixed(4)} SOL`
+          );
           return;
         }
       } catch (e) {
+        console.warn("[ShadowIngestion] Wallet balance fetch failed:", e);
       }
       session.balance = firstTradeAmount * 10;
       session.walletBalance = session.balance;
+      console.log(
+        `[ShadowIngestion] Wallet balance estimated: ~${session.balance.toFixed(4)} SOL`
+      );
     },
     cleanup() {
       this.initialized = false;
       this.walletBalanceFetched = false;
       this._pendingSignatures = /* @__PURE__ */ new Set();
+      console.log("[ShadowIngestion] Cleanup complete");
     }
   };
 

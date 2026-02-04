@@ -102,6 +102,7 @@
     if (r && isRelated) {
       if (!throttleEmit(ctx))
         return;
+      console.log(`[ZER\xD8] Price Intercepted (Network): $${r.price} (from ${url})`);
       send({
         type: "PRICE_TICK",
         source: "site",
@@ -148,6 +149,9 @@
     if (!/^[1-9A-HJ-NP-Za-km-z]+$/.test(json.result))
       return;
     const signature = json.result;
+    console.log(
+      `[ZER\xD8] RPC sendTransaction detected \u2014 sig=${signature.slice(0, 16)}...`
+    );
     send({
       type: "SHADOW_SWAP_SIGNATURE",
       signature,
@@ -206,11 +210,14 @@
     let inputMint = data.inputMint || data.fromMint || data.tokenIn || data.sourceMint || req.inputMint || req.fromMint || req.tokenIn || req.sourceMint || qp.inputMint;
     let outputMint = data.outputMint || data.toMint || data.tokenOut || data.destMint || req.outputMint || req.toMint || req.tokenOut || req.destMint || qp.outputMint;
     if (!inputMint || !outputMint) {
+      console.log(`[ZER\xD8] Swap has txid=${txid.slice(0, 12)} but missing mints (checked response, request, URL) \u2014 url=${url.slice(0, 80)}`);
+      console.log(`[ZER\xD8] Swap response keys: ${Object.keys(data).join(", ")}`);
       return;
     }
     const isSolInput = isSolMint(inputMint);
     const isSolOutput = isSolMint(outputMint);
     if (!isSolInput && !isSolOutput) {
+      console.log(`[ZER\xD8] Swap has no SOL side \u2014 skipping (${inputMint} \u2192 ${outputMint})`);
       return;
     }
     const side = isSolInput ? "BUY" : "SELL";
@@ -226,6 +233,9 @@
     const solAmount = solLamports > 1e3 ? solLamports / 1e9 : solLamports;
     const priceUsd = parseFloat(data.priceUsd || data.price || data.tokenPriceUsd || 0);
     const symbol = data.symbol || data.outputSymbol || data.inputSymbol || ctx.symbol || null;
+    console.log(
+      `[ZER\xD8] Swap Detected: ${side} ${symbol || mint.slice(0, 8)} \u2014 ${solAmount.toFixed(4)} SOL, tx=${txid.slice(0, 12)}...`
+    );
     send({
       type: "SHADOW_TRADE_DETECTED",
       side,
@@ -274,6 +284,9 @@
     _quoteCache.push(entry);
     if (_quoteCache.length > QUOTE_CACHE_SIZE)
       _quoteCache.shift();
+    console.log(
+      `[ZER\xD8] SwapDetection: Quote cached \u2014 ${inputMint.slice(0, 8)}\u2192${outputMint.slice(0, 8)}, in=${inAmount}, out=${outAmount}`
+    );
   }
   function findBestQuote(ctx) {
     const now = Date.now();
@@ -347,14 +360,22 @@
               }
             }
             if (typeof signature === "string" && signature.length >= 30) {
+              console.log(
+                `[ZER\xD8] SwapDetection: ${method} returned sig=${signature.slice(0, 16)}...`
+              );
               processSignature(signature, ctx);
             } else {
+              console.warn(
+                `[ZER\xD8] SwapDetection: ${method} called but no sig extracted. type=${typeof result}, keys=${result ? Object.keys(result).join(",") : "null"}`
+              );
             }
           } catch (hookErr) {
+            console.warn("[ZER\xD8] SwapDetection: post-tx processing error:", hookErr);
           }
           return result;
         };
         _hooked.add(name);
+        console.log(`[ZER\xD8] SwapDetection: Hooked ${name}.${method}`);
       }
     };
     const processSignature = (signature, ctx2) => {
@@ -369,7 +390,13 @@
         solAmount = solLamports > 1e3 ? solLamports / 1e9 : solLamports;
         tokenAmount = tokenRaw;
         symbol = quote.symbol;
+        console.log(
+          `[ZER\xD8] SwapDetection: Matched quote \u2014 ${side} ${symbol || mint.slice(0, 8)}, ${solAmount.toFixed(4)} SOL, sig=${signature.slice(0, 12)}...`
+        );
       } else {
+        console.log(
+          `[ZER\xD8] SwapDetection: No cached quote \u2014 sending sig for RPC resolve: ${signature.slice(0, 16)}...`
+        );
         send({
           type: "SHADOW_SWAP_SIGNATURE",
           signature,
@@ -411,6 +438,7 @@
       if (_pollAttempts >= 15) {
         clearInterval(hookPoll);
         if (_hooked.size === 0) {
+          console.warn("[ZER\xD8] SwapDetection: No wallet providers found after 30s");
         }
       }
     }, 2e3);
@@ -439,24 +467,27 @@
           const pk = p.publicKey;
           if (!pk) {
             if (verbose)
-              ;
+              console.log(`[ZER\xD8] WalletCapture: ${name} found but publicKey is null (not connected?)`);
             continue;
           }
           const addr = typeof pk === "string" ? pk : pk.toBase58?.() || pk.toString?.();
           if (addr && addr.length >= 32 && addr.length <= 44) {
             if (!_capturedWalletAddr) {
+              console.log(`[ZER\xD8] Wallet address captured via ${name}: ${addr.slice(0, 8)}...`);
             }
             _capturedWalletAddr = addr;
             return addr;
           } else if (verbose) {
+            console.log(`[ZER\xD8] WalletCapture: ${name} publicKey invalid (${String(addr).slice(0, 20)})`);
           }
         } catch (err) {
           if (verbose)
-            ;
+            console.log(`[ZER\xD8] WalletCapture: ${name} error: ${err?.message || err}`);
         }
       }
       if (verbose && _pollCount === 1) {
         const walletGlobals = ["solana", "phantom", "solflare", "backpack", "coin98", "glow", "braveSolana", "exodus"].filter((k) => !!window[k]).join(", ");
+        console.log(`[ZER\xD8] WalletCapture: window wallet globals found: [${walletGlobals || "none"}]`);
       }
       return null;
     };
@@ -475,6 +506,7 @@
             try {
               const addr = typeof pk === "string" ? pk : pk?.toBase58?.() || pk?.toString?.();
               if (addr && addr.length >= 32 && addr.length <= 44 && !_capturedWalletAddr) {
+                console.log(`[ZER\xD8] Wallet connected via ${name} event: ${addr.slice(0, 8)}...`);
                 _capturedWalletAddr = addr;
                 send({ type: "WALLET_ADDRESS_DETECTED", walletAddress: addr });
               }
@@ -497,6 +529,7 @@
     setTimeout(() => {
       clearInterval(poll);
       if (!_capturedWalletAddr) {
+        console.warn("[ZER\xD8] WalletCapture: No wallet address found after 60s of polling");
       }
     }, 6e4);
   }
@@ -514,26 +547,31 @@
         try {
           const frame = window.frames[i];
           if (frame.tradingViewApi && typeof frame.tradingViewApi.activeChart === "function") {
+            console.log("[ZER\xD8] Found tradingViewApi in iframe[" + i + "]");
             return frame.tradingViewApi;
           }
           if (frame.tvWidget && typeof frame.tvWidget.activeChart === "function") {
+            console.log("[ZER\xD8] Found tvWidget in iframe[" + i + "]");
             return frame.tvWidget;
           }
         } catch (e) {
         }
       }
     } catch (e) {
+      console.log("[ZER\xD8] Error searching iframes:", e);
     }
     return null;
   };
   var activeMarkers = [];
   var drawMarker = (trade) => {
+    console.log("[ZER\xD8] drawMarker() called for", trade.side, trade.symbol);
     let attempts = 0;
     const maxAttempts = 20;
     const tryDraw = () => {
       attempts++;
       const tv = findTV();
       if (tv && tv.activeChart) {
+        console.log("[ZER\xD8] TradingView widget found, drawing marker...");
         clearInterval(pollInterval);
         try {
           const chart = tv.activeChart();
@@ -563,10 +601,13 @@
               activeMarkers.push({ fmt: "std", id });
           }
         } catch (e) {
+          console.warn("[ZER\xD8] Marker failed:", e);
         }
       } else if (attempts >= maxAttempts) {
+        console.warn(`[ZER\xD8] TradingView widget not found after ${maxAttempts} attempts`);
         clearInterval(pollInterval);
       } else {
+        console.log(`[ZER\xD8] TradingView widget not found yet, attempt ${attempts}/${maxAttempts}`);
       }
     };
     const pollInterval = setInterval(tryDraw, 100);
@@ -585,10 +626,12 @@
         ctx.symbol = sym || null;
         ctx.refPrice = 0;
         ctx.refMCap = 0;
+        console.log("[ZER\xD8] Bridge Context Updated:", ctx.mint, ctx.symbol);
       }
       if (d.type === "PAPER_PRICE_REFERENCE") {
         ctx.refPrice = d.priceUsd || 0;
         ctx.refMCap = d.marketCapUsd || 0;
+        console.log(`[ZER\xD8] Price Reference: $${ctx.refPrice}, MCap: $${ctx.refMCap}`);
         if (onPriceReference)
           onPriceReference(ctx);
       }
@@ -596,6 +639,7 @@
         drawMarker(d.trade);
       }
       if (d.type === "PAPER_DRAW_ALL") {
+        console.log("[ZER\xD8] Drawing", (d.trades || []).length, "markers");
         (d.trades || []).forEach(drawMarker);
       }
       if (d.type === "PAPER_CLEAR_MARKERS") {
@@ -616,7 +660,9 @@
             activeMarkers.length = 0;
             if (chart.removeAllShapes)
               chart.removeAllShapes();
+            console.log("[ZER\xD8] Markers cleared.");
           } catch (err) {
+            console.warn("[ZER\xD8] Failed to clear markers:", err);
           }
         }
       }
@@ -625,6 +671,7 @@
 
   // src/platforms/padre/bridge.padre.js
   (() => {
+    console.log("[ZER\xD8] Padre Bridge Active (document_start, MAIN world).");
     const ctx = createContext();
     const HEADER_LABELS = {
       price: /^Price$/i,
@@ -794,6 +841,9 @@
         _td.settledAt = Date.now() + _td.SETTLE_MS;
         _td.lastInvested = h.invested !== void 0 ? h.invested : null;
         _td.lastSold = h.sold !== void 0 ? h.sold : null;
+        console.log(
+          `[ZER\xD8] Header trade tracking reset \u2014 mint=${mint.slice(0, 8)}, invested=${_td.lastInvested}, sold=${_td.lastSold}, fields: ${JSON.stringify(Object.keys(h))}`
+        );
         return;
       }
       if (Date.now() < _td.settledAt)
@@ -803,6 +853,7 @@
       if (invested !== void 0 && invested > 0) {
         if (_td.lastInvested === null) {
           if (invested > _td.MIN_DELTA) {
+            console.log(`[ZER\xD8] Header BUY (first): +$${invested.toFixed(4)} for ${ctx.symbol || mint.slice(0, 8)}`);
             _td.lastInvested = invested;
             invalidatePosCache();
             send({
@@ -824,6 +875,7 @@
           _td.lastInvested = invested;
           invalidatePosCache();
           if (delta > _td.MIN_DELTA) {
+            console.log(`[ZER\xD8] Header BUY (delta): +$${delta.toFixed(4)} for ${ctx.symbol || mint.slice(0, 8)}`);
             send({
               type: "SHADOW_TRADE_DETECTED",
               side: "BUY",
@@ -843,6 +895,7 @@
       if (sold !== void 0 && sold > 0) {
         if (_td.lastSold === null) {
           if (sold > _td.MIN_DELTA) {
+            console.log(`[ZER\xD8] Header SELL (first): +$${sold.toFixed(4)} for ${ctx.symbol || mint.slice(0, 8)}`);
             _td.lastSold = sold;
             invalidatePosCache();
             send({
@@ -864,6 +917,7 @@
           _td.lastSold = sold;
           invalidatePosCache();
           if (delta > _td.MIN_DELTA) {
+            console.log(`[ZER\xD8] Header SELL (delta): +$${delta.toFixed(4)} for ${ctx.symbol || mint.slice(0, 8)}`);
             send({
               type: "SHADOW_TRADE_DETECTED",
               side: "SELL",
@@ -891,10 +945,14 @@
         return;
       if (ctx.mint && ctx.mint !== _headerLogMint) {
         _headerLogMint = ctx.mint;
+        console.log(`[ZER\xD8] Header scrape [${ctx.mint.slice(0, 8)}]:`, JSON.stringify(h));
       }
       const now = Date.now();
       if (now > _headerDiagTimer) {
         _headerDiagTimer = now + 1e4;
+        console.log(
+          `[ZER\xD8] Header fields [${(ctx.mint || "?").slice(0, 8)}]: invested=${h.invested}, sold=${h.sold}, tpnl=${h.tpnl}, remaining=${h.remaining}, keys=${JSON.stringify(Object.keys(h))}`
+        );
       }
       if (h.price && h.price > 0 && h.price !== lastHeaderPrice) {
         lastHeaderPrice = h.price;
@@ -1029,23 +1087,28 @@
               if (isApiUrl)
                 tryHandleJson(url, json, ctx);
               if (isSwapUrl) {
+                console.log(`[ZER\xD8] Swap URL matched: ${url}`);
                 const reqData = parseRequestBody(args);
                 tryHandleSwap(url, json, ctx, reqData);
               }
               tryDetectRpcSignature(json, args, ctx);
-            }).catch((err) => void 0);
+            }).catch((err) => console.warn("[ZER\xD8] Fetch parse error:", err.message, url));
           }
         } catch {
         }
         return res;
       };
+      console.log("[ZER\xD8] Padre: fetch interception active");
       const _ourFetch = window.fetch;
       setTimeout(() => {
         if (window.fetch === _ourFetch) {
+          console.log("[ZER\xD8] fetch override verified active (post-SES)");
         } else {
+          console.warn("[ZER\xD8] fetch override was REPLACED (likely SES lockdown)");
         }
       }, 3e3);
     } catch (e) {
+      console.log("[ZER\xD8] Padre: fetch interception blocked by SES");
     }
     try {
       const XHROpen = XMLHttpRequest.prototype.open;
@@ -1072,16 +1135,20 @@
                 tryHandleJson(url, json, ctx);
               }
               if (SWAP_URL_PATTERNS.test(url)) {
+                console.log(`[ZER\xD8] Swap URL matched (XHR/Padre): ${url}`);
                 tryHandleSwap(url, json, ctx, xhrReqData);
               }
               tryDetectRpcSignature(json, [url, { body: sendArgs[0] }], ctx);
             }
           } catch (err) {
+            console.warn("[ZER\xD8] Padre XHR handler error:", err.message);
           }
         });
         return XHRSend.apply(this, sendArgs);
       };
+      console.log("[ZER\xD8] Padre: XHR interception active");
     } catch (e) {
+      console.log("[ZER\xD8] Padre: XHR interception blocked by SES:", e.message);
     }
     const PERFOBS_SWAP_PATH = /\/swap|\/execute|\/submit|send-?tx|confirm-?tx|transaction\/send|order\/place|\/jup|\/jupiter|\/raydium/i;
     const PERFOBS_TX_PATH = /sendTransaction|signTransaction/i;
@@ -1097,13 +1164,16 @@
           } catch {
           }
           if (PERFOBS_SWAP_PATH.test(pathname) || PERFOBS_TX_PATH.test(pathname)) {
+            console.log(`[ZER\xD8] PerfObs: swap/tx request \u2192 ${url.slice(0, 80)}`);
             _aggressiveScrapeUntil = Date.now() + 5e3;
             _posCache.lastDeepScan = 0;
           }
         }
       });
       po.observe({ type: "resource", buffered: false });
+      console.log("[ZER\xD8] PerformanceObserver active for swap detection");
     } catch (e) {
+      console.log("[ZER\xD8] PerformanceObserver not available:", e.message);
     }
     const setupPriceObserver = () => {
       if (!document.body)
@@ -1122,6 +1192,7 @@
         childList: true,
         subtree: true
       });
+      console.log("[ZER\xD8] Padre: MutationObserver active for header price detection");
     };
     if (document.body) {
       setupPriceObserver();
@@ -1155,6 +1226,9 @@
       lastChartMCap = mcap;
       const inferredPrice = ctx.refPrice * (mcap / ctx.refMCap);
       if (inferredPrice > 0 && inferredPrice < 1e3) {
+        console.log(
+          `[ZER\xD8] Chart MCap\u2192Price: MCap=$${mcap.toLocaleString()} \u2192 $${inferredPrice.toFixed(10)}`
+        );
         send({
           type: "PRICE_TICK",
           source: "chart",
@@ -1192,11 +1266,13 @@
           }
           setTimeout(() => {
             if (td.dir && td.text !== "BUY" && td.text !== "SELL") {
+              console.log(`[ZER\xD8] Padre TV marker: ${td.dir} at MCap=${td.price}, text="${td.text}"`);
             }
           }, 0);
           return shape;
         };
         _tvExecHooked = true;
+        console.log("[ZER\xD8] TV createExecutionShape hooked for trade markers");
       } catch (e) {
       }
     }
@@ -1216,6 +1292,7 @@
             const methods = Object.getOwnPropertyNames(proto).filter(
               (m) => typeof chart[m] === "function"
             );
+            console.log("[ZER\xD8] TV chart API methods:", methods.join(", "));
           } catch (e) {
           }
         }
@@ -1229,6 +1306,9 @@
               lastChartMCap = close;
               const inferredPrice = ctx.refPrice * (close / ctx.refMCap);
               if (inferredPrice > 0 && inferredPrice < 1e3) {
+                console.log(
+                  `[ZER\xD8] TV API MCap\u2192Price: MCap=$${close.toLocaleString()} \u2192 $${inferredPrice.toFixed(10)}`
+                );
                 send({
                   type: "PRICE_TICK",
                   source: "chart-api",

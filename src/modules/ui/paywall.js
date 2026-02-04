@@ -100,10 +100,6 @@ export const Paywall = {
                     <span style="color:#a78bfa; font-weight:600;">$299 Founders Lifetime</span>
                 </div>
 
-                <div style="text-align:center; margin:4px 0 8px;">
-                    <span style="display:inline-block; font-size:10px; font-weight:700; letter-spacing:1.5px; color:#a78bfa; background:rgba(139,92,246,0.1); border:1px solid rgba(139,92,246,0.2); padding:3px 10px; border-radius:4px;">COMING SOON</span>
-                    <div style="font-size:11px; color:#64748b; margin-top:4px;">Elite is launching shortly. Sign up to be first in line.</div>
-                </div>
 
                 <div class="paywall-actions" style="display:flex; flex-direction:column; gap:8px;">
                     <button class="paywall-btn primary" data-act="purchase" style="background:linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color:white; border:none; padding:12px 20px; border-radius:8px; font-weight:700; font-size:14px; cursor:pointer;">
@@ -152,11 +148,13 @@ export const Paywall = {
 
         if (result.ok) {
           if (statusEl) {
-            statusEl.textContent = "Elite activated!";
-            statusEl.style.color = "#10b981";
+            statusEl.innerHTML = `<span style="display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:700; letter-spacing:1.2px; color:#a78bfa; text-transform:uppercase;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              ELITE ACTIVATED
+            </span>`;
           }
           this._showSuccessToast(License.getPlanLabel());
-          setTimeout(() => overlay.remove(), 1500);
+          setTimeout(() => overlay.remove(), 2000);
         } else {
           const errorMsg =
             result.error === "no_membership"
@@ -189,23 +187,43 @@ export const Paywall = {
     const root = OverlayManager.getShadowRoot();
     const toast = document.createElement("div");
     toast.className = "paywall-toast";
-    toast.textContent = planLabel ? `Elite Activated (${planLabel})` : "Elite Activated";
+    const label = planLabel ? planLabel.toUpperCase() : "";
+    toast.innerHTML = `
+      <div style="display:flex; align-items:center; gap:10px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e0d4ff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        <div>
+          <div style="font-size:13px; font-weight:700; letter-spacing:1.5px; color:#f0eaff;">ELITE ACTIVATED</div>
+          ${label ? `<div style="font-size:10px; font-weight:500; letter-spacing:0.8px; color:rgba(224,212,255,0.6); margin-top:1px;">${label}</div>` : ""}
+        </div>
+      </div>
+    `;
     toast.style.cssText = `
-            position: fixed;
-            top: 80px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(16,185,129,0.9);
-            color: white;
-            padding: 12px 24px;
-            border-radius: 8px;
-            font-weight: 600;
-            font-size: 14px;
-            z-index: 2147483647;
-            pointer-events: none;
-        `;
+      position: fixed;
+      top: 80px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-8px);
+      background: linear-gradient(135deg, rgba(139,92,246,0.95) 0%, rgba(99,102,241,0.95) 100%);
+      color: white;
+      padding: 14px 28px;
+      border-radius: 10px;
+      border: 1px solid rgba(167,139,250,0.3);
+      box-shadow: 0 0 24px rgba(139,92,246,0.4), 0 8px 32px rgba(0,0,0,0.3);
+      z-index: 2147483647;
+      pointer-events: none;
+      opacity: 0;
+      animation: zt-in 0.35s ease-out forwards;
+    `;
+    const style = document.createElement("style");
+    style.textContent = `@keyframes zt-in { to { opacity:1; transform:translateX(-50%) translateY(0); } }`;
+    toast.appendChild(style);
     root.appendChild(toast);
-    setTimeout(() => toast.remove(), 3000);
+    setTimeout(() => {
+      toast.style.animation = "zt-out 0.3s ease-in forwards";
+      const outStyle = document.createElement("style");
+      outStyle.textContent = `@keyframes zt-out { to { opacity:0; transform:translateX(-50%) translateY(-8px); } }`;
+      toast.appendChild(outStyle);
+      setTimeout(() => toast.remove(), 300);
+    }, 3000);
   },
 
   isFeatureLocked(featureName) {
