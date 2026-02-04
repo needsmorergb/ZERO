@@ -5,6 +5,7 @@ import { Banner } from "./banner.js";
 import { PnlHud } from "./pnl-hud.js";
 import { BuyHud } from "./buy-hud.js";
 import { ModeManager, MODES } from "../mode-manager.js";
+import { FeatureManager } from "../featureManager.js";
 import { ModesUI } from "./modes-ui.js";
 import { IDS } from "./ids.js";
 import { ShadowHud } from "./shadow-hud.js";
@@ -43,8 +44,8 @@ export const HUD = {
     // Always init swap listener — it self-gates on shadow mode inside handleDetectedTrade()
     ShadowTradeIngestion.init();
 
-    // NarrativeTrust only needed in shadow mode (makes API calls)
-    if (ModeManager.getMode() === MODES.SHADOW) {
+    // Initialize Narrative Trust service for Elite users (any mode)
+    if (FeatureManager.isElite(Store.state)) {
       NarrativeTrust.init();
     }
 
@@ -76,9 +77,13 @@ export const HUD = {
       if (buyRoot) buyRoot.remove();
     }
 
-    // SHADOW HUD: only mount in Shadow Mode; remove from DOM otherwise
+    // SHADOW HUD: mount for Elite users (any mode); remove from DOM otherwise
     if (ModeManager.shouldShowShadowHud()) {
       ShadowHud.mountShadowHud(this.makeDraggable.bind(this));
+      // Lazy-init NarrativeTrust for mid-session tier upgrades
+      if (!NarrativeTrust.initialized) {
+        NarrativeTrust.init();
+      }
     } else {
       ShadowHud.removeShadowHud();
     }

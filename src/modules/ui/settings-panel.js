@@ -45,6 +45,29 @@ export const SettingsPanel = {
                 <div class="settings-section-title">Trading Mode</div>
 
                 <div class="setting-row" style="flex-direction:column; align-items:stretch; gap:8px;">
+                    ${isElite ? `
+                    <label class="mode-option ${currentMode === "paper" ? "active" : ""}" data-mode="paper" style="display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; cursor:pointer; border:1px solid ${currentMode === "paper" ? "rgba(20,184,166,0.3)" : "rgba(255,255,255,0.06)"}; background:${currentMode === "paper" ? "rgba(20,184,166,0.06)" : "transparent"};">
+                        <input type="radio" name="tradingMode" value="paper" ${currentMode === "paper" ? "checked" : ""} style="accent-color:#14b8a6;">
+                        <div style="flex:1;">
+                            <div style="font-size:12px; font-weight:600; color:#f8fafc; display:flex; align-items:center; gap:6px;">
+                                ${ICONS.MODE_PAPER} Paper Mode
+                                <span style="font-size:9px; padding:1px 6px; border-radius:3px; background:rgba(20,184,166,0.12); color:#14b8a6; font-weight:700;">FREE</span>
+                            </div>
+                            <div style="font-size:11px; color:#64748b; margin-top:3px;">Simulated trades. BUY / SELL HUD visible. Elite analytics active.</div>
+                        </div>
+                    </label>
+
+                    <label class="mode-option ${currentMode === "shadow" ? "active" : ""}" data-mode="shadow" style="display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; cursor:pointer; border:1px solid ${currentMode === "shadow" ? "rgba(139,92,246,0.3)" : "rgba(255,255,255,0.06)"}; background:${currentMode === "shadow" ? "rgba(139,92,246,0.06)" : "transparent"};">
+                        <input type="radio" name="tradingMode" value="shadow" ${currentMode === "shadow" ? "checked" : ""} style="accent-color:#a78bfa;">
+                        <div style="flex:1;">
+                            <div style="font-size:12px; font-weight:600; color:#f8fafc; display:flex; align-items:center; gap:6px;">
+                                ${ICONS.MODE_SHADOW} Shadow Mode
+                                <span style="font-size:9px; padding:1px 6px; border-radius:3px; background:rgba(139,92,246,0.12); color:#a78bfa; font-weight:700;">ELITE</span>
+                            </div>
+                            <div style="font-size:11px; color:#64748b; margin-top:3px;">Observes real trades with elite behavioral analysis.</div>
+                        </div>
+                    </label>
+                    ` : `
                     <label class="mode-option ${currentMode === "paper" ? "active" : ""}" data-mode="paper" style="display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; cursor:pointer; border:1px solid ${currentMode === "paper" ? "rgba(20,184,166,0.3)" : "rgba(255,255,255,0.06)"}; background:${currentMode === "paper" ? "rgba(20,184,166,0.06)" : "transparent"};">
                         <input type="radio" name="tradingMode" value="paper" ${currentMode === "paper" ? "checked" : ""} style="accent-color:#14b8a6;">
                         <div style="flex:1;">
@@ -66,17 +89,7 @@ export const SettingsPanel = {
                             <div style="font-size:11px; color:#64748b; margin-top:3px;">Observes real trades only. No BUY / SELL HUD.</div>
                         </div>
                     </label>
-
-                    <label class="mode-option ${currentMode === "shadow" ? "active" : ""}" data-mode="shadow" style="display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; cursor:pointer; border:1px solid ${currentMode === "shadow" ? "rgba(139,92,246,0.3)" : "rgba(255,255,255,0.06)"}; background:${currentMode === "shadow" ? "rgba(139,92,246,0.06)" : "transparent"}; ${!isElite ? "opacity:0.6;" : ""}">
-                        <input type="radio" name="tradingMode" value="shadow" ${currentMode === "shadow" ? "checked" : ""} ${!isElite ? "disabled" : ""} style="accent-color:#a78bfa;">
-                        <div style="flex:1;">
-                            <div style="font-size:12px; font-weight:600; color:#f8fafc; display:flex; align-items:center; gap:6px;">
-                                ${ICONS.MODE_SHADOW} Shadow Mode
-                                <span style="font-size:9px; padding:1px 6px; border-radius:3px; background:rgba(139,92,246,0.12); color:#a78bfa; font-weight:700;">ELITE</span>
-                            </div>
-                            <div style="font-size:11px; color:#64748b; margin-top:3px;">Observes real trades with elite behavioral analysis.${!isElite ? " Requires Elite." : ""}</div>
-                        </div>
-                    </label>
+                    `}
                 </div>
 
                 <div class="setting-row">

@@ -153,9 +153,8 @@ export const ModeManager = {
    * Get the CSS class to apply to the overlay container.
    */
   getContainerClass() {
-    const mode = this.getMode();
-    if (mode === MODES.ANALYSIS) return "zero-analysis-mode";
-    if (mode === MODES.SHADOW) return "zero-shadow-mode";
+    if (FeatureManager.isElite(Store.state)) return "zero-shadow-mode";
+    if (this.getMode() === MODES.ANALYSIS) return "zero-analysis-mode";
     return "";
   },
 
@@ -163,7 +162,7 @@ export const ModeManager = {
    * Whether the Shadow HUD should be rendered in the DOM.
    */
   shouldShowShadowHud() {
-    return this.getMode() === MODES.SHADOW;
+    return FeatureManager.isElite(Store.state);
   },
 
   /**
@@ -171,7 +170,6 @@ export const ModeManager = {
    * Returns true only once per user (first shadow session completion).
    */
   shouldShowShadowAha() {
-    if (this.getMode() !== MODES.SHADOW) return false;
     if (!FeatureManager.isElite(Store.state)) return false;
     return !Store.state.settings._shadowAhaShown;
   },

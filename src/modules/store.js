@@ -182,6 +182,10 @@ export const Store = {
     return this.isShadowMode() ? this.state.shadowSessionHistory : this.state.sessionHistory;
   },
 
+  isElite() {
+    return (this.state?.settings?.tier || "free") === "elite";
+  },
+
   async load() {
     // Safety timeout to prevent hanging forever if storage callback dies
     let timeoutId;
@@ -352,6 +356,11 @@ export const Store = {
         }
       } else {
         this.state.settings.tier = "free";
+      }
+
+      // Elite users don't need Analysis — upgrade to Shadow
+      if (this.state.settings.tier === "elite" && this.state.settings.tradingMode === "analysis") {
+        this.state.settings.tradingMode = "shadow";
       }
 
       // Migrate old ENTRY/EXIT side values to BUY/SELL
