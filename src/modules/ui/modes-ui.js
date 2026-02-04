@@ -151,6 +151,7 @@ export const ModesUI = {
         const mode = ModeManager.getMode();
         if (mode === MODES.ANALYSIS) return '(Analysis Mode)';
         if (mode === MODES.SHADOW) return '(Shadow Mode)';
+        if (FeatureManager.isElite(Store.state)) return '(Paper Mode \u00b7 Elite)';
         return '(Paper Trading Overlay)';
     },
 

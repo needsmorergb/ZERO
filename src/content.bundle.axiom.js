@@ -262,6 +262,9 @@
             if (DEV_FORCE_ELITE) {
               this.state.settings.tier = "elite";
             }
+            if (this.state.settings.tier === "elite" && this.state.settings.tradingMode === "analysis") {
+              this.state.settings.tradingMode = "shadow";
+            }
             if (this.state.fills) {
               this.state.fills.forEach((f) => {
                 if (f.side === "ENTRY")
@@ -324,6 +327,9 @@
           return this.state.session;
         },
         // Get current session duration in minutes
+        isElite() {
+          return (this.state?.settings?.tier || "free") === "elite";
+        },
         getSessionDuration() {
           const session = this.state?.session;
           if (!session || !session.startTime)
@@ -4913,26 +4919,23 @@ input:checked + .slider:before {
      * Get the CSS class to apply to the overlay container.
      */
     getContainerClass() {
-      const mode = this.getMode();
-      if (mode === MODES.ANALYSIS)
-        return "zero-analysis-mode";
-      if (mode === MODES.SHADOW)
+      if (FeatureManager.isElite(Store.state))
         return "zero-shadow-mode";
+      if (this.getMode() === MODES.ANALYSIS)
+        return "zero-analysis-mode";
       return "";
     },
     /**
      * Whether the Shadow HUD should be rendered in the DOM.
      */
     shouldShowShadowHud() {
-      return this.getMode() === MODES.SHADOW;
+      return FeatureManager.isElite(Store.state);
     },
     /**
      * Check if Shadow Mode first-session aha moment should show.
      * Returns true only once per user (first shadow session completion).
      */
     shouldShowShadowAha() {
-      if (this.getMode() !== MODES.SHADOW)
-        return false;
       if (!FeatureManager.isElite(Store.state))
         return false;
       return !Store.state.settings._shadowAhaShown;
@@ -5073,6 +5076,8 @@ input:checked + .slider:before {
         return "(Analysis Mode)";
       if (mode === MODES.SHADOW)
         return "(Shadow Mode)";
+      if (FeatureManager.isElite(Store.state))
+        return "(Paper Mode \xB7 Elite)";
       return "(Paper Trading Overlay)";
     },
     /**
@@ -7894,6 +7899,29 @@ canvas#equity-canvas {
                 <div class="settings-section-title">Trading Mode</div>
 
                 <div class="setting-row" style="flex-direction:column; align-items:stretch; gap:8px;">
+                    ${isElite ? `
+                    <label class="mode-option ${currentMode === "paper" ? "active" : ""}" data-mode="paper" style="display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; cursor:pointer; border:1px solid ${currentMode === "paper" ? "rgba(20,184,166,0.3)" : "rgba(255,255,255,0.06)"}; background:${currentMode === "paper" ? "rgba(20,184,166,0.06)" : "transparent"};">
+                        <input type="radio" name="tradingMode" value="paper" ${currentMode === "paper" ? "checked" : ""} style="accent-color:#14b8a6;">
+                        <div style="flex:1;">
+                            <div style="font-size:12px; font-weight:600; color:#f8fafc; display:flex; align-items:center; gap:6px;">
+                                ${ICONS.MODE_PAPER} Paper Mode
+                                <span style="font-size:9px; padding:1px 6px; border-radius:3px; background:rgba(20,184,166,0.12); color:#14b8a6; font-weight:700;">FREE</span>
+                            </div>
+                            <div style="font-size:11px; color:#64748b; margin-top:3px;">Simulated trades. BUY / SELL HUD visible. Elite analytics active.</div>
+                        </div>
+                    </label>
+
+                    <label class="mode-option ${currentMode === "shadow" ? "active" : ""}" data-mode="shadow" style="display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; cursor:pointer; border:1px solid ${currentMode === "shadow" ? "rgba(139,92,246,0.3)" : "rgba(255,255,255,0.06)"}; background:${currentMode === "shadow" ? "rgba(139,92,246,0.06)" : "transparent"};">
+                        <input type="radio" name="tradingMode" value="shadow" ${currentMode === "shadow" ? "checked" : ""} style="accent-color:#a78bfa;">
+                        <div style="flex:1;">
+                            <div style="font-size:12px; font-weight:600; color:#f8fafc; display:flex; align-items:center; gap:6px;">
+                                ${ICONS.MODE_SHADOW} Shadow Mode
+                                <span style="font-size:9px; padding:1px 6px; border-radius:3px; background:rgba(139,92,246,0.12); color:#a78bfa; font-weight:700;">ELITE</span>
+                            </div>
+                            <div style="font-size:11px; color:#64748b; margin-top:3px;">Observes real trades with elite behavioral analysis.</div>
+                        </div>
+                    </label>
+                    ` : `
                     <label class="mode-option ${currentMode === "paper" ? "active" : ""}" data-mode="paper" style="display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; cursor:pointer; border:1px solid ${currentMode === "paper" ? "rgba(20,184,166,0.3)" : "rgba(255,255,255,0.06)"}; background:${currentMode === "paper" ? "rgba(20,184,166,0.06)" : "transparent"};">
                         <input type="radio" name="tradingMode" value="paper" ${currentMode === "paper" ? "checked" : ""} style="accent-color:#14b8a6;">
                         <div style="flex:1;">
@@ -7915,17 +7943,7 @@ canvas#equity-canvas {
                             <div style="font-size:11px; color:#64748b; margin-top:3px;">Observes real trades only. No BUY / SELL HUD.</div>
                         </div>
                     </label>
-
-                    <label class="mode-option ${currentMode === "shadow" ? "active" : ""}" data-mode="shadow" style="display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; cursor:pointer; border:1px solid ${currentMode === "shadow" ? "rgba(139,92,246,0.3)" : "rgba(255,255,255,0.06)"}; background:${currentMode === "shadow" ? "rgba(139,92,246,0.06)" : "transparent"}; ${!isElite ? "opacity:0.6;" : ""}">
-                        <input type="radio" name="tradingMode" value="shadow" ${currentMode === "shadow" ? "checked" : ""} ${!isElite ? "disabled" : ""} style="accent-color:#a78bfa;">
-                        <div style="flex:1;">
-                            <div style="font-size:12px; font-weight:600; color:#f8fafc; display:flex; align-items:center; gap:6px;">
-                                ${ICONS.MODE_SHADOW} Shadow Mode
-                                <span style="font-size:9px; padding:1px 6px; border-radius:3px; background:rgba(139,92,246,0.12); color:#a78bfa; font-weight:700;">ELITE</span>
-                            </div>
-                            <div style="font-size:11px; color:#64748b; margin-top:3px;">Observes real trades with elite behavioral analysis.${!isElite ? " Requires Elite." : ""}</div>
-                        </div>
-                    </label>
+                    `}
                 </div>
 
                 <div class="setting-row">
@@ -10107,19 +10125,21 @@ canvas#equity-canvas {
       const shadow = Store.state?.shadow || {};
       const strategies = Store.state?.settings?.strategies || ["Trend", "Breakout", "Reversal", "Scalp", "News", "Other"];
       const currentStrategy = shadow.declaredStrategy || strategies[0];
+      const modeLabel = ModeManager.isRealTrading() ? "Shadow Mode" : "Elite Mode";
+      const subtitle = ModeManager.isRealTrading() ? "Real trade analysis \xB7 Observation only" : "Market context \xB7 Elite analytics";
       root.innerHTML = `
             <div class="sh-card">
                 <!-- Header -->
                 <div class="sh-header">
                     <div class="sh-header-left">
                         <div class="sh-header-icon">${ICONS.SHADOW_HUD_ICON}</div>
-                        <div class="sh-header-title">ZER\xD8 \u2014 Shadow Mode</div>
+                        <div class="sh-header-title">ZER\xD8 \u2014 ${modeLabel}</div>
                     </div>
                     <div class="sh-header-btns">
                         <button class="sh-btn" data-act="dock">${shadow.hudDocked ? "Float" : "Dock"}</button>
                     </div>
                 </div>
-                <div class="sh-subtitle">Real trade analysis \xB7 Observation only</div>
+                <div class="sh-subtitle">${subtitle}</div>
 
                 <!-- Section 1: Market Context -->
                 <div class="sh-section" data-section="marketContext">
@@ -10547,7 +10567,7 @@ canvas#equity-canvas {
       Market.subscribe(async () => {
         this.scheduleRender();
       });
-      if (ModeManager.getMode() === MODES.SHADOW) {
+      if (FeatureManager.isElite(Store.state)) {
         NarrativeTrust.init();
       }
       ModesUI.showSessionBanner();
@@ -10577,6 +10597,9 @@ canvas#equity-canvas {
       }
       if (ModeManager.shouldShowShadowHud()) {
         ShadowHud.mountShadowHud(this.makeDraggable.bind(this));
+        if (!NarrativeTrust.initialized) {
+          NarrativeTrust.init();
+        }
       } else {
         ShadowHud.removeShadowHud();
       }

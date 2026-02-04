@@ -259,6 +259,11 @@ export const Store = {
                 this.state.settings.tier = 'elite';
             }
 
+            // Elite users don't need Analysis — upgrade to Shadow
+            if (this.state.settings.tier === 'elite' && this.state.settings.tradingMode === 'analysis') {
+                this.state.settings.tradingMode = 'shadow';
+            }
+
             // Migrate old ENTRY/EXIT side values to BUY/SELL
             if (this.state.fills) {
                 this.state.fills.forEach(f => {
@@ -333,6 +338,10 @@ export const Store = {
     },
 
     // Get current session duration in minutes
+    isElite() {
+        return (this.state?.settings?.tier || 'free') === 'elite';
+    },
+
     getSessionDuration() {
         const session = this.state?.session;
         if (!session || !session.startTime) return 0;

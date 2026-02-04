@@ -18,6 +18,7 @@ import { ICONS } from './icons.js';
 import { NarrativeTrust } from '../core/narrative-trust.js';
 import { TradeNotes } from '../core/trade-notes.js';
 import { Market } from '../core/market.js';
+import { ModeManager } from '../mode-manager.js';
 
 function px(n) { return n + 'px'; }
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
@@ -111,6 +112,10 @@ export const ShadowHud = {
         const shadow = Store.state?.shadow || {};
         const strategies = Store.state?.settings?.strategies || ['Trend', 'Breakout', 'Reversal', 'Scalp', 'News', 'Other'];
         const currentStrategy = shadow.declaredStrategy || strategies[0];
+        const modeLabel = ModeManager.isRealTrading() ? 'Shadow Mode' : 'Elite Mode';
+        const subtitle = ModeManager.isRealTrading()
+            ? 'Real trade analysis · Observation only'
+            : 'Market context · Elite analytics';
 
         root.innerHTML = `
             <div class="sh-card">
@@ -118,13 +123,13 @@ export const ShadowHud = {
                 <div class="sh-header">
                     <div class="sh-header-left">
                         <div class="sh-header-icon">${ICONS.SHADOW_HUD_ICON}</div>
-                        <div class="sh-header-title">ZERØ — Shadow Mode</div>
+                        <div class="sh-header-title">ZERØ — ${modeLabel}</div>
                     </div>
                     <div class="sh-header-btns">
                         <button class="sh-btn" data-act="dock">${shadow.hudDocked ? 'Float' : 'Dock'}</button>
                     </div>
                 </div>
-                <div class="sh-subtitle">Real trade analysis · Observation only</div>
+                <div class="sh-subtitle">${subtitle}</div>
 
                 <!-- Section 1: Market Context -->
                 <div class="sh-section" data-section="marketContext">
