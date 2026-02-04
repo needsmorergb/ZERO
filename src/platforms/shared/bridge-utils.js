@@ -162,7 +162,8 @@ export function tryHandleSwap(url, json, ctx) {
   const outputMint = data.outputMint || data.toMint || data.tokenOut || data.destMint;
 
   if (!inputMint || !outputMint) {
-    console.log(`[ZERØ] Swap response has txid but missing mints — url=${url}`);
+    console.log(`[ZERØ] Swap response has txid=${txid.slice(0, 12)} but missing mints — url=${url.slice(0, 80)}`);
+    console.log(`[ZERØ] Swap response keys: ${Object.keys(data).join(", ")}`);
     return;
   }
 
@@ -209,6 +210,117 @@ export function tryHandleSwap(url, json, ctx) {
     url,
     ts: Date.now(),
   });
+}
+
+// --- Wallet Address Detection for Shadow Mode Balance ---
+
+let _capturedWalletAddr = null;
+
+export function setupWalletAddressCapture() {
+  const providerMap = {
+    "window.solana": () => window.solana,
+    "phantom.solana": () => window.phantom?.solana,
+    "solflare": () => window.solflare,
+    "backpack.solana": () => window.backpack?.solana,
+    "coin98.sol": () => window.coin98?.sol,
+    "glow": () => window.glow,
+    "brave.solana": () => window.braveSolana,
+    "exodus": () => window.exodus?.solana,
+  };
+
+  let _pollCount = 0;
+
+  const tryCapture = () => {
+    _pollCount++;
+    const verbose = _pollCount <= 3; // Log details for first 3 attempts
+
+    for (const [name, getP] of Object.entries(providerMap)) {
+      try {
+        const p = getP();
+        if (!p) continue;
+        const pk = p.publicKey;
+        if (!pk) {
+          if (verbose) console.log(`[ZERØ] WalletCapture: ${name} found but publicKey is null (not connected?)`);
+          continue;
+        }
+        const addr = typeof pk === "string" ? pk : pk.toBase58?.() || pk.toString?.();
+        if (addr && addr.length >= 32 && addr.length <= 44) {
+          if (!_capturedWalletAddr) {
+            console.log(`[ZERØ] Wallet address captured via ${name}: ${addr.slice(0, 8)}...`);
+          }
+          _capturedWalletAddr = addr;
+          return addr;
+        } else if (verbose) {
+          console.log(`[ZERØ] WalletCapture: ${name} publicKey invalid (${String(addr).slice(0, 20)})`);
+        }
+      } catch (err) {
+        if (verbose) console.log(`[ZERØ] WalletCapture: ${name} error: ${err?.message || err}`);
+      }
+    }
+
+    if (verbose && _pollCount === 1) {
+      // Also log what globals exist for debugging
+      const walletGlobals = ["solana", "phantom", "solflare", "backpack", "coin98", "glow", "braveSolana", "exodus"]
+        .filter(k => !!window[k])
+        .join(", ");
+      console.log(`[ZERØ] WalletCapture: window wallet globals found: [${walletGlobals || "none"}]`);
+    }
+
+    return null;
+  };
+
+  // Keep broadcasting the address for 60 seconds so the content script catches it
+  // regardless of when it registers its listener. The content script deduplicates.
+  const poll = setInterval(() => {
+    const addr = _capturedWalletAddr || tryCapture();
+    if (addr) {
+      send({ type: "WALLET_ADDRESS_DETECTED", walletAddress: addr });
+    }
+  }, 3000);
+
+  // Try immediately
+  tryCapture();
+
+  // Also listen for wallet adapter 'connect' events (fires when user connects wallet)
+  const listenForConnect = (providerGetter, name) => {
+    try {
+      const p = providerGetter();
+      if (p && typeof p.on === "function") {
+        p.on("connect", (pk) => {
+          try {
+            const addr = typeof pk === "string" ? pk : pk?.toBase58?.() || pk?.toString?.();
+            if (addr && addr.length >= 32 && addr.length <= 44 && !_capturedWalletAddr) {
+              console.log(`[ZERØ] Wallet connected via ${name} event: ${addr.slice(0, 8)}...`);
+              _capturedWalletAddr = addr;
+              send({ type: "WALLET_ADDRESS_DETECTED", walletAddress: addr });
+            }
+          } catch { /* swallowed */ }
+        });
+      }
+    } catch { /* swallowed */ }
+  };
+
+  // Register connect listeners (safe — no-op if provider doesn't exist yet)
+  listenForConnect(() => window.solana, "solana");
+  listenForConnect(() => window.phantom?.solana, "phantom");
+  listenForConnect(() => window.solflare, "solflare");
+  listenForConnect(() => window.backpack?.solana, "backpack");
+
+  // Retry registering connect listeners after 2s (providers may inject late)
+  setTimeout(() => {
+    listenForConnect(() => window.solana, "solana-delayed");
+    listenForConnect(() => window.phantom?.solana, "phantom-delayed");
+    listenForConnect(() => window.solflare, "solflare-delayed");
+  }, 2000);
+
+  // Stop polling after 60 seconds (extended from 30 — some DApps lazy-connect)
+  // Connect event listeners stay active indefinitely
+  setTimeout(() => {
+    clearInterval(poll);
+    if (!_capturedWalletAddr) {
+      console.warn("[ZERØ] WalletCapture: No wallet address found after 60s of polling");
+    }
+  }, 60000);
 }
 
 export const findTV = () => {

@@ -129,7 +129,8 @@
           notes: [],
           hudDocked: false,
           hudPos: { x: 20, y: 400 },
-          narrativeTrustCache: {}
+          narrativeTrustCache: {},
+          walletAddress: null
         },
         behavior: {
           tiltFrequency: 0,
@@ -6676,6 +6677,8 @@ input:checked + .slider:before {
       const currentSymbol = (Market.currentSymbol || "").toUpperCase();
       const currentMC = Market.marketCap || 0;
       positions.forEach((pos) => {
+        if (pos.qtyTokens <= 0)
+          return;
         const mintMatches = currentTokenMint && pos.mint === currentTokenMint;
         const symbolMatches = !currentTokenMint && currentSymbol && pos.symbol && pos.symbol.toUpperCase() === currentSymbol;
         if ((mintMatches || symbolMatches) && Market.price > 0) {
@@ -6683,8 +6686,6 @@ input:checked + .slider:before {
           pos.lastMarketCapUsd = Market.marketCap;
           priceWasUpdated = true;
         }
-        if (pos.qtyTokens <= 0)
-          return;
         const entryMC = pos.entryMarketCapUsdReference || 0;
         const totalSolSpent = pos.totalSolSpent || 0;
         if (currentMC > 0 && entryMC > 0 && totalSolSpent > 0) {
@@ -6839,6 +6840,7 @@ input:checked + .slider:before {
         pos.qtyTokens = 0;
         pos.costBasisUsd = 0;
         pos.avgCostUsdPerToken = 0;
+        pos.totalSolSpent = 0;
         pos.entryMarketCapUsdReference = null;
       }
       console.log(
@@ -11363,27 +11365,175 @@ canvas#equity-canvas {
 
   // src/modules/core/shadow-trade-ingestion.js
   init_store();
+  var POLL_INTERVAL_MS = 15e3;
   var ShadowTradeIngestion = {
     initialized: false,
     walletBalanceFetched: false,
+    _pollTimer: null,
+    _lastSignature: null,
+    _polling: false,
     init() {
       if (this.initialized)
         return;
       this.initialized = true;
+      const isShadow = Store.isShadowMode();
+      console.log(`[ShadowIngestion] Mode: ${isShadow ? "SHADOW" : Store.state?.settings?.tradingMode || "unknown"}`);
       window.addEventListener("message", (e) => {
         if (e.source !== window)
           return;
-        if (e.data?.type !== "SHADOW_TRADE_DETECTED")
-          return;
         if (!e.data?.__paper)
           return;
-        this.handleDetectedTrade(e.data);
+        if (e.data.type === "SHADOW_TRADE_DETECTED") {
+          console.log(`[ShadowIngestion] Bridge swap event received: ${e.data.side} ${e.data.mint?.slice(0, 8) || "?"}`);
+          this.handleDetectedTrade(e.data);
+        }
+        if (e.data.type === "WALLET_ADDRESS_DETECTED") {
+          console.log(`[ShadowIngestion] Wallet address message received: ${e.data.walletAddress?.slice(0, 8) || "none"}`);
+          this.handleWalletAddress(e.data.walletAddress);
+        }
       });
-      console.log("[ShadowIngestion] Initialized \u2014 listening for swap events");
+      const storedAddr = Store.state?.shadow?.walletAddress;
+      if (storedAddr) {
+        console.log(`[ShadowIngestion] Stored wallet found: ${storedAddr.slice(0, 8)}...`);
+        this.startHeliusPolling(storedAddr);
+        this.proactiveFetchBalance();
+      } else {
+        console.log("[ShadowIngestion] No stored wallet \u2014 waiting for bridge detection");
+        console.log(`[ShadowIngestion] Store.state.shadow exists: ${!!Store.state?.shadow}`);
+      }
+      console.log("[ShadowIngestion] Initialized \u2014 listening for swap events + Helius polling");
     },
+    // --- Helius RPC Polling ---
+    startHeliusPolling(walletAddress) {
+      if (this._pollTimer)
+        return;
+      if (!walletAddress)
+        return;
+      console.log(`[ShadowIngestion] Starting Helius polling for ${walletAddress.slice(0, 8)}...`);
+      this._polling = false;
+      this.pollWalletSwaps(walletAddress, true);
+      this._pollTimer = setInterval(() => {
+        this.pollWalletSwaps(walletAddress, false);
+      }, POLL_INTERVAL_MS);
+    },
+    stopHeliusPolling() {
+      if (this._pollTimer) {
+        clearInterval(this._pollTimer);
+        this._pollTimer = null;
+      }
+      this._lastSignature = null;
+      this._polling = false;
+    },
+    _pollCycleCount: 0,
+    async pollWalletSwaps(walletAddress, cursorOnly) {
+      if (this._polling)
+        return;
+      this._polling = true;
+      this._pollCycleCount++;
+      try {
+        if (this._pollCycleCount % 4 === 0) {
+          console.log(`[ShadowIngestion] Helius poll #${this._pollCycleCount} \u2014 cursor: ${this._lastSignature?.slice(0, 12) || "none"}`);
+        }
+        const response = await new Promise((resolve, reject) => {
+          chrome.runtime.sendMessage(
+            {
+              type: "POLL_WALLET_SWAPS",
+              walletAddress,
+              lastSignature: this._lastSignature
+            },
+            (resp) => {
+              if (chrome.runtime.lastError)
+                reject(chrome.runtime.lastError);
+              else
+                resolve(resp);
+            }
+          );
+        });
+        if (!response?.ok) {
+          console.warn("[ShadowIngestion] Poll error:", response?.error || "no response");
+          return;
+        }
+        if (response.lastSignature) {
+          this._lastSignature = response.lastSignature;
+        }
+        if (cursorOnly) {
+          console.log(
+            `[ShadowIngestion] Helius cursor set: ${this._lastSignature?.slice(0, 12) || "none"}... (polling active)`
+          );
+          return;
+        }
+        const swaps = response.swaps || [];
+        if (swaps.length > 0) {
+          console.log(`[ShadowIngestion] Helius found ${swaps.length} new swap(s)`);
+        }
+        for (const swap of swaps) {
+          await this.handleDetectedTrade(swap);
+        }
+      } catch (e) {
+        console.warn("[ShadowIngestion] Helius poll failed:", e?.message || e);
+      } finally {
+        this._polling = false;
+      }
+    },
+    // --- Wallet Address Detection ---
+    async handleWalletAddress(addr) {
+      if (!addr || typeof addr !== "string")
+        return;
+      const shadow = Store.state?.shadow;
+      if (!shadow)
+        return;
+      if (shadow.walletAddress === addr)
+        return;
+      shadow.walletAddress = addr;
+      await Store.save();
+      console.log(`[ShadowIngestion] Wallet address stored: ${addr.slice(0, 8)}...`);
+      this.startHeliusPolling(addr);
+      this.proactiveFetchBalance();
+    },
+    async proactiveFetchBalance() {
+      if (this.walletBalanceFetched)
+        return;
+      if (!Store.isShadowMode())
+        return;
+      const session = Store.state?.shadowSession;
+      if (!session || session.balance > 0)
+        return;
+      const walletAddress = Store.state?.shadow?.walletAddress;
+      if (!walletAddress)
+        return;
+      this.walletBalanceFetched = true;
+      try {
+        const response = await new Promise((resolve, reject) => {
+          chrome.runtime.sendMessage(
+            { type: "GET_WALLET_BALANCE", walletAddress },
+            (resp) => {
+              if (chrome.runtime.lastError)
+                reject(chrome.runtime.lastError);
+              else
+                resolve(resp);
+            }
+          );
+        });
+        if (response && response.ok && response.balance > 0) {
+          session.balance = response.balance;
+          session.equity = response.balance;
+          await Store.save();
+          console.log(
+            `[ShadowIngestion] Wallet balance: ${response.balance.toFixed(4)} SOL`
+          );
+          if (window.ZeroHUD && window.ZeroHUD.updateAll) {
+            window.ZeroHUD.updateAll();
+          }
+        }
+      } catch (e) {
+        console.warn("[ShadowIngestion] Proactive balance fetch failed:", e);
+        this.walletBalanceFetched = false;
+      }
+    },
+    // --- Trade Processing ---
     async handleDetectedTrade(data) {
       if (!Store.isShadowMode()) {
-        console.log("[ShadowIngestion] Ignoring swap \u2014 not in shadow mode");
+        console.log(`[ShadowIngestion] Trade ignored \u2014 not in shadow mode (current: ${Store.state?.settings?.tradingMode || "?"})`);
         return;
       }
       const state = Store.state;
@@ -11398,11 +11548,11 @@ canvas#equity-canvas {
         (t) => t.signature === signature
       );
       if (existingTrade) {
-        console.log(`[ShadowIngestion] Duplicate tx ${signature.slice(0, 12)}... \u2014 skipping`);
         return;
       }
+      const src = data.source === "helius" ? "Helius" : "Bridge";
       console.log(
-        `[ShadowIngestion] Processing ${side} \u2014 ${symbol || mint.slice(0, 8)}, ${solAmount.toFixed(4)} SOL`
+        `[ShadowIngestion] Processing ${side} via ${src} \u2014 ${symbol || mint.slice(0, 8)}, ${solAmount.toFixed(4)} SOL`
       );
       if (side === "BUY") {
         await this.recordShadowBuy(state, data);
@@ -11503,12 +11653,15 @@ canvas#equity-canvas {
         tokenPriceUsd = Market.price || pos.lastMarkPriceUsd || 0;
       }
       let qtyDelta;
-      if (tokenAmount > 0 && tokenAmount <= pos.qtyTokens * 1.01) {
+      if (tokenAmount > 0) {
         qtyDelta = Math.min(tokenAmount, pos.qtyTokens);
       } else if (solAmount > 0 && tokenPriceUsd > 0) {
         const sellUsd = solAmount * solUsd;
         qtyDelta = sellUsd / tokenPriceUsd;
         qtyDelta = Math.min(qtyDelta, pos.qtyTokens);
+      } else if (solAmount > 0) {
+        console.warn("[ShadowIngestion] Cannot determine exact sell qty \u2014 closing full position");
+        qtyDelta = pos.qtyTokens;
       } else {
         console.warn("[ShadowIngestion] Cannot determine sell quantity");
         return;
@@ -11526,6 +11679,7 @@ canvas#equity-canvas {
         pos.qtyTokens = 0;
         pos.costBasisUsd = 0;
         pos.avgCostUsdPerToken = 0;
+        pos.totalSolSpent = 0;
         pos.entryMarketCapUsdReference = null;
       }
       const proceedsSol = proceedsUsd / solUsd;
@@ -11581,17 +11735,20 @@ canvas#equity-canvas {
     },
     async fetchWalletBalance(session, firstTradeAmount) {
       this.walletBalanceFetched = true;
+      const walletAddress = Store.state?.shadow?.walletAddress;
       try {
         const response = await new Promise((resolve, reject) => {
-          chrome.runtime.sendMessage({ type: "GET_WALLET_BALANCE" }, (resp) => {
-            if (chrome.runtime.lastError) {
-              reject(chrome.runtime.lastError);
-            } else {
-              resolve(resp);
+          chrome.runtime.sendMessage(
+            { type: "GET_WALLET_BALANCE", walletAddress },
+            (resp) => {
+              if (chrome.runtime.lastError)
+                reject(chrome.runtime.lastError);
+              else
+                resolve(resp);
             }
-          });
+          );
         });
-        if (response && response.balance > 0) {
+        if (response && response.ok && response.balance > 0) {
           session.balance = response.balance;
           console.log(
             `[ShadowIngestion] Wallet balance detected: ${response.balance.toFixed(4)} SOL`
@@ -11602,9 +11759,12 @@ canvas#equity-canvas {
         console.warn("[ShadowIngestion] Wallet balance fetch failed:", e);
       }
       session.balance = firstTradeAmount * 10;
-      console.log(`[ShadowIngestion] Wallet balance estimated: ~${session.balance.toFixed(4)} SOL`);
+      console.log(
+        `[ShadowIngestion] Wallet balance estimated: ~${session.balance.toFixed(4)} SOL`
+      );
     },
     cleanup() {
+      this.stopHeliusPolling();
       this.initialized = false;
       this.walletBalanceFetched = false;
       console.log("[ShadowIngestion] Cleanup complete");
@@ -11633,9 +11793,9 @@ canvas#equity-canvas {
       Market.subscribe(async () => {
         this.scheduleRender();
       });
+      ShadowTradeIngestion.init();
       if (ModeManager.getMode() === MODES.SHADOW) {
         NarrativeTrust.init();
-        ShadowTradeIngestion.init();
       }
       ModesUI.showSessionBanner();
     },
@@ -11783,6 +11943,12 @@ canvas#equity-canvas {
       PnlCalculator.init();
     } catch (e) {
       Logger.error("PNL Calculator Init Failed:", e);
+    }
+    try {
+      Logger.info("Init ShadowTradeIngestion...");
+      ShadowTradeIngestion.init();
+    } catch (e) {
+      Logger.error("ShadowTradeIngestion Init Failed:", e);
     }
     try {
       Logger.info("Init HUD...");

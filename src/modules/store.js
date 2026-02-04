@@ -75,6 +75,7 @@ const DEFAULTS = {
     hudDocked: false,
     hudPos: { x: 20, y: 400 },
     narrativeTrustCache: {},
+    walletAddress: null,
   },
   behavior: {
     tiltFrequency: 0,

@@ -40,10 +40,12 @@ export const HUD = {
       this.scheduleRender();
     });
 
-    // Initialize Shadow Mode services
+    // Always init swap listener — it self-gates on shadow mode inside handleDetectedTrade()
+    ShadowTradeIngestion.init();
+
+    // NarrativeTrust only needed in shadow mode (makes API calls)
     if (ModeManager.getMode() === MODES.SHADOW) {
       NarrativeTrust.init();
-      ShadowTradeIngestion.init();
     }
 
     // Show mode session banner (once per session for Analysis/Shadow)

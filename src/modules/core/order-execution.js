@@ -137,6 +137,7 @@ export const OrderExecution = {
       pos.qtyTokens = 0;
       pos.costBasisUsd = 0;
       pos.avgCostUsdPerToken = 0;
+      pos.totalSolSpent = 0;
       pos.entryMarketCapUsdReference = null;
     }
 

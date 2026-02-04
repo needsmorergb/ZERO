@@ -107,6 +107,8 @@ export const PnlCalculator = {
     const currentMC = Market.marketCap || 0;
 
     positions.forEach((pos) => {
+      if (pos.qtyTokens <= 0) return; // Skip closed positions immediately
+
       // 1. Determine Mark Price — always update from live data
       const mintMatches = currentTokenMint && pos.mint === currentTokenMint;
       const symbolMatches =
@@ -120,8 +122,6 @@ export const PnlCalculator = {
         pos.lastMarketCapUsd = Market.marketCap;
         priceWasUpdated = true;
       }
-
-      if (pos.qtyTokens <= 0) return;
 
       // 2. Method 1: MC Ratio (most accurate when both MCs available)
       // Formula: currentValue = totalSolSpent × (currentMC / entryMC)

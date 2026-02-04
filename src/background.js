@@ -64,6 +64,107 @@ function median(values) {
 }
 
 /**
+ * Parses a raw Solana transaction to detect SOL<->token swaps.
+ * Uses pre/post balance changes — works with any DEX (Jupiter, Raydium, etc.)
+ * @param {object} tx - Raw getTransaction response
+ * @param {string} walletAddress - The wallet to track
+ * @param {string} signature - Transaction signature
+ * @returns {object|null} Swap data or null if not a swap
+ */
+function parseSwapFromTx(tx, walletAddress, signature) {
+  const meta = tx.meta;
+  if (!meta || meta.err) return null;
+
+  const accountKeys = tx.transaction?.message?.accountKeys || [];
+
+  // Find wallet's index in the account list
+  let walletIndex = -1;
+  for (let i = 0; i < accountKeys.length; i++) {
+    const key = typeof accountKeys[i] === "string" ? accountKeys[i] : accountKeys[i]?.pubkey;
+    if (key === walletAddress) {
+      walletIndex = i;
+      break;
+    }
+  }
+  if (walletIndex === -1) return null;
+
+  // SOL balance change (lamports → SOL)
+  const preLamports = meta.preBalances?.[walletIndex] || 0;
+  const postLamports = meta.postBalances?.[walletIndex] || 0;
+  const fee = (meta.fee || 0) / 1e9;
+  const solDelta = (postLamports - preLamports) / 1e9; // negative = spent, positive = received
+
+  // Token balance changes for this wallet (exclude wrapped SOL)
+  const WRAPPED_SOL = "So11111111111111111111111111111111111111112";
+  const preTokens = {};
+  const postTokens = {};
+
+  for (const tb of meta.preTokenBalances || []) {
+    if (tb.owner === walletAddress && tb.mint !== WRAPPED_SOL) {
+      preTokens[tb.mint] = parseFloat(tb.uiTokenAmount?.uiAmountString || "0");
+    }
+  }
+  for (const tb of meta.postTokenBalances || []) {
+    if (tb.owner === walletAddress && tb.mint !== WRAPPED_SOL) {
+      postTokens[tb.mint] = parseFloat(tb.uiTokenAmount?.uiAmountString || "0");
+    }
+  }
+
+  // Find the token with the largest balance change
+  const allMints = new Set([...Object.keys(preTokens), ...Object.keys(postTokens)]);
+  let bestMint = null;
+  let bestDelta = 0;
+
+  for (const mint of allMints) {
+    const delta = (postTokens[mint] || 0) - (preTokens[mint] || 0);
+    if (Math.abs(delta) > Math.abs(bestDelta)) {
+      bestMint = mint;
+      bestDelta = delta;
+    }
+  }
+
+  if (!bestMint || Math.abs(bestDelta) < 0.000001) return null;
+
+  // BUY: SOL decreased (spent) + token increased (received)
+  if (solDelta < -0.001 && bestDelta > 0) {
+    const swapSolAmount = Math.abs(solDelta) - fee; // Remove fee
+    if (swapSolAmount <= 0) return null;
+    return {
+      type: "SHADOW_TRADE_DETECTED",
+      __paper: true,
+      side: "BUY",
+      mint: bestMint,
+      solAmount: swapSolAmount,
+      tokenAmount: bestDelta,
+      priceUsd: 0,
+      signature,
+      source: "helius",
+      ts: Date.now(),
+    };
+  }
+
+  // SELL: SOL increased (received) + token decreased (spent)
+  if (solDelta > 0.001 && bestDelta < 0) {
+    const swapSolAmount = solDelta + fee; // Add fee back (fee was deducted from proceeds)
+    if (swapSolAmount <= 0) return null;
+    return {
+      type: "SHADOW_TRADE_DETECTED",
+      __paper: true,
+      side: "SELL",
+      mint: bestMint,
+      solAmount: swapSolAmount,
+      tokenAmount: Math.abs(bestDelta),
+      priceUsd: 0,
+      signature,
+      source: "helius",
+      ts: Date.now(),
+    };
+  }
+
+  return null; // Not a SOL<->token swap
+}
+
+/**
  * Refreshes SOL/USD price by fetching from multiple sources and calculating median
  * @returns {Promise<object|null>} Cache object with price, feedCount, and timestamp
  */
@@ -175,16 +276,67 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return;
     }
 
+    // Poll wallet for new swap transactions via Context API Worker → Helius RPC
+    if (msg?.type === "POLL_WALLET_SWAPS") {
+      const { walletAddress, lastSignature } = msg;
+      if (!walletAddress) {
+        sendResponse({ ok: false, error: "No wallet address" });
+        return;
+      }
+
+      try {
+        const params = new URLSearchParams({ address: walletAddress });
+        if (lastSignature) params.set("after", lastSignature);
+
+        const workerUrl = `https://api.get-zero.xyz/wallet/poll?${params}`;
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 15000);
+
+        const resp = await fetch(workerUrl, {
+          signal: ctrl.signal,
+          headers: { "Content-Type": "application/json" },
+        });
+        clearTimeout(t);
+
+        const data = await resp.json();
+
+        if (!data.ok) {
+          console.warn("[BG] POLL_WALLET_SWAPS worker error:", data.error);
+          sendResponse({ ok: false, error: data.error });
+          return;
+        }
+
+        // Enrich swap data with message metadata for content script
+        const swaps = (data.swaps || []).map((s) => ({
+          type: "SHADOW_TRADE_DETECTED",
+          __paper: true,
+          ...s,
+          priceUsd: s.priceUsd || 0,
+          source: "helius",
+          ts: Date.now(),
+        }));
+
+        sendResponse({ ok: true, swaps, lastSignature: data.lastSignature });
+      } catch (e) {
+        console.error("[BG] POLL_WALLET_SWAPS failed:", e);
+        sendResponse({ ok: false, error: e.toString() });
+      }
+      return;
+    }
+
     // Wallet Balance (Shadow Mode auto-detect)
     if (msg?.type === "GET_WALLET_BALANCE") {
       try {
-        // Get wallet address from connected wallet (stored in state)
-        const storeData = await chrome.storage.local.get("sol_paper_trader_v1");
-        const state = storeData?.sol_paper_trader_v1;
-        const walletAddress = state?.shadow?.walletAddress;
+        // Prefer address from message, then fallback to stored state
+        let walletAddress = msg.walletAddress;
+        if (!walletAddress) {
+          const storeData = await chrome.storage.local.get("sol_paper_trader_v1");
+          const state = storeData?.sol_paper_trader_v1;
+          walletAddress = state?.shadow?.walletAddress;
+        }
 
         if (!walletAddress) {
-          sendResponse({ ok: false, error: "No wallet address stored" });
+          sendResponse({ ok: false, error: "No wallet address" });
           return;
         }
 

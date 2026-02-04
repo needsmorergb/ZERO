@@ -132,7 +132,8 @@
     const inputMint = data.inputMint || data.fromMint || data.tokenIn || data.sourceMint;
     const outputMint = data.outputMint || data.toMint || data.tokenOut || data.destMint;
     if (!inputMint || !outputMint) {
-      console.log(`[ZER\xD8] Swap response has txid but missing mints \u2014 url=${url}`);
+      console.log(`[ZER\xD8] Swap response has txid=${txid.slice(0, 12)} but missing mints \u2014 url=${url.slice(0, 80)}`);
+      console.log(`[ZER\xD8] Swap response keys: ${Object.keys(data).join(", ")}`);
       return;
     }
     const isSolInput = isSolMint(inputMint);
@@ -165,6 +166,96 @@
       url,
       ts: Date.now()
     });
+  }
+  var _capturedWalletAddr = null;
+  function setupWalletAddressCapture() {
+    const providerMap = {
+      "window.solana": () => window.solana,
+      "phantom.solana": () => window.phantom?.solana,
+      "solflare": () => window.solflare,
+      "backpack.solana": () => window.backpack?.solana,
+      "coin98.sol": () => window.coin98?.sol,
+      "glow": () => window.glow,
+      "brave.solana": () => window.braveSolana,
+      "exodus": () => window.exodus?.solana
+    };
+    let _pollCount = 0;
+    const tryCapture = () => {
+      _pollCount++;
+      const verbose = _pollCount <= 3;
+      for (const [name, getP] of Object.entries(providerMap)) {
+        try {
+          const p = getP();
+          if (!p)
+            continue;
+          const pk = p.publicKey;
+          if (!pk) {
+            if (verbose)
+              console.log(`[ZER\xD8] WalletCapture: ${name} found but publicKey is null (not connected?)`);
+            continue;
+          }
+          const addr = typeof pk === "string" ? pk : pk.toBase58?.() || pk.toString?.();
+          if (addr && addr.length >= 32 && addr.length <= 44) {
+            if (!_capturedWalletAddr) {
+              console.log(`[ZER\xD8] Wallet address captured via ${name}: ${addr.slice(0, 8)}...`);
+            }
+            _capturedWalletAddr = addr;
+            return addr;
+          } else if (verbose) {
+            console.log(`[ZER\xD8] WalletCapture: ${name} publicKey invalid (${String(addr).slice(0, 20)})`);
+          }
+        } catch (err) {
+          if (verbose)
+            console.log(`[ZER\xD8] WalletCapture: ${name} error: ${err?.message || err}`);
+        }
+      }
+      if (verbose && _pollCount === 1) {
+        const walletGlobals = ["solana", "phantom", "solflare", "backpack", "coin98", "glow", "braveSolana", "exodus"].filter((k) => !!window[k]).join(", ");
+        console.log(`[ZER\xD8] WalletCapture: window wallet globals found: [${walletGlobals || "none"}]`);
+      }
+      return null;
+    };
+    const poll = setInterval(() => {
+      const addr = _capturedWalletAddr || tryCapture();
+      if (addr) {
+        send({ type: "WALLET_ADDRESS_DETECTED", walletAddress: addr });
+      }
+    }, 3e3);
+    tryCapture();
+    const listenForConnect = (providerGetter, name) => {
+      try {
+        const p = providerGetter();
+        if (p && typeof p.on === "function") {
+          p.on("connect", (pk) => {
+            try {
+              const addr = typeof pk === "string" ? pk : pk?.toBase58?.() || pk?.toString?.();
+              if (addr && addr.length >= 32 && addr.length <= 44 && !_capturedWalletAddr) {
+                console.log(`[ZER\xD8] Wallet connected via ${name} event: ${addr.slice(0, 8)}...`);
+                _capturedWalletAddr = addr;
+                send({ type: "WALLET_ADDRESS_DETECTED", walletAddress: addr });
+              }
+            } catch {
+            }
+          });
+        }
+      } catch {
+      }
+    };
+    listenForConnect(() => window.solana, "solana");
+    listenForConnect(() => window.phantom?.solana, "phantom");
+    listenForConnect(() => window.solflare, "solflare");
+    listenForConnect(() => window.backpack?.solana, "backpack");
+    setTimeout(() => {
+      listenForConnect(() => window.solana, "solana-delayed");
+      listenForConnect(() => window.phantom?.solana, "phantom-delayed");
+      listenForConnect(() => window.solflare, "solflare-delayed");
+    }, 2e3);
+    setTimeout(() => {
+      clearInterval(poll);
+      if (!_capturedWalletAddr) {
+        console.warn("[ZER\xD8] WalletCapture: No wallet address found after 60s of polling");
+      }
+    }, 6e4);
   }
   var findTV = () => {
     if (window.tvWidget && typeof window.tvWidget.activeChart === "function")
@@ -469,14 +560,19 @@
         const res = await origFetch(...args);
         try {
           const url = String(args?.[0]?.url || args?.[0] || "");
-          if (/quote|price|ticker|market|candles|kline|chart|pair|swap|route/i.test(url)) {
+          const isApiUrl = /quote|price|ticker|market|candles|kline|chart|pair|swap|route/i.test(url);
+          const isSwapUrl = SWAP_URL_PATTERNS.test(url);
+          if (isApiUrl || isSwapUrl) {
+            if (isSwapUrl) {
+              console.log(`[ZER\xD8] Padre: Swap URL intercepted: ${url.slice(0, 120)}`);
+            }
             const clone = res.clone();
-            clone.json().then((json) => tryHandleJson(url, json, ctx)).catch(() => {
-            });
-          }
-          if (SWAP_URL_PATTERNS.test(url)) {
-            const clone2 = res.clone();
-            clone2.json().then((json) => tryHandleSwap(url, json, ctx)).catch(() => {
+            clone.json().then((json) => {
+              if (isApiUrl)
+                tryHandleJson(url, json, ctx);
+              if (isSwapUrl)
+                tryHandleSwap(url, json, ctx);
+            }).catch(() => {
             });
           }
         } catch {
@@ -635,5 +731,6 @@
     };
     setInterval(pollTvMCap, 1e3);
     setupMessageListener(ctx);
+    setupWalletAddressCapture();
   })();
 })();
