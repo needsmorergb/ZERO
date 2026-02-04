@@ -100,6 +100,11 @@ export const Paywall = {
                     <span style="color:#a78bfa; font-weight:600;">$299 Founders Lifetime</span>
                 </div>
 
+                <div style="text-align:center; margin:4px 0 8px;">
+                    <span style="display:inline-block; font-size:10px; font-weight:700; letter-spacing:1.5px; color:#a78bfa; background:rgba(139,92,246,0.1); border:1px solid rgba(139,92,246,0.2); padding:3px 10px; border-radius:4px;">COMING SOON</span>
+                    <div style="font-size:11px; color:#64748b; margin-top:4px;">Elite is launching shortly. Sign up to be first in line.</div>
+                </div>
+
                 <div class="paywall-actions" style="display:flex; flex-direction:column; gap:8px;">
                     <button class="paywall-btn primary" data-act="purchase" style="background:linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color:white; border:none; padding:12px 20px; border-radius:8px; font-weight:700; font-size:14px; cursor:pointer;">
                         Get Elite on Whop
@@ -164,7 +169,7 @@ export const Paywall = {
                     ? "Login failed — try again"
                     : result.error === "user_id_not_found"
                       ? "Could not verify identity — try again"
-                      : "Sign in failed — try again";
+                      : "Elite is launching soon — check back shortly!";
           if (statusEl) {
             statusEl.textContent = errorMsg;
             statusEl.style.color = errorMsg ? "#ef4444" : "transparent";
