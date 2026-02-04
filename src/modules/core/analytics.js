@@ -14,14 +14,15 @@ export const EVENT_CATEGORIES = {
 export const Analytics = {
   // --- Mode-aware state resolver ---
   _resolve(state) {
-    const isShadow = state.settings?.tradingMode === "shadow";
+    const mode = state.settings?.tradingMode;
+    const isRealTrading = mode === "shadow" || mode === "analysis";
     return {
-      session: isShadow ? state.shadowSession : state.session,
-      trades: isShadow ? state.shadowTrades : state.trades,
-      positions: isShadow ? state.shadowPositions : state.positions,
-      behavior: isShadow ? state.shadowBehavior : state.behavior,
-      eventLog: isShadow ? state.shadowEventLog : state.eventLog,
-      isShadow,
+      session: isRealTrading ? state.shadowSession : state.session,
+      trades: isRealTrading ? state.shadowTrades : state.trades,
+      positions: isRealTrading ? state.shadowPositions : state.positions,
+      behavior: isRealTrading ? state.shadowBehavior : state.behavior,
+      eventLog: isRealTrading ? state.shadowEventLog : state.eventLog,
+      isRealTrading,
     };
   },
 

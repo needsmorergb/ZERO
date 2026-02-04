@@ -194,23 +194,27 @@
         isShadowMode() {
           return this.state?.settings?.tradingMode === "shadow";
         },
+        isRealTradingMode() {
+          const m = this.state?.settings?.tradingMode;
+          return m === "shadow" || m === "analysis";
+        },
         getActiveSession() {
-          return this.isShadowMode() ? this.state.shadowSession : this.state.session;
+          return this.isRealTradingMode() ? this.state.shadowSession : this.state.session;
         },
         getActivePositions() {
-          return this.isShadowMode() ? this.state.shadowPositions : this.state.positions;
+          return this.isRealTradingMode() ? this.state.shadowPositions : this.state.positions;
         },
         getActiveTrades() {
-          return this.isShadowMode() ? this.state.shadowTrades : this.state.trades;
+          return this.isRealTradingMode() ? this.state.shadowTrades : this.state.trades;
         },
         getActiveBehavior() {
-          return this.isShadowMode() ? this.state.shadowBehavior : this.state.behavior;
+          return this.isRealTradingMode() ? this.state.shadowBehavior : this.state.behavior;
         },
         getActiveEventLog() {
-          return this.isShadowMode() ? this.state.shadowEventLog : this.state.eventLog;
+          return this.isRealTradingMode() ? this.state.shadowEventLog : this.state.eventLog;
         },
         getActiveSessionHistory() {
-          return this.isShadowMode() ? this.state.shadowSessionHistory : this.state.sessionHistory;
+          return this.isRealTradingMode() ? this.state.shadowSessionHistory : this.state.sessionHistory;
         },
         async load() {
           let timeoutId;
@@ -400,7 +404,7 @@
               this.state.session.id = this.generateSessionId();
               this.state.session.startTime = Date.now();
             }
-            if (this.state.settings.tradingMode === "shadow" && this.state.shadowSession && !this.state.shadowSession.id) {
+            if ((this.state.settings.tradingMode === "shadow" || this.state.settings.tradingMode === "analysis") && this.state.shadowSession && !this.state.shadowSession.id) {
               this.state.shadowSession.id = this.generateSessionId();
               this.state.shadowSession.startTime = Date.now();
             }
@@ -412,14 +416,14 @@
         // Start a new session (archive current if it has trades)
         // options.shadow: force shadow session reset (otherwise uses current mode)
         async startNewSession(options = {}) {
-          const isShadow = options.shadow !== void 0 ? options.shadow : this.isShadowMode();
+          const isShadow = options.shadow !== void 0 ? options.shadow : this.isRealTradingMode();
           const sessionKey = isShadow ? "shadowSession" : "session";
           const historyKey = isShadow ? "shadowSessionHistory" : "sessionHistory";
           const currentSession = this.state[sessionKey];
           if (currentSession && currentSession.trades && currentSession.trades.length > 0) {
             currentSession.endTime = Date.now();
             currentSession.status = "completed";
-            currentSession.mode = isShadow ? "shadow" : "paper";
+            currentSession.mode = isShadow ? this.state.settings.tradingMode || "shadow" : "paper";
             const eventLogKey = isShadow ? "shadowEventLog" : "eventLog";
             currentSession.eventSnapshot = [...this.state[eventLogKey] || []];
             if (!this.state[historyKey])
@@ -5190,13 +5194,13 @@ input:checked + .slider:before {
         return false;
       }
       Store.state.settings.tradingMode = mode;
-      if (mode === MODES.SHADOW) {
+      if (mode === MODES.SHADOW || mode === MODES.ANALYSIS) {
         const ss = Store.state.shadowSession;
         if (!ss.id) {
-          ss.id = "shadow_" + Date.now();
+          ss.id = mode + "_" + Date.now();
           ss.startTime = Date.now();
           ss.status = "active";
-          console.log("[ModeManager] Shadow session initialized:", ss.id);
+          console.log(`[ModeManager] ${mode} session initialized:`, ss.id);
         }
       }
       await Store.save();
@@ -5590,14 +5594,15 @@ input:checked + .slider:before {
   var Analytics = {
     // --- Mode-aware state resolver ---
     _resolve(state) {
-      const isShadow = state.settings?.tradingMode === "shadow";
+      const mode = state.settings?.tradingMode;
+      const isRealTrading = mode === "shadow" || mode === "analysis";
       return {
-        session: isShadow ? state.shadowSession : state.session,
-        trades: isShadow ? state.shadowTrades : state.trades,
-        positions: isShadow ? state.shadowPositions : state.positions,
-        behavior: isShadow ? state.shadowBehavior : state.behavior,
-        eventLog: isShadow ? state.shadowEventLog : state.eventLog,
-        isShadow
+        session: isRealTrading ? state.shadowSession : state.session,
+        trades: isRealTrading ? state.shadowTrades : state.trades,
+        positions: isRealTrading ? state.shadowPositions : state.positions,
+        behavior: isRealTrading ? state.shadowBehavior : state.behavior,
+        eventLog: isRealTrading ? state.shadowEventLog : state.eventLog,
+        isRealTrading
       };
     },
     // ==========================================
@@ -6849,8 +6854,8 @@ input:checked + .slider:before {
       const solUsd = this.getSolPrice();
       let priceWasUpdated = false;
       let totalUnrealizedUsd = 0;
-      const isShadow = state.settings?.tradingMode === "shadow";
-      const positions = Object.values(isShadow ? state.shadowPositions || {} : state.positions || {});
+      const isRealTrading = state.settings?.tradingMode === "shadow" || state.settings?.tradingMode === "analysis";
+      const positions = Object.values(isRealTrading ? state.shadowPositions || {} : state.positions || {});
       const currentSymbol = (Market.currentSymbol || "").toUpperCase();
       const currentMC = Market.marketCap || 0;
       positions.forEach((pos) => {
@@ -7453,6 +7458,7 @@ input:checked + .slider:before {
                     <span style="color:#a78bfa; font-weight:600;">$299 Founders Lifetime</span>
                 </div>
 
+
                 <div class="paywall-actions" style="display:flex; flex-direction:column; gap:8px;">
                     <button class="paywall-btn primary" data-act="purchase" style="background:linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color:white; border:none; padding:12px 20px; border-radius:8px; font-weight:700; font-size:14px; cursor:pointer;">
                         Get Elite on Whop
@@ -7493,13 +7499,15 @@ input:checked + .slider:before {
           btn.style.opacity = "1";
           if (result.ok) {
             if (statusEl) {
-              statusEl.textContent = "Elite activated!";
-              statusEl.style.color = "#10b981";
+              statusEl.innerHTML = `<span style="display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:700; letter-spacing:1.2px; color:#a78bfa; text-transform:uppercase;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              ELITE ACTIVATED
+            </span>`;
             }
             this._showSuccessToast(License.getPlanLabel());
-            setTimeout(() => overlay.remove(), 1500);
+            setTimeout(() => overlay.remove(), 2e3);
           } else {
-            const errorMsg = result.error === "no_membership" ? "No active membership found \u2014 purchase Elite first" : result.error === "user_cancelled" ? "" : result.error === "state_mismatch" ? "Security error \u2014 try again" : result.error === "token_exchange_failed" ? "Login failed \u2014 try again" : result.error === "user_id_not_found" ? "Could not verify identity \u2014 try again" : "Sign in failed \u2014 try again";
+            const errorMsg = result.error === "no_membership" ? "No active membership found \u2014 purchase Elite first" : result.error === "user_cancelled" ? "" : result.error === "state_mismatch" ? "Security error \u2014 try again" : result.error === "token_exchange_failed" ? "Login failed \u2014 try again" : result.error === "user_id_not_found" ? "Could not verify identity \u2014 try again" : "Elite is launching soon \u2014 check back shortly!";
             if (statusEl) {
               statusEl.textContent = errorMsg;
               statusEl.style.color = errorMsg ? "#ef4444" : "transparent";
@@ -7516,23 +7524,43 @@ input:checked + .slider:before {
       const root = OverlayManager.getShadowRoot();
       const toast = document.createElement("div");
       toast.className = "paywall-toast";
-      toast.textContent = planLabel ? `Elite Activated (${planLabel})` : "Elite Activated";
+      const label = planLabel ? planLabel.toUpperCase() : "";
+      toast.innerHTML = `
+      <div style="display:flex; align-items:center; gap:10px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e0d4ff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        <div>
+          <div style="font-size:13px; font-weight:700; letter-spacing:1.5px; color:#f0eaff;">ELITE ACTIVATED</div>
+          ${label ? `<div style="font-size:10px; font-weight:500; letter-spacing:0.8px; color:rgba(224,212,255,0.6); margin-top:1px;">${label}</div>` : ""}
+        </div>
+      </div>
+    `;
       toast.style.cssText = `
-            position: fixed;
-            top: 80px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(16,185,129,0.9);
-            color: white;
-            padding: 12px 24px;
-            border-radius: 8px;
-            font-weight: 600;
-            font-size: 14px;
-            z-index: 2147483647;
-            pointer-events: none;
-        `;
+      position: fixed;
+      top: 80px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-8px);
+      background: linear-gradient(135deg, rgba(139,92,246,0.95) 0%, rgba(99,102,241,0.95) 100%);
+      color: white;
+      padding: 14px 28px;
+      border-radius: 10px;
+      border: 1px solid rgba(167,139,250,0.3);
+      box-shadow: 0 0 24px rgba(139,92,246,0.4), 0 8px 32px rgba(0,0,0,0.3);
+      z-index: 2147483647;
+      pointer-events: none;
+      opacity: 0;
+      animation: zt-in 0.35s ease-out forwards;
+    `;
+      const style = document.createElement("style");
+      style.textContent = `@keyframes zt-in { to { opacity:1; transform:translateX(-50%) translateY(0); } }`;
+      toast.appendChild(style);
       root.appendChild(toast);
-      setTimeout(() => toast.remove(), 3e3);
+      setTimeout(() => {
+        toast.style.animation = "zt-out 0.3s ease-in forwards";
+        const outStyle = document.createElement("style");
+        outStyle.textContent = `@keyframes zt-out { to { opacity:0; transform:translateX(-50%) translateY(-8px); } }`;
+        toast.appendChild(outStyle);
+        setTimeout(() => toast.remove(), 300);
+      }, 3e3);
     },
     isFeatureLocked(featureName) {
       if (!FeatureManager)
@@ -8606,8 +8634,8 @@ canvas#equity-canvas {
       const events = this.getFilteredEvents(isElite);
       const eventStats = this._computeEventStats();
       const hasEquityData = (session.equityHistory || []).length >= 2;
-      const sessionMode = session.mode || (Store.isShadowMode() ? "shadow" : "paper");
-      const modeLabel = sessionMode === "shadow" ? "Real trades (observed)" : "Paper session";
+      const sessionMode = session.mode || (Store.isRealTradingMode() ? Store.state.settings.tradingMode : "paper");
+      const modeLabel = sessionMode === "shadow" || sessionMode === "analysis" ? "Real trades (observed)" : "Paper session";
       const sessionPnl = session.realized || 0;
       const tradeCount = (session.trades || []).length;
       const durationMs = (session.endTime || Date.now()) - (session.startTime || Date.now());
@@ -9039,13 +9067,13 @@ canvas#equity-canvas {
       });
       const avgPnl = exits.length > 0 ? exits.reduce((sum, t) => sum + (t.realizedPnlSol || 0), 0) / exits.length : 0;
       const sessionPnl = session.realized || 0;
-      const isShadow = Store.isShadowMode();
+      const isRealTrading = Store.isRealTradingMode();
       const positions = Store.getActivePositions();
       const totalInvestedSol = Object.values(positions || {}).reduce(
         (sum, pos) => sum + (pos.totalSolSpent || 0),
         0
       );
-      const startSol = isShadow ? totalInvestedSol || session.balance || 1 : state.settings.startSol || 10;
+      const startSol = isRealTrading ? totalInvestedSol || session.balance || 1 : state.settings.startSol || 10;
       const sessionPnlPct = startSol > 0 ? sessionPnl / startSol * 100 : 0;
       const startTime = session.startTime || Date.now();
       const endTime = session.endTime || Date.now();
@@ -9262,7 +9290,7 @@ canvas#equity-canvas {
       const isEmpty = stats.totalTrades === 0;
       const isElite = FeatureManager.isElite(state);
       const hasTrades = (session.trades || []).length > 0;
-      const subtext = state.settings.tradingMode === "shadow" ? "Real trades analyzed" : "Paper session results";
+      const subtext = state.settings.tradingMode === "shadow" ? "Real trades analyzed" : state.settings.tradingMode === "analysis" ? "Real trades observed" : "Paper session results";
       overlay.innerHTML = `
             <div class="paper-dashboard-modal">
                 <div class="dash-header">
@@ -10562,13 +10590,13 @@ canvas#equity-canvas {
       this.bindPnlDrag(root, makeDraggable);
       const inp = root.querySelector(".startSolInput");
       if (inp) {
-        if (Store.isShadowMode()) {
+        if (Store.isRealTradingMode()) {
           inp.disabled = true;
           inp.style.opacity = "0.4";
           inp.placeholder = "Auto";
         }
         inp.addEventListener("change", async () => {
-          if (Store.isShadowMode())
+          if (Store.isRealTradingMode())
             return;
           const v = parseFloat(inp.value);
           if (v > 0) {
@@ -10694,13 +10722,13 @@ canvas#equity-canvas {
         root.style.top = "";
       }
       const solUsd = Trading.getSolPrice();
-      const isShadow = Store.isShadowMode();
+      const isRealTrading = Store.isRealTradingMode();
       const session = Store.getActiveSession();
       const positions = Store.getActivePositions();
       const currentToken = TokenDetector.getCurrentToken();
       const unrealized = Trading.getUnrealizedPnl(s, currentToken.mint);
       const inp = root.querySelector(".startSolInput");
-      if (isShadow) {
+      if (isRealTrading) {
         inp.disabled = true;
         inp.style.opacity = "0.4";
         inp.placeholder = "Auto";
@@ -10745,7 +10773,7 @@ canvas#equity-canvas {
       const totalPnl = realized + unrealized;
       const posArr2 = Object.values(positions || {});
       const totalInvestedSol = posArr2.reduce((sum, pos) => sum + (pos.totalSolSpent || 0), 0);
-      const startBalance = isShadow ? session.totalSolInvested || totalInvestedSol || session.walletBalance || session.balance || 1 : s.settings.startSol || 10;
+      const startBalance = isRealTrading ? session.totalSolInvested || totalInvestedSol || session.walletBalance || session.balance || 1 : s.settings.startSol || 10;
       const sessionPct = totalPnl / startBalance * 100;
       const pnlEl = root.querySelector('[data-k="pnl"]');
       const pnlUnitEl = root.querySelector('[data-k="pnlUnit"]');
@@ -10778,7 +10806,7 @@ canvas#equity-canvas {
       }
       const platformPnlStat = root.querySelector(".stat.platform-pnl");
       if (platformPnlStat) {
-        if (isShadow) {
+        if (isRealTrading) {
           platformPnlStat.style.display = "";
           const pPnl = Market.platformPnl;
           const pPnlFresh = Market.platformPnlTs && Date.now() - Market.platformPnlTs < 15e3;
@@ -10807,11 +10835,12 @@ canvas#equity-canvas {
     showResetModal() {
       const overlay = document.createElement("div");
       overlay.className = "confirm-modal-overlay";
+      const isRealTrading = Store.isRealTradingMode();
       const isShadow = Store.isShadowMode();
       const duration = Store.getSessionDuration();
       const summary = Store.getSessionSummary();
-      const title = isShadow ? "Reset Shadow session?" : "Reset current session?";
-      const desc = isShadow ? "This will clear your shadow session stats and start fresh.<br>Your real trade history and past sessions will not be deleted." : "This will clear current session stats and start a fresh run.<br>Your trade history and past sessions will not be deleted.";
+      const title = isShadow ? "Reset Shadow session?" : isRealTrading ? "Reset Analysis session?" : "Reset current session?";
+      const desc = isRealTrading ? "This will clear your session stats and start fresh.<br>Your real trade history and past sessions will not be deleted." : "This will clear current session stats and start a fresh run.<br>Your trade history and past sessions will not be deleted.";
       overlay.innerHTML = `
             <div class="confirm-modal">
                 <h3>${title}</h3>
@@ -10845,8 +10874,8 @@ canvas#equity-canvas {
       OverlayManager.getContainer().appendChild(overlay);
       overlay.querySelector(".cancel").onclick = () => overlay.remove();
       overlay.querySelector(".confirm").onclick = async () => {
-        await Store.startNewSession({ shadow: isShadow });
-        if (isShadow) {
+        await Store.startNewSession({ shadow: isRealTrading });
+        if (isRealTrading) {
           Store.state.shadowPositions = {};
         } else {
           Store.state.positions = {};
@@ -13022,8 +13051,8 @@ canvas#equity-canvas {
       if (this.initialized)
         return;
       this.initialized = true;
-      const isShadow = Store.isShadowMode();
-      console.log(`[ShadowIngestion] Mode: ${isShadow ? "SHADOW" : Store.state?.settings?.tradingMode || "unknown"}`);
+      const isReal = Store.isRealTradingMode();
+      console.log(`[ShadowIngestion] Mode: ${isReal ? Store.isShadowMode() ? "SHADOW" : "ANALYSIS" : Store.state?.settings?.tradingMode || "unknown"}`);
       window.addEventListener("message", (e) => {
         if (e.source !== window)
           return;
@@ -13171,7 +13200,7 @@ canvas#equity-canvas {
     async proactiveFetchBalance() {
       if (this.walletBalanceFetched)
         return;
-      if (!Store.isShadowMode())
+      if (!Store.isRealTradingMode())
         return;
       const session = Store.state?.shadowSession;
       if (!session || session.balance > 0)
@@ -13211,8 +13240,8 @@ canvas#equity-canvas {
     },
     // --- Trade Processing ---
     async handleDetectedTrade(data) {
-      if (!Store.isShadowMode()) {
-        console.log(`[ShadowIngestion] Trade ignored \u2014 not in shadow mode (current: ${Store.state?.settings?.tradingMode || "?"})`);
+      if (!Store.isRealTradingMode()) {
+        console.log(`[ShadowIngestion] Trade ignored \u2014 not in real trading mode (current: ${Store.state?.settings?.tradingMode || "?"})`);
         return;
       }
       const state = Store.state;
@@ -13316,8 +13345,8 @@ canvas#equity-canvas {
         priceSource: "shadow_swap",
         strategy: "Real Trade",
         signature,
-        mode: "shadow",
-        tradeSource: "REAL_SHADOW"
+        mode: Store.state?.settings?.tradingMode || "shadow",
+        tradeSource: Store.state?.settings?.tradingMode === "analysis" ? "REAL_ANALYSIS" : "REAL_SHADOW"
       });
       session.balance -= solAmount;
       session.totalSolInvested = (session.totalSolInvested || 0) + solAmount;
@@ -13388,8 +13417,8 @@ canvas#equity-canvas {
         strategy: "Real Trade",
         signature,
         realizedPnlSol: pnlEventSol,
-        mode: "shadow",
-        tradeSource: "REAL_SHADOW"
+        mode: Store.state?.settings?.tradingMode || "shadow",
+        tradeSource: Store.state?.settings?.tradingMode === "analysis" ? "REAL_ANALYSIS" : "REAL_SHADOW"
       });
       session.balance += proceedsSol;
       session.realized = (session.realized || 0) + pnlEventSol;

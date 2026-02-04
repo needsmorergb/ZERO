@@ -13,7 +13,8 @@
     "build:prod:padre": "esbuild src/platforms/padre/boot.padre.js --bundle --outfile=src/content.bundle.padre.js --format=iife --drop:console && esbuild src/platforms/padre/bridge.padre.js --bundle --outfile=src/bridge.bundle.padre.js --format=iife --drop:console",
     "lint": "eslint src/**/*.js",
     "format": "prettier --write \"src/**/*.{js,css,html}\"",
-    "package:store": "npm run build:prod && node scripts/package-store.mjs"
+    "package:store": "npm run build:prod && node scripts/package-store.mjs",
+    "deploy:r2": "node scripts/deploy-r2.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.19.0",
