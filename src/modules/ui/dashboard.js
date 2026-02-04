@@ -97,13 +97,13 @@ export const Dashboard = {
 
     // Session P&L
     const sessionPnl = session.realized || 0;
-    const isShadow = Store.isShadowMode();
+    const isRealTrading = Store.isRealTradingMode();
     const positions = Store.getActivePositions();
     const totalInvestedSol = Object.values(positions || {}).reduce(
       (sum, pos) => sum + (pos.totalSolSpent || 0),
       0
     );
-    const startSol = isShadow
+    const startSol = isRealTrading
       ? totalInvestedSol || session.balance || 1
       : state.settings.startSol || 10;
     const sessionPnlPct = startSol > 0 ? (sessionPnl / startSol) * 100 : 0;
@@ -366,7 +366,7 @@ export const Dashboard = {
 
     // Subtext based on trading mode
     const subtext =
-      state.settings.tradingMode === "shadow" ? "Real trades analyzed" : "Paper session results";
+      state.settings.tradingMode === "shadow" ? "Real trades analyzed" : state.settings.tradingMode === "analysis" ? "Real trades observed" : "Paper session results";
 
     overlay.innerHTML = `
             <div class="paper-dashboard-modal">

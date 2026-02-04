@@ -495,8 +495,8 @@ export const SessionReplay = {
     const hasEquityData = (session.equityHistory || []).length >= 2;
 
     // Session mode label
-    const sessionMode = session.mode || (Store.isShadowMode() ? "shadow" : "paper");
-    const modeLabel = sessionMode === "shadow" ? "Real trades (observed)" : "Paper session";
+    const sessionMode = session.mode || (Store.isRealTradingMode() ? Store.state.settings.tradingMode : "paper");
+    const modeLabel = sessionMode === "shadow" || sessionMode === "analysis" ? "Real trades (observed)" : "Paper session";
 
     // Session stats
     const sessionPnl = session.realized || 0;

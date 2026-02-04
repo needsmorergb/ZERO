@@ -102,14 +102,14 @@ export const ModeManager = {
 
     Store.state.settings.tradingMode = mode;
 
-    // Ensure shadow session is initialized on first entry
-    if (mode === MODES.SHADOW) {
+    // Ensure shadow session is initialized on first entry to real trading mode
+    if (mode === MODES.SHADOW || mode === MODES.ANALYSIS) {
       const ss = Store.state.shadowSession;
       if (!ss.id) {
-        ss.id = "shadow_" + Date.now();
+        ss.id = mode + "_" + Date.now();
         ss.startTime = Date.now();
         ss.status = "active";
-        console.log("[ModeManager] Shadow session initialized:", ss.id);
+        console.log(`[ModeManager] ${mode} session initialized:`, ss.id);
       }
     }
 

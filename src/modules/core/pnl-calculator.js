@@ -100,8 +100,8 @@ export const PnlCalculator = {
     let priceWasUpdated = false;
     let totalUnrealizedUsd = 0;
 
-    const isShadow = state.settings?.tradingMode === "shadow";
-    const positions = Object.values(isShadow ? state.shadowPositions || {} : state.positions || {});
+    const isRealTrading = state.settings?.tradingMode === "shadow" || state.settings?.tradingMode === "analysis";
+    const positions = Object.values(isRealTrading ? state.shadowPositions || {} : state.positions || {});
     const currentSymbol = (Market.currentSymbol || "").toUpperCase();
 
     const currentMC = Market.marketCap || 0;

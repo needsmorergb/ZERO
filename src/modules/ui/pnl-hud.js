@@ -125,15 +125,15 @@ export const PnlHud = {
     // Re-bind input change because input is new
     const inp = root.querySelector(".startSolInput");
     if (inp) {
-      // Shadow mode: disable start SOL input (auto-detected from wallet)
-      if (Store.isShadowMode()) {
+      // Real trading mode: disable start SOL input (auto-detected from wallet)
+      if (Store.isRealTradingMode()) {
         inp.disabled = true;
         inp.style.opacity = "0.4";
         inp.placeholder = "Auto";
       }
 
       inp.addEventListener("change", async () => {
-        if (Store.isShadowMode()) return; // Shadow mode uses auto-detected balance
+        if (Store.isRealTradingMode()) return; // Real trading mode uses auto-detected balance
         const v = parseFloat(inp.value);
         if (v > 0) {
           const session = Store.getActiveSession();
@@ -266,7 +266,7 @@ export const PnlHud = {
     }
 
     const solUsd = Trading.getSolPrice();
-    const isShadow = Store.isShadowMode();
+    const isRealTrading = Store.isRealTradingMode();
     const session = Store.getActiveSession();
     const positions = Store.getActivePositions();
 
@@ -275,7 +275,7 @@ export const PnlHud = {
     const unrealized = Trading.getUnrealizedPnl(s, currentToken.mint);
 
     const inp = root.querySelector(".startSolInput");
-    if (isShadow) {
+    if (isRealTrading) {
       inp.disabled = true;
       inp.style.opacity = "0.4";
       inp.placeholder = "Auto";
@@ -328,10 +328,10 @@ export const PnlHud = {
 
     const realized = session.realized || 0;
     const totalPnl = realized + unrealized;
-    // Shadow mode: use total invested as denominator (no startSol). Paper: use startSol.
+    // Real trading mode: use total invested as denominator (no startSol). Paper: use startSol.
     const posArr2 = Object.values(positions || {});
     const totalInvestedSol = posArr2.reduce((sum, pos) => sum + (pos.totalSolSpent || 0), 0);
-    const startBalance = isShadow
+    const startBalance = isRealTrading
       ? session.totalSolInvested || totalInvestedSol || session.walletBalance || session.balance || 1
       : s.settings.startSol || 10;
     const sessionPct = (totalPnl / startBalance) * 100;
@@ -375,10 +375,10 @@ export const PnlHud = {
       discStatEl.style.display = discFlags.visible && !discFlags.gated ? "" : "none";
     }
 
-    // LIVE P&L (Shadow Mode — from Padre/Axiom header scraping)
+    // LIVE P&L (Real trading — from Padre/Axiom header scraping)
     const platformPnlStat = root.querySelector(".stat.platform-pnl");
     if (platformPnlStat) {
-      if (isShadow) {
+      if (isRealTrading) {
         platformPnlStat.style.display = "";
         const pPnl = Market.platformPnl;
         const pPnlFresh = Market.platformPnlTs && (Date.now() - Market.platformPnlTs < 15000);
@@ -412,13 +412,14 @@ export const PnlHud = {
   showResetModal() {
     const overlay = document.createElement("div");
     overlay.className = "confirm-modal-overlay";
+    const isRealTrading = Store.isRealTradingMode();
     const isShadow = Store.isShadowMode();
     const duration = Store.getSessionDuration();
     const summary = Store.getSessionSummary();
 
-    const title = isShadow ? "Reset Shadow session?" : "Reset current session?";
-    const desc = isShadow
-      ? "This will clear your shadow session stats and start fresh.<br>Your real trade history and past sessions will not be deleted."
+    const title = isShadow ? "Reset Shadow session?" : isRealTrading ? "Reset Analysis session?" : "Reset current session?";
+    const desc = isRealTrading
+      ? "This will clear your session stats and start fresh.<br>Your real trade history and past sessions will not be deleted."
       : "This will clear current session stats and start a fresh run.<br>Your trade history and past sessions will not be deleted.";
 
     overlay.innerHTML = `
@@ -460,10 +461,10 @@ export const PnlHud = {
     overlay.querySelector(".cancel").onclick = () => overlay.remove();
     overlay.querySelector(".confirm").onclick = async () => {
       // Use the new session management (mode-aware)
-      await Store.startNewSession({ shadow: isShadow });
+      await Store.startNewSession({ shadow: isRealTrading });
 
       // Clear positions for the active mode
-      if (isShadow) {
+      if (isRealTrading) {
         Store.state.shadowPositions = {};
       } else {
         Store.state.positions = {};

@@ -23,8 +23,8 @@ export const ShadowTradeIngestion = {
     if (this.initialized) return;
     this.initialized = true;
 
-    const isShadow = Store.isShadowMode();
-    console.log(`[ShadowIngestion] Mode: ${isShadow ? "SHADOW" : Store.state?.settings?.tradingMode || "unknown"}`);
+    const isReal = Store.isRealTradingMode();
+    console.log(`[ShadowIngestion] Mode: ${isReal ? (Store.isShadowMode() ? "SHADOW" : "ANALYSIS") : Store.state?.settings?.tradingMode || "unknown"}`);
 
     // Listen for bridge-level swap detection and wallet hook signatures
     window.addEventListener("message", (e) => {
@@ -206,7 +206,7 @@ export const ShadowTradeIngestion = {
 
   async proactiveFetchBalance() {
     if (this.walletBalanceFetched) return;
-    if (!Store.isShadowMode()) return;
+    if (!Store.isRealTradingMode()) return;
 
     const session = Store.state?.shadowSession;
     if (!session || session.balance > 0) return;
@@ -248,8 +248,8 @@ export const ShadowTradeIngestion = {
   // --- Trade Processing ---
 
   async handleDetectedTrade(data) {
-    if (!Store.isShadowMode()) {
-      console.log(`[ShadowIngestion] Trade ignored — not in shadow mode (current: ${Store.state?.settings?.tradingMode || "?"})`);
+    if (!Store.isRealTradingMode()) {
+      console.log(`[ShadowIngestion] Trade ignored — not in real trading mode (current: ${Store.state?.settings?.tradingMode || "?"})`);
       return;
     }
 
@@ -384,8 +384,8 @@ export const ShadowTradeIngestion = {
       priceSource: "shadow_swap",
       strategy: "Real Trade",
       signature,
-      mode: "shadow",
-      tradeSource: "REAL_SHADOW",
+      mode: Store.state?.settings?.tradingMode || "shadow",
+      tradeSource: Store.state?.settings?.tradingMode === "analysis" ? "REAL_ANALYSIS" : "REAL_SHADOW",
     });
 
     // Deduct from session balance
@@ -479,8 +479,8 @@ export const ShadowTradeIngestion = {
       strategy: "Real Trade",
       signature,
       realizedPnlSol: pnlEventSol,
-      mode: "shadow",
-      tradeSource: "REAL_SHADOW",
+      mode: Store.state?.settings?.tradingMode || "shadow",
+      tradeSource: Store.state?.settings?.tradingMode === "analysis" ? "REAL_ANALYSIS" : "REAL_SHADOW",
     });
 
     // Update session

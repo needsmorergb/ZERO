@@ -160,28 +160,33 @@ export const Store = {
     return this.state?.settings?.tradingMode === "shadow";
   },
 
+  isRealTradingMode() {
+    const m = this.state?.settings?.tradingMode;
+    return m === "shadow" || m === "analysis";
+  },
+
   getActiveSession() {
-    return this.isShadowMode() ? this.state.shadowSession : this.state.session;
+    return this.isRealTradingMode() ? this.state.shadowSession : this.state.session;
   },
 
   getActivePositions() {
-    return this.isShadowMode() ? this.state.shadowPositions : this.state.positions;
+    return this.isRealTradingMode() ? this.state.shadowPositions : this.state.positions;
   },
 
   getActiveTrades() {
-    return this.isShadowMode() ? this.state.shadowTrades : this.state.trades;
+    return this.isRealTradingMode() ? this.state.shadowTrades : this.state.trades;
   },
 
   getActiveBehavior() {
-    return this.isShadowMode() ? this.state.shadowBehavior : this.state.behavior;
+    return this.isRealTradingMode() ? this.state.shadowBehavior : this.state.behavior;
   },
 
   getActiveEventLog() {
-    return this.isShadowMode() ? this.state.shadowEventLog : this.state.eventLog;
+    return this.isRealTradingMode() ? this.state.shadowEventLog : this.state.eventLog;
   },
 
   getActiveSessionHistory() {
-    return this.isShadowMode() ? this.state.shadowSessionHistory : this.state.sessionHistory;
+    return this.isRealTradingMode() ? this.state.shadowSessionHistory : this.state.sessionHistory;
   },
 
   async load() {
@@ -400,9 +405,9 @@ export const Store = {
         this.state.session.startTime = Date.now();
       }
 
-      // Ensure shadow session has an ID when in shadow mode
+      // Ensure shadow session has an ID when in real trading mode (shadow or analysis)
       if (
-        this.state.settings.tradingMode === "shadow" &&
+        (this.state.settings.tradingMode === "shadow" || this.state.settings.tradingMode === "analysis") &&
         this.state.shadowSession &&
         !this.state.shadowSession.id
       ) {
@@ -419,7 +424,7 @@ export const Store = {
   // Start a new session (archive current if it has trades)
   // options.shadow: force shadow session reset (otherwise uses current mode)
   async startNewSession(options = {}) {
-    const isShadow = options.shadow !== undefined ? options.shadow : this.isShadowMode();
+    const isShadow = options.shadow !== undefined ? options.shadow : this.isRealTradingMode();
     const sessionKey = isShadow ? "shadowSession" : "session";
     const historyKey = isShadow ? "shadowSessionHistory" : "sessionHistory";
 
@@ -429,7 +434,7 @@ export const Store = {
     if (currentSession && currentSession.trades && currentSession.trades.length > 0) {
       currentSession.endTime = Date.now();
       currentSession.status = "completed";
-      currentSession.mode = isShadow ? "shadow" : "paper";
+      currentSession.mode = isShadow ? (this.state.settings.tradingMode || "shadow") : "paper";
 
       // Snapshot the event log for session replay
       const eventLogKey = isShadow ? "shadowEventLog" : "eventLog";
