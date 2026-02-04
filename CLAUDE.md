@@ -2,7 +2,7 @@
 
 ## Project Identity
 
-ZERO is a Chrome extension for zero-risk paper trading on Solana (Axiom + Padre platforms). It provides paper trading overlays, shadow mode for observing real trades, and market context with trust scoring powered by X/Twitter enrichment.
+ZERO is a Chrome extension for zero-risk paper trading on Solana (Axiom + Padre platforms). It provides paper trading overlays, analysis/shadow modes for observing real trades with full PnL, and market context with trust scoring powered by X/Twitter enrichment.
 
 ## Architecture
 
@@ -61,32 +61,43 @@ Authority signals (mint/freeze/metadata) are extracted from the existing `getAss
 - Same pattern for `freezeAuthority`
 - `metadataMutable === false` → immutable, `true` → mutable, `null` → unknown
 
-## Shadow Mode PnL Tracking
+## Real Trading PnL (Analysis & Shadow Modes)
 
-Shadow Mode tracks real buys/sells with full PnL, completely separate from Paper Mode. Both modes share the same features (stats, insights, trades, Share X) but operate on independent data.
+Both Analysis Mode (free) and Shadow Mode (elite) track real buys/sells with full PnL, completely separate from Paper Mode. They share the same `shadow*` state keys — the "shadow" prefix is historical; these are really "real-trading observation" state. Shadow adds elite behavioral analytics and NarrativeTrust on top of Analysis.
+
+| Mode | Tier | Real Trade PnL | Behavioral Analytics | NarrativeTrust |
+|------|------|----------------|---------------------|----------------|
+| Paper | Free | No (simulated) | Basic | No |
+| Analysis | Free | Yes | Recorded but not displayed | No |
+| Shadow | Elite | Yes | Full display | Yes |
 
 ### State Separation
 
-Parallel shadow state objects live alongside paper state in `store.js`:
+Parallel real-trading state objects live alongside paper state in `store.js`:
 - `shadowSession` / `session` — active session (balance, trades, realized PnL)
 - `shadowTrades` / `trades` — trade fill records
 - `shadowPositions` / `positions` — open positions with WAC cost basis
 - `shadowBehavior` / `behavior` — behavioral analytics state
 - `shadowEventLog` / `eventLog` — session event timeline
-- `shadowSessionHistory` / `sessionHistory` — archived sessions (shadow is uncapped)
+- `shadowSessionHistory` / `sessionHistory` — archived sessions (real trading is uncapped)
+
+Both Analysis and Shadow use the `shadow*` keys. Switching between them preserves data (same wallet, same trades).
 
 ### Accessor Pattern
 
 All UI and analytics code uses mode-aware accessors instead of reading state directly:
-- `Store.isShadowMode()` — checks `settings.tradingMode === 'shadow'`
-- `Store.getActiveSession()` — returns shadow or paper session
+- `Store.isShadowMode()` — checks `settings.tradingMode === 'shadow'` (use for Shadow-only UI: NarrativeTrust, Shadow HUD badge)
+- `Store.isRealTradingMode()` — returns `true` for both `'shadow'` and `'analysis'` (use for **all data routing**: state accessors, trade ingestion gates, PnL calculator, start SOL input)
+- `Store.getActiveSession()` — returns real-trading or paper session (uses `isRealTradingMode()`)
 - `Store.getActivePositions()` / `getActiveTrades()` / `getActiveBehavior()` / `getActiveEventLog()` / `getActiveSessionHistory()`
 
-Analytics uses an internal `_resolve(state)` helper that returns `{ session, trades, positions, behavior, eventLog }` routed by mode.
+**Critical rule**: When adding new mode checks, use `isRealTradingMode()` for data routing and `isShadowMode()` only for Shadow-exclusive features (NarrativeTrust init, shadow HUD). Never gate trade ingestion or PnL on `isShadowMode()` — Analysis mode must also process real trades.
 
-### Shadow Trade Ingestion (`src/modules/core/shadow-trade-ingestion.js`)
+Analytics uses an internal `_resolve(state)` helper that returns `{ session, trades, positions, behavior, eventLog, isRealTrading }` routed by mode.
 
-Listens for `SHADOW_TRADE_DETECTED` messages from bridge scripts and records real trades into shadow state using identical WAC PnL math as `OrderExecution`:
+### Trade Ingestion (`src/modules/core/shadow-trade-ingestion.js`)
+
+Listens for `SHADOW_TRADE_DETECTED` messages from bridge scripts and records real trades into shadow state using identical WAC PnL math as `OrderExecution`. Gates on `Store.isRealTradingMode()` — processes trades in both Analysis and Shadow modes:
 - BUY: `buyUsd = solAmount * solUsd`, `qtyDelta = buyUsd / priceUsd`, update WAC cost basis
 - SELL: `costRemovedUsd = qtyDelta * avgCostUsdPerToken`, `realizedPnl = proceedsUsd - costRemovedUsd`
 - Deduplicates by transaction signature
@@ -154,10 +165,12 @@ When only a tx signature is available (no quote data), `SHADOW_SWAP_SIGNATURE` i
 - Header-detected trades use synthetic signatures (`hdr-B-{mint}-{ts}`, `hdr-S-{mint}-{ts}`)
 
 ### Key Rules
-- Shadow and Paper PnL use the exact same WAC math — never diverge these
-- Start SOL input is disabled/grayed in Shadow Mode (balance is auto-detected)
-- Shadow session history is uncapped (real traders have fewer sessions)
+- Shadow, Analysis, and Paper PnL all use the exact same WAC math — never diverge these
+- Start SOL input is disabled/grayed in both Analysis and Shadow modes (balance is auto-detected)
+- Real-trading session history is uncapped (real traders have fewer sessions)
 - Always use accessors (`Store.getActiveSession()` etc.) — never read `state.session` directly in UI/analytics code
+- Use `isRealTradingMode()` for data routing, `isShadowMode()` only for Shadow-exclusive UI
+- Trade fills are tagged with `mode: "analysis"` or `mode: "shadow"` and `tradeSource: "REAL_ANALYSIS"` or `"REAL_SHADOW"` for filtering
 - Schema migration v2→v3 initializes shadow fields for existing users
 
 ## Deployment
