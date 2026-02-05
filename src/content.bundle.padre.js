@@ -33,7 +33,7 @@
   var DEV_FORCE_ELITE, EXT_KEY, DEFAULTS, Store;
   var init_store = __esm({
     "src/modules/store.js"() {
-      DEV_FORCE_ELITE = false;
+      DEV_FORCE_ELITE = true;
       EXT_KEY = "sol_paper_trader_v1";
       DEFAULTS = {
         settings: {
@@ -64,22 +64,7 @@
           // Onboarding State
           onboardingSeen: false,
           onboardingVersion: null,
-          onboardingCompletedAt: null,
-          // License / Whop Membership
-          license: {
-            key: null,
-            // Whop license key (mem_xxx or license string)
-            valid: false,
-            // Last known validation result
-            lastVerified: null,
-            // Timestamp (ms) of last successful verification
-            expiresAt: null,
-            // ISO string or null (founders = lifetime)
-            status: "none",
-            // 'none' | 'active' | 'expired' | 'cancelled' | 'error'
-            plan: null
-            // 'monthly' | 'annual' | 'founders'
-          }
+          onboardingCompletedAt: null
         },
         // Session as first-class object
         session: {
@@ -129,8 +114,7 @@
           notes: [],
           hudDocked: false,
           hudPos: { x: 20, y: 400 },
-          narrativeTrustCache: {},
-          walletAddress: null
+          narrativeTrustCache: {}
         },
         behavior: {
           tiltFrequency: 0,
@@ -146,70 +130,11 @@
         eventLog: [],
         // { ts, type, category, message, data }
         // Categories: TRADE, ALERT, DISCIPLINE, SYSTEM, MILESTONE
-        // --- Shadow Mode Session State (separate from paper) ---
-        shadowSession: {
-          id: null,
-          startTime: 0,
-          endTime: null,
-          balance: 0,
-          // Auto-detected from wallet on first trade
-          equity: 0,
-          realized: 0,
-          trades: [],
-          equityHistory: [],
-          winStreak: 0,
-          lossStreak: 0,
-          tradeCount: 0,
-          disciplineScore: 100,
-          activeAlerts: [],
-          status: "active",
-          notes: ""
-        },
-        shadowSessionHistory: [],
-        // Uncapped — real sessions can be long
-        shadowTrades: {},
-        shadowPositions: {},
-        shadowBehavior: {
-          tiltFrequency: 0,
-          panicSells: 0,
-          fomoTrades: 0,
-          sunkCostFrequency: 0,
-          overtradingFrequency: 0,
-          profitNeglectFrequency: 0,
-          strategyDriftFrequency: 0,
-          profile: "Disciplined"
-        },
-        shadowEventLog: [],
-        schemaVersion: 3,
-        version: "1.11.8"
+        schemaVersion: 2,
+        version: "2.0.0"
       };
       Store = {
         state: null,
-        // --- Mode-aware accessors ---
-        isShadowMode() {
-          return this.state?.settings?.tradingMode === "shadow";
-        },
-        getActiveSession() {
-          return this.isShadowMode() ? this.state.shadowSession : this.state.session;
-        },
-        getActivePositions() {
-          return this.isShadowMode() ? this.state.shadowPositions : this.state.positions;
-        },
-        getActiveTrades() {
-          return this.isShadowMode() ? this.state.shadowTrades : this.state.trades;
-        },
-        getActiveBehavior() {
-          return this.isShadowMode() ? this.state.shadowBehavior : this.state.behavior;
-        },
-        getActiveEventLog() {
-          return this.isShadowMode() ? this.state.shadowEventLog : this.state.eventLog;
-        },
-        getActiveSessionHistory() {
-          return this.isShadowMode() ? this.state.shadowSessionHistory : this.state.sessionHistory;
-        },
-        isElite() {
-          return (this.state?.settings?.tier || "free") === "elite";
-        },
         async load() {
           let timeoutId;
           const loadLogic = new Promise((resolve) => {
@@ -242,11 +167,6 @@
                   this.save();
                 } else {
                   this.state = deepMerge(DEFAULTS, saved);
-                  if (this.state.schemaVersion < 3) {
-                    console.log("[ZER\xD8] Migrating storage schema v2 -> v3 (shadow state)");
-                    this.state.schemaVersion = 3;
-                    this.save();
-                  }
                 }
                 this.validateState();
                 resolve(this.state);
@@ -341,21 +261,6 @@
             }
             if (DEV_FORCE_ELITE) {
               this.state.settings.tier = "elite";
-            } else if (this.state.settings.license?.valid && this.state.settings.license?.lastVerified) {
-              const GRACE_MS = 72 * 60 * 60 * 1e3;
-              const elapsed = Date.now() - this.state.settings.license.lastVerified;
-              if (elapsed < GRACE_MS) {
-                this.state.settings.tier = "elite";
-              } else {
-                this.state.settings.tier = "free";
-                this.state.settings.license.valid = false;
-                this.state.settings.license.status = "expired";
-              }
-            } else {
-              this.state.settings.tier = "free";
-            }
-            if (this.state.settings.tier === "elite" && this.state.settings.tradingMode === "analysis") {
-              this.state.settings.tradingMode = "shadow";
             }
             if (this.state.fills) {
               this.state.fills.forEach((f) => {
@@ -377,39 +282,31 @@
               this.state.session.id = this.generateSessionId();
               this.state.session.startTime = Date.now();
             }
-            if (this.state.settings.tradingMode === "shadow" && this.state.shadowSession && !this.state.shadowSession.id) {
-              this.state.shadowSession.id = this.generateSessionId();
-              this.state.shadowSession.startTime = Date.now();
-            }
           }
         },
         generateSessionId() {
           return `session_${Date.now()}_${Math.floor(Math.random() * 1e4)}`;
         },
         // Start a new session (archive current if it has trades)
-        // options.shadow: force shadow session reset (otherwise uses current mode)
-        async startNewSession(options = {}) {
-          const isShadow = options.shadow !== void 0 ? options.shadow : this.isShadowMode();
-          const sessionKey = isShadow ? "shadowSession" : "session";
-          const historyKey = isShadow ? "shadowSessionHistory" : "sessionHistory";
-          const currentSession = this.state[sessionKey];
-          if (currentSession && currentSession.trades && currentSession.trades.length > 0) {
+        async startNewSession() {
+          const currentSession = this.state.session;
+          if (currentSession.trades && currentSession.trades.length > 0) {
             currentSession.endTime = Date.now();
             currentSession.status = "completed";
-            if (!this.state[historyKey])
-              this.state[historyKey] = [];
-            this.state[historyKey].push({ ...currentSession });
-            if (!isShadow && this.state[historyKey].length > 10) {
-              this.state[historyKey] = this.state[historyKey].slice(-10);
+            if (!this.state.sessionHistory)
+              this.state.sessionHistory = [];
+            this.state.sessionHistory.push({ ...currentSession });
+            if (this.state.sessionHistory.length > 10) {
+              this.state.sessionHistory = this.state.sessionHistory.slice(-10);
             }
           }
-          const startBalance = isShadow ? 0 : this.state.settings.startSol || 10;
-          this.state[sessionKey] = {
+          const startSol = this.state.settings.startSol || 10;
+          this.state.session = {
             id: this.generateSessionId(),
             startTime: Date.now(),
             endTime: null,
-            balance: startBalance,
-            equity: startBalance,
+            balance: startSol,
+            equity: startSol,
             realized: 0,
             trades: [],
             equityHistory: [],
@@ -418,44 +315,39 @@
             tradeCount: 0,
             disciplineScore: 100,
             activeAlerts: [],
-            status: "active",
-            notes: ""
+            status: "active"
           };
-          const prefix = isShadow ? "_shadow_milestone_" : "_milestone_";
-          delete this.state[prefix + "2x"];
-          delete this.state[prefix + "3x"];
-          delete this.state[prefix + "5x"];
-          if (!isShadow) {
-            delete this.state._milestone_2x;
-            delete this.state._milestone_3x;
-            delete this.state._milestone_5x;
-          }
+          delete this.state._milestone_2x;
+          delete this.state._milestone_3x;
+          delete this.state._milestone_5x;
           await this.save();
-          return this.state[sessionKey];
+          return this.state.session;
         },
-        // Get current session duration in minutes (mode-aware)
+        // Get current session duration in minutes
+        isElite() {
+          return (this.state?.settings?.tier || "free") === "elite";
+        },
         getSessionDuration() {
-          const session = this.getActiveSession();
+          const session = this.state?.session;
           if (!session || !session.startTime)
             return 0;
           const endTime = session.endTime || Date.now();
           return Math.floor((endTime - session.startTime) / 6e4);
         },
-        // Get session summary (mode-aware)
+        // Get session summary
         getSessionSummary() {
-          const session = this.getActiveSession();
-          const tradesMap = this.getActiveTrades();
+          const session = this.state?.session;
           if (!session)
             return null;
-          const tradeIds = session.trades || [];
-          const sellTrades = tradeIds.map((id) => tradesMap[id]).filter((t) => t && t.side === "SELL");
+          const trades = session.trades || [];
+          const sellTrades = trades.map((id) => this.state.trades[id]).filter((t) => t && t.side === "SELL");
           const wins = sellTrades.filter((t) => (t.realizedPnlSol || 0) > 0).length;
           const losses = sellTrades.filter((t) => (t.realizedPnlSol || 0) < 0).length;
           const winRate = sellTrades.length > 0 ? (wins / sellTrades.length * 100).toFixed(1) : 0;
           return {
             id: session.id,
             duration: this.getSessionDuration(),
-            tradeCount: tradeIds.length,
+            tradeCount: trades.length,
             wins,
             losses,
             winRate,
@@ -8459,6 +8351,7 @@ canvas#equity-canvas {
       overlay.className = "confirm-modal-overlay zero-settings-overlay";
       const currentMode = Store.state.settings.tradingMode || "paper";
       const isElite = FeatureManager.isElite(Store.state);
+      const displayMode = currentMode === "paper" && isElite ? "paper-elite" : currentMode;
       const diagState = DiagnosticsStore.state || {};
       const isAutoSend = diagState.settings?.privacy?.autoSendDiagnostics || false;
       const lastUpload = diagState.settings?.diagnostics?.lastUploadedEventTs || 0;
@@ -8475,31 +8368,8 @@ canvas#equity-canvas {
                 <div class="settings-section-title">Trading Mode</div>
 
                 <div class="setting-row" style="flex-direction:column; align-items:stretch; gap:8px;">
-                    ${isElite ? `
-                    <label class="mode-option ${currentMode === "paper" ? "active" : ""}" data-mode="paper" style="display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; cursor:pointer; border:1px solid ${currentMode === "paper" ? "rgba(20,184,166,0.3)" : "rgba(255,255,255,0.06)"}; background:${currentMode === "paper" ? "rgba(20,184,166,0.06)" : "transparent"};">
-                        <input type="radio" name="tradingMode" value="paper" ${currentMode === "paper" ? "checked" : ""} style="accent-color:#14b8a6;">
-                        <div style="flex:1;">
-                            <div style="font-size:12px; font-weight:600; color:#f8fafc; display:flex; align-items:center; gap:6px;">
-                                ${ICONS.MODE_PAPER} Paper Mode
-                                <span style="font-size:9px; padding:1px 6px; border-radius:3px; background:rgba(20,184,166,0.12); color:#14b8a6; font-weight:700;">FREE</span>
-                            </div>
-                            <div style="font-size:11px; color:#64748b; margin-top:3px;">Simulated trades. BUY / SELL HUD visible. Elite analytics active.</div>
-                        </div>
-                    </label>
-
-                    <label class="mode-option ${currentMode === "shadow" ? "active" : ""}" data-mode="shadow" style="display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; cursor:pointer; border:1px solid ${currentMode === "shadow" ? "rgba(139,92,246,0.3)" : "rgba(255,255,255,0.06)"}; background:${currentMode === "shadow" ? "rgba(139,92,246,0.06)" : "transparent"};">
-                        <input type="radio" name="tradingMode" value="shadow" ${currentMode === "shadow" ? "checked" : ""} style="accent-color:#a78bfa;">
-                        <div style="flex:1;">
-                            <div style="font-size:12px; font-weight:600; color:#f8fafc; display:flex; align-items:center; gap:6px;">
-                                ${ICONS.MODE_SHADOW} Shadow Mode
-                                <span style="font-size:9px; padding:1px 6px; border-radius:3px; background:rgba(139,92,246,0.12); color:#a78bfa; font-weight:700;">ELITE</span>
-                            </div>
-                            <div style="font-size:11px; color:#64748b; margin-top:3px;">Observes real trades with elite behavioral analysis.</div>
-                        </div>
-                    </label>
-                    ` : `
-                    <label class="mode-option ${currentMode === "paper" ? "active" : ""}" data-mode="paper" style="display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; cursor:pointer; border:1px solid ${currentMode === "paper" ? "rgba(20,184,166,0.3)" : "rgba(255,255,255,0.06)"}; background:${currentMode === "paper" ? "rgba(20,184,166,0.06)" : "transparent"};">
-                        <input type="radio" name="tradingMode" value="paper" ${currentMode === "paper" ? "checked" : ""} style="accent-color:#14b8a6;">
+                    <label class="mode-option ${displayMode === "paper" ? "active" : ""}" data-mode="paper" style="display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; cursor:pointer; border:1px solid ${displayMode === "paper" ? "rgba(20,184,166,0.3)" : "rgba(255,255,255,0.06)"}; background:${displayMode === "paper" ? "rgba(20,184,166,0.06)" : "transparent"};">
+                        <input type="radio" name="tradingMode" value="paper" ${displayMode === "paper" ? "checked" : ""} style="accent-color:#14b8a6;">
                         <div style="flex:1;">
                             <div style="font-size:12px; font-weight:600; color:#f8fafc; display:flex; align-items:center; gap:6px;">
                                 ${ICONS.MODE_PAPER} Paper Mode
@@ -8509,8 +8379,8 @@ canvas#equity-canvas {
                         </div>
                     </label>
 
-                    <label class="mode-option ${currentMode === "analysis" ? "active" : ""}" data-mode="analysis" style="display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; cursor:pointer; border:1px solid ${currentMode === "analysis" ? "rgba(96,165,250,0.3)" : "rgba(255,255,255,0.06)"}; background:${currentMode === "analysis" ? "rgba(96,165,250,0.06)" : "transparent"};">
-                        <input type="radio" name="tradingMode" value="analysis" ${currentMode === "analysis" ? "checked" : ""} style="accent-color:#60a5fa;">
+                    <label class="mode-option ${displayMode === "analysis" ? "active" : ""}" data-mode="analysis" style="display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; cursor:pointer; border:1px solid ${displayMode === "analysis" ? "rgba(96,165,250,0.3)" : "rgba(255,255,255,0.06)"}; background:${displayMode === "analysis" ? "rgba(96,165,250,0.06)" : "transparent"};">
+                        <input type="radio" name="tradingMode" value="analysis" ${displayMode === "analysis" ? "checked" : ""} style="accent-color:#60a5fa;">
                         <div style="flex:1;">
                             <div style="font-size:12px; font-weight:600; color:#f8fafc; display:flex; align-items:center; gap:6px;">
                                 ${ICONS.MODE_ANALYSIS} Analysis Mode
@@ -8519,7 +8389,30 @@ canvas#equity-canvas {
                             <div style="font-size:11px; color:#64748b; margin-top:3px;">Observes real trades only. No BUY / SELL HUD.</div>
                         </div>
                     </label>
-                    `}
+
+                    <label class="mode-option ${displayMode === "paper-elite" ? "active" : ""}" data-mode="paper-elite" style="display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; cursor:pointer; border:1px solid ${displayMode === "paper-elite" ? "rgba(139,92,246,0.3)" : "rgba(255,255,255,0.06)"}; background:${displayMode === "paper-elite" ? "rgba(139,92,246,0.06)" : "transparent"}; ${!isElite ? "opacity:0.5;" : ""}">
+                        <input type="radio" name="tradingMode" value="paper-elite" ${displayMode === "paper-elite" ? "checked" : ""} ${!isElite ? "disabled" : ""} style="accent-color:#a78bfa;">
+                        <div style="flex:1;">
+                            <div style="font-size:12px; font-weight:600; color:#f8fafc; display:flex; align-items:center; gap:6px;">
+                                ${ICONS.MODE_PAPER} Paper Mode
+                                <span style="font-size:9px; padding:1px 6px; border-radius:3px; background:rgba(139,92,246,0.12); color:#a78bfa; font-weight:700;">ELITE</span>
+                                ${!isElite ? '<span style="font-size:10px; opacity:0.6;">&#128274;</span>' : ""}
+                            </div>
+                            <div style="font-size:11px; color:#64748b; margin-top:3px;">Simulated trades with elite analytics \u2014 discipline scoring, tilt detection, AI debrief, and cross-session trader profiling.</div>
+                        </div>
+                    </label>
+
+                    <label class="mode-option ${displayMode === "shadow" ? "active" : ""}" data-mode="shadow" style="display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; cursor:pointer; border:1px solid ${displayMode === "shadow" ? "rgba(139,92,246,0.3)" : "rgba(255,255,255,0.06)"}; background:${displayMode === "shadow" ? "rgba(139,92,246,0.06)" : "transparent"}; ${!isElite ? "opacity:0.5;" : ""}">
+                        <input type="radio" name="tradingMode" value="shadow" ${displayMode === "shadow" ? "checked" : ""} ${!isElite ? "disabled" : ""} style="accent-color:#a78bfa;">
+                        <div style="flex:1;">
+                            <div style="font-size:12px; font-weight:600; color:#f8fafc; display:flex; align-items:center; gap:6px;">
+                                ${ICONS.MODE_SHADOW} Shadow Mode
+                                <span style="font-size:9px; padding:1px 6px; border-radius:3px; background:rgba(139,92,246,0.12); color:#a78bfa; font-weight:700;">ELITE</span>
+                                ${!isElite ? '<span style="font-size:10px; opacity:0.6;">&#128274;</span>' : ""}
+                            </div>
+                            <div style="font-size:11px; color:#64748b; margin-top:3px;">Analyze real trades with elite behavioral analysis \u2014 discipline scoring, tilt detection, AI debrief, and trader profiling.</div>
+                        </div>
+                    </label>
                 </div>
 
                 <div class="setting-row">
@@ -8599,45 +8492,22 @@ canvas#equity-canvas {
                     </span>
                 </div>
 
-                ${FeatureManager.isElite(Store.state) ? (() => {
-        const ls = License.getStatus();
-        const planLabel = License.getPlanLabel();
-        const hasLicense = ls.status !== "none" && ls.maskedKey;
-        return `
+                ${FeatureManager.isElite(Store.state) ? `
                 <div style="padding:12px 16px; background:rgba(16,185,129,0.05); border:1px solid rgba(16,185,129,0.15); border-radius:10px; margin-bottom:12px;">
-                    <div style="font-size:12px; font-weight:600; color:#10b981; display:flex; align-items:center; gap:8px;">
-                        Elite Active
-                        ${planLabel ? `<span style="font-size:9px; padding:1px 6px; border-radius:3px; background:rgba(139,92,246,0.12); color:#a78bfa; font-weight:700;">${planLabel}</span>` : ""}
-                    </div>
-                    ${hasLicense ? `
-                    <div style="font-size:11px; color:#64748b; margin-top:6px; display:flex; flex-direction:column; gap:3px;">
-                        <div>License: <span style="color:#94a3b8; font-family:monospace;">${ls.maskedKey}</span></div>
-                        ${ls.lastVerified ? `<div>Verified: ${new Date(ls.lastVerified).toLocaleDateString()}</div>` : ""}
-                        ${ls.expiresAt ? `<div>Renews: ${new Date(ls.expiresAt).toLocaleDateString()}</div>` : ""}
-                        ${ls.plan === "founders" ? `<div style="color:#a78bfa;">Lifetime access</div>` : ""}
-                    </div>
-                    <div style="display:flex; gap:8px; margin-top:10px;">
-                        <button data-setting-act="manageMembership" class="settings-action-btn" style="font-size:11px; padding:5px 10px;">Manage on Whop</button>
-                        <button data-setting-act="deactivateLicense" class="settings-action-btn danger" style="font-size:11px; padding:5px 10px;">Deactivate</button>
-                    </div>
-                    ` : `
+                    <div style="font-size:12px; font-weight:600; color:#10b981;">Elite Active</div>
                     <div style="font-size:11px; color:#64748b; margin-top:4px;">All advanced insights and behavioral analytics are unlocked.</div>
-                    `}
-                </div>`;
-      })() : `
+                </div>
+                ` : `
                 <div style="font-size:11px; color:#64748b; margin-bottom:12px; line-height:1.5;">
                     Unlock cross-session context and behavioral analytics.
                 </div>
                 <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:16px;">
                     ${TEASED_FEATURES.ELITE.map((f) => renderEliteLockedCard(f.name, f.desc)).join("")}
                 </div>
-                <button data-setting-act="showUpgradeModal" style="width:100%; background:linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color:white; border:none; padding:10px 16px; border-radius:8px; font-weight:700; font-size:13px; cursor:pointer; margin-bottom:8px;">
-                    Upgrade to Elite
-                </button>
                 `}
 
                 <div style="margin-top:20px; text-align:center; font-size:11px; color:#64748b;">
-                    ZER\xD8 v${Store.state.version || "1.11.6"}
+                    ZER\xD8 v${Store.state.version || "2.0.0"}
                 </div>
             </div>
         `;
@@ -8656,22 +8526,31 @@ canvas#equity-canvas {
           close();
       });
       const modeRadios = overlay.querySelectorAll('input[name="tradingMode"]');
+      const isEliteNow = FeatureManager.isElite(Store.state);
       modeRadios.forEach((radio) => {
         radio.onchange = async (e) => {
-          const newMode = e.target.value;
-          const success = await ModeManager.setMode(newMode);
+          const radioValue = e.target.value;
+          const actualMode = radioValue === "paper-elite" ? "paper" : radioValue;
+          if ((radioValue === "paper-elite" || radioValue === "shadow") && !isEliteNow) {
+            const currentDisplay = ModeManager.getMode() === "paper" && isEliteNow ? "paper-elite" : ModeManager.getMode();
+            const currentRadio = overlay.querySelector(`input[name="tradingMode"][value="${currentDisplay}"]`);
+            if (currentRadio)
+              currentRadio.checked = true;
+            this._showComingSoonModal(overlay, "SHADOW_HUD");
+            return;
+          }
+          const success = await ModeManager.setMode(actualMode);
           if (!success) {
-            const currentRadio = overlay.querySelector(
-              `input[name="tradingMode"][value="${ModeManager.getMode()}"]`
-            );
+            const currentDisplay = ModeManager.getMode() === "paper" && isEliteNow ? "paper-elite" : ModeManager.getMode();
+            const currentRadio = overlay.querySelector(`input[name="tradingMode"][value="${currentDisplay}"]`);
             if (currentRadio)
               currentRadio.checked = true;
             return;
           }
           overlay.querySelectorAll(".mode-option").forEach((opt) => {
             const mode = opt.getAttribute("data-mode");
-            const isActive = mode === newMode;
-            const colors = { paper: "20,184,166", analysis: "96,165,250", shadow: "139,92,246" };
+            const isActive = mode === radioValue;
+            const colors = { paper: "20,184,166", analysis: "96,165,250", "paper-elite": "139,92,246", shadow: "139,92,246" };
             const c = colors[mode] || colors.paper;
             opt.style.borderColor = isActive ? `rgba(${c},0.3)` : "rgba(255,255,255,0.06)";
             opt.style.background = isActive ? `rgba(${c},0.06)` : "transparent";
@@ -8684,16 +8563,12 @@ canvas#equity-canvas {
       if (autoSendToggle) {
         autoSendToggle.onchange = (e) => {
           if (e.target.checked) {
-            this._showConsentModal(
-              overlay,
-              () => {
-                DiagnosticsStore.enableAutoSend();
-                this._refreshDiagStatus(overlay, true);
-              },
-              () => {
-                e.target.checked = false;
-              }
-            );
+            this._showConsentModal(overlay, () => {
+              DiagnosticsStore.enableAutoSend();
+              this._refreshDiagStatus(overlay, true);
+            }, () => {
+              e.target.checked = false;
+            });
           } else {
             DiagnosticsStore.disableAutoSend();
             this._refreshDiagStatus(overlay, false);
@@ -8724,16 +8599,6 @@ canvas#equity-canvas {
         }
         if (act === "deleteLocal") {
           this._showDeleteConfirm(overlay);
-        }
-        if (act === "showUpgradeModal") {
-          overlay.remove();
-          Paywall.showUpgradeModal();
-        }
-        if (act === "manageMembership") {
-          window.open("https://whop.com/orders/", "_blank");
-        }
-        if (act === "deactivateLicense") {
-          this._showDeactivateConfirm(overlay);
         }
       });
     },
@@ -8822,29 +8687,11 @@ canvas#equity-canvas {
         clientId: "<redacted>",
         createdAt: Date.now(),
         schemaVersion: 3,
-        extensionVersion: Store.state.version || "1.11.6",
+        extensionVersion: Store.state.version || "2.0.0",
         eventsDelta: [
-          {
-            eventId: "evt_sample1",
-            ts: Date.now() - 6e4,
-            type: "SESSION_STARTED",
-            platform: "AXIOM",
-            payload: {}
-          },
-          {
-            eventId: "evt_sample2",
-            ts: Date.now() - 3e4,
-            type: "TRADE_OPENED",
-            platform: "AXIOM",
-            payload: { side: "BUY", symbol: "TOKEN" }
-          },
-          {
-            eventId: "evt_sample3",
-            ts: Date.now(),
-            type: "TRADE_CLOSED",
-            platform: "AXIOM",
-            payload: { side: "SELL", pnl: 0.05 }
-          }
+          { eventId: "evt_sample1", ts: Date.now() - 6e4, type: "SESSION_STARTED", platform: "AXIOM", payload: {} },
+          { eventId: "evt_sample2", ts: Date.now() - 3e4, type: "TRADE_OPENED", platform: "AXIOM", payload: { side: "BUY", symbol: "TOKEN" } },
+          { eventId: "evt_sample3", ts: Date.now(), type: "TRADE_CLOSED", platform: "AXIOM", payload: { side: "SELL", pnl: 0.05 } }
         ]
       };
       const modal = document.createElement("div");
@@ -8888,33 +8735,6 @@ canvas#equity-canvas {
       modal.querySelector(".confirm").onclick = async () => {
         await DiagnosticsStore.clearAllData();
         modal.remove();
-      };
-      modal.addEventListener("click", (e) => {
-        if (e.target === modal)
-          modal.remove();
-      });
-    },
-    _showDeactivateConfirm(parent) {
-      const modal = document.createElement("div");
-      modal.className = "confirm-modal-overlay";
-      modal.style.zIndex = "2147483648";
-      modal.innerHTML = `
-            <div class="confirm-modal">
-                <h3>Deactivate Elite?</h3>
-                <p>This will remove your license key from this browser and revert to the Free tier. You can re-activate anytime with your license key.</p>
-                <div class="confirm-modal-buttons">
-                    <button class="confirm-modal-btn cancel">Cancel</button>
-                    <button class="confirm-modal-btn confirm">Deactivate</button>
-                </div>
-            </div>
-        `;
-      parent.appendChild(modal);
-      modal.querySelector(".cancel").onclick = () => modal.remove();
-      modal.querySelector(".confirm").onclick = async () => {
-        await License.deactivate();
-        modal.remove();
-        parent.remove();
-        this.show();
       };
       modal.addEventListener("click", (e) => {
         if (e.target === modal)
@@ -9023,20 +8843,12 @@ canvas#equity-canvas {
       this.bindPnlDrag(root, makeDraggable);
       const inp = root.querySelector(".startSolInput");
       if (inp) {
-        if (Store.isShadowMode()) {
-          inp.disabled = true;
-          inp.style.opacity = "0.4";
-          inp.placeholder = "Auto";
-        }
         inp.addEventListener("change", async () => {
-          if (Store.isShadowMode())
-            return;
           const v = parseFloat(inp.value);
           if (v > 0) {
-            const session = Store.getActiveSession();
-            if ((session.trades || []).length === 0) {
-              session.balance = v;
-              session.equity = v;
+            if ((Store.state.session.trades || []).length === 0) {
+              Store.state.session.balance = v;
+              Store.state.session.equity = v;
             }
             Store.state.settings.startSol = v;
             await Store.save();
@@ -9049,24 +8861,25 @@ canvas#equity-canvas {
       const header = root.querySelector(".header");
       if (!header || !makeDraggable)
         return;
-      makeDraggable(
-        header,
-        (dx, dy) => {
-          if (Store.state.settings.pnlDocked)
-            return;
-          const s = Store.state.settings;
-          s.pnlPos.x = clamp(s.pnlPos.x + dx, 0, window.innerWidth - 40);
-          s.pnlPos.y = clamp(s.pnlPos.y + dy, 34, window.innerHeight - 40);
-          root.style.left = px(s.pnlPos.x);
-          root.style.top = px(s.pnlPos.y);
-        },
-        async () => {
-          if (!Store.state.settings.pnlDocked)
-            await Store.save();
-        }
-      );
+      makeDraggable(header, (dx, dy) => {
+        if (Store.state.settings.pnlDocked)
+          return;
+        const s = Store.state.settings;
+        s.pnlPos.x = clamp(s.pnlPos.x + dx, 0, window.innerWidth - 40);
+        s.pnlPos.y = clamp(s.pnlPos.y + dy, 34, window.innerHeight - 40);
+        root.style.left = px(s.pnlPos.x);
+        root.style.top = px(s.pnlPos.y);
+      }, async () => {
+        if (!Store.state.settings.pnlDocked)
+          await Store.save();
+      });
     },
     bindPnlEvents(root) {
+      root.addEventListener("keydown", (e) => {
+        if (e.target.matches("input, select, textarea")) {
+          e.stopPropagation();
+        }
+      });
       root.addEventListener("click", async (e) => {
         const t = e.target;
         if (t.matches("input, label"))
@@ -9155,36 +8968,23 @@ canvas#equity-canvas {
         root.style.top = "";
       }
       const solUsd = Trading.getSolPrice();
-      const isShadow = Store.isShadowMode();
-      const session = Store.getActiveSession();
-      const positions = Store.getActivePositions();
       const currentToken = TokenDetector.getCurrentToken();
       const unrealized = Trading.getUnrealizedPnl(s, currentToken.mint);
       const inp = root.querySelector(".startSolInput");
-      if (isShadow) {
-        inp.disabled = true;
-        inp.style.opacity = "0.4";
-        inp.placeholder = "Auto";
-        inp.value = session.balance > 0 ? Trading.fmtSol(session.balance) : "Auto";
-      } else {
-        inp.disabled = false;
-        inp.style.opacity = "";
-        inp.placeholder = "";
-        if (document.activeElement !== inp)
-          inp.value = s.settings.startSol;
-      }
-      root.querySelector('[data-k="balance"]').textContent = `${Trading.fmtSol(session.balance)} SOL`;
+      if (document.activeElement !== inp)
+        inp.value = s.settings.startSol;
+      root.querySelector('[data-k="balance"]').textContent = `${Trading.fmtSol(s.session.balance)} SOL`;
       const currentMC = Market.marketCap || 0;
       let unrealizedPct = 0;
-      for (const p of Object.values(positions || {})) {
+      for (const p of Object.values(s.positions || {})) {
         if (p && p.qtyTokens > 0 && p.entryMarketCapUsdReference > 0 && currentMC > 0) {
           unrealizedPct = (currentMC / p.entryMarketCapUsdReference - 1) * 100;
           break;
         }
       }
       if (unrealizedPct === 0 && unrealized !== 0) {
-        const posArr = Object.values(positions || {});
-        const totalInvested = posArr.reduce((sum, pos) => sum + (pos.totalSolSpent || 0), 0);
+        const positions = Object.values(s.positions || {});
+        const totalInvested = positions.reduce((sum, pos) => sum + (pos.totalSolSpent || 0), 0);
         unrealizedPct = totalInvested > 0 ? unrealized / totalInvested * 100 : 0;
       }
       const tokenValueEl = root.querySelector('[data-k="tokenValue"]');
@@ -9201,11 +9001,9 @@ canvas#equity-canvas {
         }
         tokenValueEl.style.color = unrealized >= 0 ? "#10b981" : "#ef4444";
       }
-      const realized = session.realized || 0;
+      const realized = s.session.realized || 0;
       const totalPnl = realized + unrealized;
-      const posArr2 = Object.values(positions || {});
-      const totalInvestedSol = posArr2.reduce((sum, pos) => sum + (pos.totalSolSpent || 0), 0);
-      const startBalance = isShadow ? totalInvestedSol || session.balance || 1 : s.settings.startSol || 10;
+      const startBalance = s.settings.startSol || 10;
       const sessionPct = totalPnl / startBalance * 100;
       const pnlEl = root.querySelector('[data-k="pnl"]');
       const pnlUnitEl = root.querySelector('[data-k="pnlUnit"]');
@@ -9222,8 +9020,8 @@ canvas#equity-canvas {
         pnlEl.style.color = totalPnl >= 0 ? "#10b981" : "#ef4444";
       }
       const streakEl = root.querySelector('[data-k="streak"]');
-      const winStreak = session.winStreak || 0;
-      const lossStreak = session.lossStreak || 0;
+      const winStreak = s.session.winStreak || 0;
+      const lossStreak = s.session.lossStreak || 0;
       if (lossStreak > 0) {
         streakEl.textContent = "-" + lossStreak;
         streakEl.parentElement.className = "stat streak loss";
@@ -9246,15 +9044,12 @@ canvas#equity-canvas {
     showResetModal() {
       const overlay = document.createElement("div");
       overlay.className = "confirm-modal-overlay";
-      const isShadow = Store.isShadowMode();
       const duration = Store.getSessionDuration();
       const summary = Store.getSessionSummary();
-      const title = isShadow ? "Reset Shadow session?" : "Reset current session?";
-      const desc = isShadow ? "This will clear your shadow session stats and start fresh.<br>Your real trade history and past sessions will not be deleted." : "This will clear current session stats and start a fresh run.<br>Your trade history and past sessions will not be deleted.";
       overlay.innerHTML = `
             <div class="confirm-modal">
-                <h3>${title}</h3>
-                <p>${desc}</p>
+                <h3>Reset current session?</h3>
+                <p>This will clear current session stats and start a fresh run.<br>Your trade history and past sessions will not be deleted.</p>
                 ${summary && summary.tradeCount > 0 ? `
                     <div style="background:rgba(20,184,166,0.1); border:1px solid rgba(20,184,166,0.2); border-radius:8px; padding:10px; margin:12px 0; font-size:11px;">
                         <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
@@ -9284,12 +9079,8 @@ canvas#equity-canvas {
       OverlayManager.getContainer().appendChild(overlay);
       overlay.querySelector(".cancel").onclick = () => overlay.remove();
       overlay.querySelector(".confirm").onclick = async () => {
-        await Store.startNewSession({ shadow: isShadow });
-        if (isShadow) {
-          Store.state.shadowPositions = {};
-        } else {
-          Store.state.positions = {};
-        }
+        await Store.startNewSession();
+        Store.state.positions = {};
         await Store.save();
         window.postMessage({ __paper: true, type: "PAPER_CLEAR_MARKERS" }, "*");
         if (window.ZeroHUD && window.ZeroHUD.updateAll) {
@@ -9325,10 +9116,8 @@ canvas#equity-canvas {
       SettingsPanel.show();
     },
     updateTradeList(container) {
-      const session = Store.getActiveSession();
-      const tradesMap = Store.getActiveTrades();
-      const trades = session.trades || [];
-      const tradeObjs = trades.map((id) => tradesMap[id]).filter((t) => t).reverse();
+      const trades = Store.state.session.trades || [];
+      const tradeObjs = trades.map((id) => Store.state.trades[id]).filter((t) => t).reverse();
       let html = "";
       tradeObjs.forEach((t) => {
         const side = t.side === "ENTRY" ? "BUY" : t.side === "EXIT" ? "SELL" : t.side;
@@ -9371,8 +9160,8 @@ canvas#equity-canvas {
       container.innerHTML = html || '<div style="padding:10px;color:#64748b;text-align:center;">No trades yet</div>';
     },
     updatePositionsPanel(root) {
-      const activePositions = Store.getActivePositions();
-      const positions = Object.values(activePositions || {}).filter((p) => p.qtyTokens > 0);
+      const s = Store.state;
+      const positions = Object.values(s.positions || {}).filter((p) => p.qtyTokens > 0);
       const listEl = root.querySelector('[data-k="positionsList"]');
       const toggleIcon = root.querySelector(".positionsToggle");
       const countEl = root.querySelector('[data-k="positionCount"]');
@@ -9397,7 +9186,7 @@ canvas#equity-canvas {
       const solUsd = Trading.getSolPrice();
       const currentToken = TokenDetector.getCurrentToken();
       return positions.map((pos) => {
-        const currentPrice = pos.lastMarkPriceUsd || pos.avgCostUsdPerToken || 0;
+        let currentPrice = pos.lastMarkPriceUsd || pos.avgCostUsdPerToken || 0;
         const currentValueUsd = pos.qtyTokens * currentPrice;
         const unrealizedPnlUsd = currentValueUsd - (pos.costBasisUsd || 0);
         const pnl = unrealizedPnlUsd / solUsd;
@@ -9449,8 +9238,7 @@ canvas#equity-canvas {
       return p.toFixed(leadingZeros + 3);
     },
     async executeQuickSell(mint, pct) {
-      const positions = Store.getActivePositions();
-      const pos = positions[mint];
+      const pos = Store.state.positions[mint];
       if (!pos) {
         console.error("[PnlHud] Position not found for mint:", mint);
         return;
@@ -9460,8 +9248,7 @@ canvas#equity-canvas {
       if (result.success) {
         console.log(`[PnlHud] Quick sell ${pct}% of ${pos.symbol} successful`);
         if (result.trade && result.trade.id) {
-          const activeTrades = Store.getActiveTrades();
-          const fullTrade = activeTrades && activeTrades[result.trade.id] ? activeTrades[result.trade.id] : Store.state.fills ? Store.state.fills.find((f) => f.id === result.trade.id) : null;
+          const fullTrade = Store.state.trades && Store.state.trades[result.trade.id] ? Store.state.trades[result.trade.id] : Store.state.fills ? Store.state.fills.find((f) => f.id === result.trade.id) : null;
           if (fullTrade) {
             const bridgeTrade = {
               ...fullTrade,
@@ -9585,39 +9372,38 @@ canvas#equity-canvas {
     },
     renderQuickButtons(isBuy) {
       const values = isBuy ? Store.state.settings.quickBuySols : Store.state.settings.quickSellPcts;
-      return values.map(
-        (v) => `
+      return values.map((v) => `
             <button class="qbtn" data-act="quick" data-val="${v}">${v}${isBuy ? " SOL" : "%"}</button>
-        `
-      ).join("");
+        `).join("");
     },
     bindHeaderDrag(root, makeDraggable) {
       const header = root.querySelector(".panelHeader");
       if (!header || !makeDraggable)
         return;
-      makeDraggable(
-        header,
-        (dx, dy) => {
-          if (Store.state.settings.buyHudDocked)
-            return;
-          const s = Store.state.settings;
-          if (!s.buyHudPos) {
-            const rect = root.getBoundingClientRect();
-            s.buyHudPos = { x: rect.left, y: rect.top };
-          }
-          s.buyHudPos.x = clamp2(s.buyHudPos.x + dx, 0, window.innerWidth - 300);
-          s.buyHudPos.y = clamp2(s.buyHudPos.y + dy, 34, window.innerHeight - 300);
-          root.style.setProperty("left", px2(s.buyHudPos.x), "important");
-          root.style.setProperty("top", px2(s.buyHudPos.y), "important");
-          root.style.setProperty("right", "auto", "important");
-        },
-        async () => {
-          if (!Store.state.settings.buyHudDocked)
-            await Store.save();
+      makeDraggable(header, (dx, dy) => {
+        if (Store.state.settings.buyHudDocked)
+          return;
+        const s = Store.state.settings;
+        if (!s.buyHudPos) {
+          const rect = root.getBoundingClientRect();
+          s.buyHudPos = { x: rect.left, y: rect.top };
         }
-      );
+        s.buyHudPos.x = clamp2(s.buyHudPos.x + dx, 0, window.innerWidth - 300);
+        s.buyHudPos.y = clamp2(s.buyHudPos.y + dy, 34, window.innerHeight - 300);
+        root.style.setProperty("left", px2(s.buyHudPos.x), "important");
+        root.style.setProperty("top", px2(s.buyHudPos.y), "important");
+        root.style.setProperty("right", "auto", "important");
+      }, async () => {
+        if (!Store.state.settings.buyHudDocked)
+          await Store.save();
+      });
     },
     setupBuyHudInteractions(root) {
+      root.addEventListener("keydown", (e) => {
+        if (e.target.matches("input, select, textarea")) {
+          e.stopPropagation();
+        }
+      });
       root.addEventListener("click", async (e) => {
         const t = e.target;
         if (t.matches("input") || t.matches("select"))
@@ -9699,13 +9485,11 @@ canvas#equity-canvas {
                 <div class="emotion-title">POST-TRADE CHECK</div>
                 <div class="emotion-subtitle">How are you feeling right now?</div>
                 <div class="emotion-grid">
-                    ${emotions.map(
-        (e) => `
+                    ${emotions.map((e) => `
                         <button class="emotion-btn" data-emo="${e.id}">
                             <span class="emotion-icon">${e.icon}</span> ${e.label}
                         </button>
-                    `
-      ).join("")}
+                    `).join("")}
                 </div>
                 <div style="margin-top:12px; display:flex; align-items:center; justify-content:space-between; gap:10px; border-top:1px solid rgba(255,255,255,0.05); padding-top:8px;">
                      <label style="display:flex; align-items:center; gap:6px; font-size:10px; color:#64748b; cursor:pointer;">
@@ -10941,14 +10725,7 @@ canvas#equity-canvas {
     // ==================== Rendering ====================
     renderContent(root, makeDraggable) {
       const shadow = Store.state?.shadow || {};
-      const strategies = Store.state?.settings?.strategies || [
-        "Trend",
-        "Breakout",
-        "Reversal",
-        "Scalp",
-        "News",
-        "Other"
-      ];
+      const strategies = Store.state?.settings?.strategies || ["Trend", "Breakout", "Reversal", "Scalp", "News", "Other"];
       const currentStrategy = shadow.declaredStrategy || strategies[0];
       const modeLabel = ModeManager.isRealTrading() ? "Shadow Mode" : "Elite Mode";
       const subtitle = ModeManager.isRealTrading() ? "Real trade analysis \xB7 Observation only" : "Market context \xB7 Elite analytics";
@@ -11090,13 +10867,11 @@ canvas#equity-canvas {
       ];
       return `
             <div class="sh-tabs">
-                ${tabs.map(
-        (t) => `
+                ${tabs.map((t) => `
                     <div class="sh-tab ${t.id === this.activeTab ? "active" : ""}" data-act="tab" data-tab="${t.id}">
                         <span class="sh-tab-icon">${t.icon}</span> ${t.label}
                     </div>
-                `
-      ).join("")}
+                `).join("")}
             </div>
         `;
     },
@@ -11173,14 +10948,7 @@ canvas#equity-canvas {
         return "";
       return `
             ${this._field("Deployer", d.knownLaunches)}
-            ${this._field("Mint Auth", d.mintAuthority)}
-            ${this._field("Freeze Auth", d.freezeAuthority)}
-            ${this._field("Metadata", d.metadataMutable)}
-            ${this._field("Dev Holdings", d.devHoldings)}
-            ${this._field("Dev SOL", d.deployerBalance)}
-            ${this._field("Wallet Age", d.deployerAge)}
-            ${this._field("Dev Tokens", d.recentLaunches)}
-            ${this._field("Recent (7d)", d.recentMints7d)}
+            ${this._field("Recent (30d)", d.recentLaunches)}
             ${this._field("Mint Age", d.historicalSummary)}
         `;
     },
@@ -11319,6 +11087,11 @@ canvas#equity-canvas {
           await Store.save();
         }
       });
+      root.addEventListener("keydown", (e) => {
+        if (e.target.matches("input, select, textarea")) {
+          e.stopPropagation();
+        }
+      });
       root.addEventListener("input", (e) => {
         if (e.target.matches(".sh-notes-textarea")) {
           const charCount = root.querySelector("[data-char-count]");
@@ -11362,24 +11135,20 @@ canvas#equity-canvas {
       const header = root.querySelector(".sh-header");
       if (!header || !makeDraggable)
         return;
-      makeDraggable(
-        header,
-        (dx, dy) => {
-          if (!Store.state.shadow || Store.state.shadow.hudDocked)
-            return;
-          const pos = Store.state.shadow.hudPos || { x: 20, y: 400 };
-          pos.x = clamp3(pos.x + dx, 0, window.innerWidth - 40);
-          pos.y = clamp3(pos.y + dy, 34, window.innerHeight - 40);
-          Store.state.shadow.hudPos = pos;
-          root.style.left = px3(pos.x);
-          root.style.top = px3(pos.y);
-        },
-        async () => {
-          if (Store.state.shadow && !Store.state.shadow.hudDocked) {
-            await Store.save();
-          }
+      makeDraggable(header, (dx, dy) => {
+        if (!Store.state.shadow || Store.state.shadow.hudDocked)
+          return;
+        const pos = Store.state.shadow.hudPos || { x: 20, y: 400 };
+        pos.x = clamp3(pos.x + dx, 0, window.innerWidth - 40);
+        pos.y = clamp3(pos.y + dy, 34, window.innerHeight - 40);
+        Store.state.shadow.hudPos = pos;
+        root.style.left = px3(pos.x);
+        root.style.top = px3(pos.y);
+      }, async () => {
+        if (Store.state.shadow && !Store.state.shadow.hudDocked) {
+          await Store.save();
         }
-      );
+      });
     }
   };
 
@@ -11905,7 +11674,7 @@ canvas#equity-canvas {
   (async () => {
     "use strict";
     const PLATFORM = "Padre";
-    Logger.info(`ZER\xD8 v1.11.14 (${PLATFORM} Platform)`);
+    Logger.info(`ZER\xD8 v2.0.0 (${PLATFORM} Platform)`);
     TokenContextResolver.init(PLATFORM);
     try {
       Logger.info("Loading Store...");
@@ -11922,23 +11691,11 @@ canvas#equity-canvas {
       Logger.error("Store Load Failed:", e);
     }
     try {
-      if (License.needsRevalidation()) {
-        Logger.info("License revalidation needed...");
-        await License.revalidate();
-      }
-    } catch (e) {
-      Logger.error("License revalidation failed:", e);
-    }
-    try {
       Logger.info("Loading DiagnosticsStore...");
       await DiagnosticsStore.load();
-      DiagnosticsStore.logEvent(
-        "SESSION_STARTED",
-        {
-          platform: "PADRE"
-        },
-        { platform: "PADRE" }
-      );
+      DiagnosticsStore.logEvent("SESSION_STARTED", {
+        platform: "PADRE"
+      }, { platform: "PADRE" });
     } catch (e) {
       Logger.error("DiagnosticsStore Init Failed:", e);
     }
@@ -11966,12 +11723,6 @@ canvas#equity-canvas {
       PnlCalculator.init();
     } catch (e) {
       Logger.error("PNL Calculator Init Failed:", e);
-    }
-    try {
-      Logger.info("Init ShadowTradeIngestion...");
-      ShadowTradeIngestion.init();
-    } catch (e) {
-      Logger.error("ShadowTradeIngestion Init Failed:", e);
     }
     try {
       Logger.info("Init HUD...");
