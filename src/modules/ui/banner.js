@@ -108,7 +108,7 @@ export const Banner = {
       root.appendChild(container);
     }
 
-    const alerts = Store.state.session.activeAlerts || [];
+    const alerts = Store.getActiveSession().activeAlerts || [];
     const existingIds = Array.from(container.children).map((c) => c.dataset.ts);
 
     alerts.forEach((alert) => {

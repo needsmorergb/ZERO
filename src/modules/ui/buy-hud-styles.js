@@ -180,6 +180,26 @@ export const BUY_HUD_CSS = `
   color: #14b8a6;
 }
 
+#${IDS.buyHud} .qbtn-edit {
+  border: 1px solid rgba(20,184,166,0.3);
+  background: #161b22;
+  color: #f8fafc;
+  padding: 8px 6px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  width: 56px;
+  text-align: center;
+  outline: none;
+  transition: border-color 0.2s;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+#${IDS.buyHud} .qbtn-edit:focus {
+  border-color: #14b8a6;
+}
+
 #${IDS.buyHud} .strategyRow {
   margin-top: 12px;
 }

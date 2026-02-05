@@ -1657,6 +1657,26 @@
   color: #14b8a6;
 }
 
+#${IDS.buyHud} .qbtn-edit {
+  border: 1px solid rgba(20,184,166,0.3);
+  background: #161b22;
+  color: #f8fafc;
+  padding: 8px 6px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  width: 56px;
+  text-align: center;
+  outline: none;
+  transition: border-color 0.2s;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+#${IDS.buyHud} .qbtn-edit:focus {
+  border-color: #14b8a6;
+}
+
 #${IDS.buyHud} .strategyRow {
   margin-top: 12px;
 }
@@ -3563,218 +3583,9 @@ input:checked + .slider:before {
     background: rgba(139, 92, 246, 0.03);
 }
 
-/* ===== Section Common ===== */
+/* ===== Section Borders (ShadowHud-specific) ===== */
 #${IDS.shadowHud} .sh-section {
     border-top: 1px solid rgba(255, 255, 255, 0.04);
-}
-
-#${IDS.shadowHud} .sh-section-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 10px 14px;
-    cursor: pointer;
-    transition: background 0.15s;
-    user-select: none;
-}
-
-#${IDS.shadowHud} .sh-section-header:hover {
-    background: rgba(139, 92, 246, 0.04);
-}
-
-#${IDS.shadowHud} .sh-section-header-left {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-#${IDS.shadowHud} .sh-section-icon {
-    color: #8b5cf6;
-    opacity: 0.7;
-    display: flex;
-    align-items: center;
-}
-
-#${IDS.shadowHud} .sh-section-title {
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: #94a3b8;
-}
-
-#${IDS.shadowHud} .sh-section-chevron {
-    color: #475569;
-    display: flex;
-    align-items: center;
-    transition: transform 0.2s;
-}
-
-#${IDS.shadowHud} .sh-section-chevron.expanded {
-    transform: rotate(180deg);
-}
-
-#${IDS.shadowHud} .sh-section-body {
-    padding: 0 14px 12px;
-}
-
-#${IDS.shadowHud} .sh-section-body.collapsed {
-    display: none;
-}
-
-/* ===== Market Context \u2014 Score Bar ===== */
-#${IDS.shadowHud} .sh-trust-summary {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 4px 14px 8px;
-}
-
-#${IDS.shadowHud} .sh-trust-score {
-    font-size: 13px;
-    font-weight: 800;
-    color: #e2e8f0;
-}
-
-#${IDS.shadowHud} .sh-trust-score .score-val {
-    color: #a78bfa;
-}
-
-#${IDS.shadowHud} .sh-trust-bar {
-    flex: 1;
-    height: 4px;
-    border-radius: 2px;
-    background: rgba(255, 255, 255, 0.06);
-    overflow: hidden;
-}
-
-#${IDS.shadowHud} .sh-trust-bar-fill {
-    height: 100%;
-    border-radius: 2px;
-    transition: width 0.3s ease;
-}
-
-#${IDS.shadowHud} .sh-trust-bar-fill.low {
-    background: #ef4444;
-}
-
-#${IDS.shadowHud} .sh-trust-bar-fill.mid {
-    background: #f59e0b;
-}
-
-#${IDS.shadowHud} .sh-trust-bar-fill.high {
-    background: #10b981;
-}
-
-/* ===== Micro-Signals ===== */
-#${IDS.shadowHud} .sh-signals {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 0 14px 8px;
-}
-
-#${IDS.shadowHud} .sh-signal-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    position: relative;
-}
-
-#${IDS.shadowHud} .sh-signal-dot.positive {
-    background: #10b981;
-}
-
-#${IDS.shadowHud} .sh-signal-dot.neutral {
-    background: #f59e0b;
-}
-
-#${IDS.shadowHud} .sh-signal-dot.unavailable {
-    background: #475569;
-}
-
-#${IDS.shadowHud} .sh-signal-label {
-    font-size: 9px;
-    color: #64748b;
-    margin-left: 2px;
-}
-
-/* ===== Tabs (Market Context Expanded) ===== */
-#${IDS.shadowHud} .sh-tabs {
-    display: flex;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-    margin-bottom: 8px;
-}
-
-#${IDS.shadowHud} .sh-tab {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-    padding: 6px 4px;
-    font-size: 9px;
-    font-weight: 600;
-    color: #64748b;
-    cursor: pointer;
-    border-bottom: 2px solid transparent;
-    transition: all 0.15s;
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-}
-
-#${IDS.shadowHud} .sh-tab:hover {
-    color: #94a3b8;
-    background: rgba(139, 92, 246, 0.04);
-}
-
-#${IDS.shadowHud} .sh-tab.active {
-    color: #a78bfa;
-    border-bottom-color: #8b5cf6;
-}
-
-#${IDS.shadowHud} .sh-tab-icon {
-    display: flex;
-    align-items: center;
-    color: inherit;
-}
-
-#${IDS.shadowHud} .sh-tab-content {
-    max-height: 250px;
-    overflow-y: auto;
-}
-
-/* ===== Trust Fields (Key-Value Pairs) ===== */
-#${IDS.shadowHud} .nt-field {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    padding: 5px 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
-}
-
-#${IDS.shadowHud} .nt-field:last-child {
-    border-bottom: none;
-}
-
-#${IDS.shadowHud} .nt-label {
-    font-size: 10px;
-    color: #64748b;
-    font-weight: 600;
-    flex-shrink: 0;
-    min-width: 80px;
-}
-
-#${IDS.shadowHud} .nt-value {
-    font-size: 10px;
-    color: #cbd5e1;
-    text-align: right;
-    word-break: break-word;
-}
-
-#${IDS.shadowHud} .nt-field.unavailable .nt-value {
-    color: #475569;
-    font-style: italic;
 }
 
 /* ===== Strategy Section ===== */
@@ -3928,40 +3739,7 @@ input:checked + .slider:before {
     margin-top: 2px;
 }
 
-/* ===== Loading State ===== */
-#${IDS.shadowHud} .sh-trust-loading-state {
-    flex-direction: column;
-    gap: 6px;
-}
-
-#${IDS.shadowHud} .sh-loading-text {
-    font-size: 10px;
-    color: #8b5cf6;
-    font-weight: 600;
-    letter-spacing: 0.3px;
-}
-
-#${IDS.shadowHud} .sh-loading-bar {
-    width: 100%;
-    height: 4px;
-    border-radius: 2px;
-    background: rgba(255, 255, 255, 0.06);
-    overflow: hidden;
-}
-
-#${IDS.shadowHud} .sh-loading-bar-fill {
-    height: 100%;
-    border-radius: 2px;
-    background: linear-gradient(90deg, #8b5cf6, #a78bfa, #8b5cf6);
-    background-size: 200% 100%;
-    animation: shLoadProgress 4s ease-out forwards, shLoadShimmer 1.5s ease-in-out infinite;
-}
-
-#${IDS.shadowHud} .sh-signal-loading {
-    color: #8b5cf6;
-    font-style: italic;
-}
-
+/* ===== Animations (shared keyframes) ===== */
 @keyframes shLoadProgress {
     0% { width: 5%; }
     30% { width: 35%; }
@@ -3974,17 +3752,223 @@ input:checked + .slider:before {
     0% { background-position: -200% 0; }
     100% { background-position: 200% 0; }
 }
+`;
 
-/* ===== Empty / Loading States ===== */
-#${IDS.shadowHud} .sh-empty {
+  // src/modules/ui/market-context-styles.js
+  var MARKET_CONTEXT_CSS = `
+
+/* ===== Section Common ===== */
+.zero-market-context .sh-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    cursor: pointer;
+    transition: background 0.15s;
+    user-select: none;
+}
+
+.zero-market-context .sh-section-header:hover {
+    background: rgba(139, 92, 246, 0.04);
+}
+
+.zero-market-context .sh-section-header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.zero-market-context .sh-section-icon {
+    color: #8b5cf6;
+    opacity: 0.7;
+    display: flex;
+    align-items: center;
+}
+
+.zero-market-context .sh-section-title {
     font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #94a3b8;
+}
+
+.zero-market-context .sh-section-chevron {
     color: #475569;
-    text-align: center;
-    padding: 12px 0;
+    display: flex;
+    align-items: center;
+    transition: transform 0.2s;
+}
+
+.zero-market-context .sh-section-chevron.expanded {
+    transform: rotate(180deg);
+}
+
+.zero-market-context .sh-section-body {
+    padding: 0 14px 12px;
+}
+
+.zero-market-context .sh-section-body.collapsed {
+    display: none;
+}
+
+/* ===== Trust Score Bar ===== */
+.zero-market-context .sh-trust-summary {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 14px 8px;
+}
+
+.zero-market-context .sh-trust-score {
+    font-size: 13px;
+    font-weight: 800;
+    color: #e2e8f0;
+}
+
+.zero-market-context .sh-trust-score .score-val {
+    color: #a78bfa;
+}
+
+.zero-market-context .sh-trust-bar {
+    flex: 1;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.06);
+    overflow: hidden;
+}
+
+.zero-market-context .sh-trust-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.3s ease;
+}
+
+.zero-market-context .sh-trust-bar-fill.low {
+    background: #ef4444;
+}
+
+.zero-market-context .sh-trust-bar-fill.mid {
+    background: #f59e0b;
+}
+
+.zero-market-context .sh-trust-bar-fill.high {
+    background: #10b981;
+}
+
+/* ===== Micro-Signals ===== */
+.zero-market-context .sh-signals {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 14px 8px;
+}
+
+.zero-market-context .sh-signal-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    position: relative;
+}
+
+.zero-market-context .sh-signal-dot.positive {
+    background: #10b981;
+}
+
+.zero-market-context .sh-signal-dot.neutral {
+    background: #f59e0b;
+}
+
+.zero-market-context .sh-signal-dot.unavailable {
+    background: #475569;
+}
+
+.zero-market-context .sh-signal-label {
+    font-size: 9px;
+    color: #64748b;
+    margin-left: 2px;
+}
+
+/* ===== Tabs ===== */
+.zero-market-context .sh-tabs {
+    display: flex;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    margin-bottom: 8px;
+}
+
+.zero-market-context .sh-tab {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 6px 4px;
+    font-size: 9px;
+    font-weight: 600;
+    color: #64748b;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.15s;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.zero-market-context .sh-tab:hover {
+    color: #94a3b8;
+    background: rgba(139, 92, 246, 0.04);
+}
+
+.zero-market-context .sh-tab.active {
+    color: #a78bfa;
+    border-bottom-color: #8b5cf6;
+}
+
+.zero-market-context .sh-tab-icon {
+    display: flex;
+    align-items: center;
+    color: inherit;
+}
+
+.zero-market-context .sh-tab-content {
+    max-height: 250px;
+    overflow-y: auto;
+}
+
+/* ===== Trust Fields (Key-Value Pairs) ===== */
+.zero-market-context .nt-field {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 5px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.zero-market-context .nt-field:last-child {
+    border-bottom: none;
+}
+
+.zero-market-context .nt-label {
+    font-size: 10px;
+    color: #64748b;
+    font-weight: 600;
+    flex-shrink: 0;
+    min-width: 80px;
+}
+
+.zero-market-context .nt-value {
+    font-size: 10px;
+    color: #cbd5e1;
+    text-align: right;
+    word-break: break-word;
+}
+
+.zero-market-context .nt-field.unavailable .nt-value {
+    color: #475569;
     font-style: italic;
 }
 
-#${IDS.shadowHud} .sh-confidence-badge {
+/* ===== Confidence Badge ===== */
+.zero-market-context .sh-confidence-badge {
     font-size: 8px;
     font-weight: 700;
     padding: 1px 6px;
@@ -3993,42 +3977,85 @@ input:checked + .slider:before {
     letter-spacing: 0.5px;
 }
 
-#${IDS.shadowHud} .sh-confidence-badge.low {
+.zero-market-context .sh-confidence-badge.low {
     background: rgba(239, 68, 68, 0.1);
     color: #ef4444;
 }
 
-#${IDS.shadowHud} .sh-confidence-badge.medium {
+.zero-market-context .sh-confidence-badge.medium {
     background: rgba(245, 158, 11, 0.1);
     color: #f59e0b;
 }
 
-#${IDS.shadowHud} .sh-confidence-badge.high {
+.zero-market-context .sh-confidence-badge.high {
     background: rgba(16, 185, 129, 0.1);
     color: #10b981;
 }
 
+/* ===== Loading State ===== */
+.zero-market-context .sh-trust-loading-state {
+    flex-direction: column;
+    gap: 6px;
+}
+
+.zero-market-context .sh-loading-text {
+    font-size: 10px;
+    color: #8b5cf6;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+}
+
+.zero-market-context .sh-loading-bar {
+    width: 100%;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.06);
+    overflow: hidden;
+}
+
+.zero-market-context .sh-loading-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    background: linear-gradient(90deg, #8b5cf6, #a78bfa, #8b5cf6);
+    background-size: 200% 100%;
+    animation: shLoadProgress 4s ease-out forwards, shLoadShimmer 1.5s ease-in-out infinite;
+}
+
+.zero-market-context .sh-signal-loading {
+    color: #8b5cf6;
+    font-style: italic;
+}
+
+/* ===== Empty State ===== */
+.zero-market-context .sh-empty {
+    font-size: 10px;
+    color: #475569;
+    text-align: center;
+    padding: 12px 0;
+    font-style: italic;
+}
+
 /* ===== Scrollbar ===== */
-#${IDS.shadowHud} ::-webkit-scrollbar {
+.zero-market-context ::-webkit-scrollbar {
     width: 4px;
 }
 
-#${IDS.shadowHud} ::-webkit-scrollbar-track {
+.zero-market-context ::-webkit-scrollbar-track {
     background: transparent;
 }
 
-#${IDS.shadowHud} ::-webkit-scrollbar-thumb {
+.zero-market-context ::-webkit-scrollbar-thumb {
     background: rgba(139, 92, 246, 0.2);
     border-radius: 2px;
 }
 
-#${IDS.shadowHud} ::-webkit-scrollbar-thumb:hover {
+.zero-market-context ::-webkit-scrollbar-thumb:hover {
     background: rgba(139, 92, 246, 0.4);
 }
 `;
 
   // src/modules/ui/styles.js
-  var CSS = COMMON_CSS + BANNER_CSS + PNL_HUD_CSS + BUY_HUD_CSS + MODALS_CSS + PROFESSOR_CSS + THEME_OVERRIDES_CSS + ELITE_CSS + SETTINGS_PANEL_CSS + MODES_CSS + SHADOW_INSIGHTS_CSS + SHADOW_HUD_CSS;
+  var CSS = COMMON_CSS + BANNER_CSS + PNL_HUD_CSS + BUY_HUD_CSS + MODALS_CSS + PROFESSOR_CSS + THEME_OVERRIDES_CSS + ELITE_CSS + SETTINGS_PANEL_CSS + MODES_CSS + SHADOW_INSIGHTS_CSS + SHADOW_HUD_CSS + MARKET_CONTEXT_CSS;
 
   // src/modules/ui/overlay.js
   var OverlayManager = {
@@ -5310,135 +5337,6 @@ input:checked + .slider:before {
     }
   };
 
-  // src/modules/trial.js
-  init_store();
-
-  // src/modules/logger.js
-  var Logger = {
-    isProduction: false,
-    // Set to true in prod builds
-    info(msg, ...args) {
-      if (this.isProduction)
-        return;
-      console.log(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
-    },
-    warn(msg, ...args) {
-      console.warn(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
-    },
-    error(msg, ...args) {
-      console.error(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
-    },
-    cleanArgs(args) {
-      return args.map((arg) => {
-        if (arg instanceof Error) {
-          return { name: arg.name, message: arg.message, stack: arg.stack };
-        }
-        if (typeof DOMException !== "undefined" && arg instanceof DOMException) {
-          return { name: arg.name, message: arg.message, code: arg.code };
-        }
-        if (typeof arg === "object" && arg !== null) {
-          const clean = { ...arg };
-          ["key", "secret", "token", "auth", "password"].forEach((k) => {
-            if (k in clean)
-              clean[k] = "***REDACTED***";
-          });
-          return clean;
-        }
-        return arg;
-      });
-    }
-  };
-
-  // src/modules/trial.js
-  var Trial = {
-    /**
-     * Check if the trial is currently active (redeemed, not expired, sessions remaining).
-     * @returns {boolean}
-     */
-    isActive() {
-      const t = Store.state?.settings?.trial;
-      if (!t || !t.activated || t.expired)
-        return false;
-      return (t.sessionsUsed || 0) < (t.sessionsLimit || 5);
-    },
-    /**
-     * Check if a promo has ever been redeemed (blocks re-trial).
-     * @returns {boolean}
-     */
-    hasBeenUsed() {
-      return Store.state?.settings?.trial?.activated === true;
-    },
-    /**
-     * Get remaining trial sessions.
-     * @returns {number}
-     */
-    sessionsRemaining() {
-      const t = Store.state?.settings?.trial;
-      if (!t || !t.activated)
-        return 0;
-      return Math.max(0, (t.sessionsLimit || 5) - (t.sessionsUsed || 0));
-    },
-    /**
-     * Get total trial sessions.
-     * @returns {number}
-     */
-    sessionsTotal() {
-      return Store.state?.settings?.trial?.sessionsLimit || 5;
-    },
-    /**
-     * Get number of sessions used.
-     * @returns {number}
-     */
-    sessionsUsed() {
-      return Store.state?.settings?.trial?.sessionsUsed || 0;
-    },
-    /**
-     * Redeem a promo code. Sends to background → worker for validation.
-     * @param {string} code
-     * @returns {Promise<{ ok: boolean, sessions?: number, error?: string }>}
-     */
-    async redeem(code) {
-      if (!code || typeof code !== "string" || code.trim().length < 3) {
-        return { ok: false, error: "invalid_code" };
-      }
-      if (this.hasBeenUsed()) {
-        return { ok: false, error: "already_used" };
-      }
-      code = code.trim().toUpperCase();
-      Logger.info("[Trial] Redeeming promo code...");
-      const response = await new Promise((resolve) => {
-        chrome.runtime.sendMessage(
-          { type: "REDEEM_PROMO", promoCode: code },
-          (res) => {
-            if (chrome.runtime.lastError) {
-              resolve({ ok: false, error: chrome.runtime.lastError.message });
-              return;
-            }
-            resolve(res || { ok: false, error: "no_response" });
-          }
-        );
-      });
-      if (response.ok) {
-        const sessions = response.sessions || 5;
-        Store.state.settings.trial = {
-          promoCode: code,
-          activated: true,
-          activatedAt: Date.now(),
-          sessionsUsed: 0,
-          sessionsLimit: sessions,
-          expired: false,
-          expiredAt: null
-        };
-        Store.validateState();
-        await Store.save();
-        Logger.info(`[Trial] Promo redeemed: ${sessions} sessions`);
-        return { ok: true, sessions };
-      }
-      Logger.warn("[Trial] Promo redemption failed:", response.error);
-      return { ok: false, error: response.error || "redemption_failed" };
-    }
-  };
-
   // src/modules/ui/banner.js
   var Banner = {
     ensurePageOffset() {
@@ -5474,14 +5372,12 @@ input:checked + .slider:before {
       bar = document.createElement("div");
       bar.id = IDS.banner;
       const modeHint = ModesUI.getBannerHint();
-      const trialBadge = Trial.isActive() ? `<div class="trial-badge" style="margin-left:10px; background:rgba(245,158,11,0.15); border:1px solid rgba(245,158,11,0.3); color:#fbbf24; font-size:10px; font-weight:600; padding:2px 8px; border-radius:4px; white-space:nowrap;">ELITE TRIAL \u2014 ${Trial.sessionsRemaining()}/${Trial.sessionsTotal()}</div>` : "";
       bar.innerHTML = `
             <div class="inner" style="cursor:pointer;" title="Click to toggle ZER\xD8 Mode">
                 <div class="dot"></div>
                 <div class="label">ZER\xD8 MODE</div>
                 <div class="state">ENABLED</div>
                 <div class="hint" style="margin-left:8px; opacity:0.5; font-size:11px;">${modeHint}</div>
-                ${trialBadge}
             </div>
             <div style="position:absolute; right:20px; font-size:10px; color:#334155; pointer-events:none;">v${Store.state?.version || "0.9.1"}</div>
         `;
@@ -5510,24 +5406,6 @@ input:checked + .slider:before {
       const hintEl = bar.querySelector(".hint");
       if (hintEl)
         hintEl.textContent = ModesUI.getBannerHint();
-      const existingBadge = bar.querySelector(".trial-badge");
-      if (Trial.isActive()) {
-        const badgeText = `ELITE TRIAL \u2014 ${Trial.sessionsRemaining()}/${Trial.sessionsTotal()}`;
-        if (existingBadge) {
-          existingBadge.textContent = badgeText;
-        } else {
-          const inner = bar.querySelector(".inner");
-          if (inner) {
-            const badge = document.createElement("div");
-            badge.className = "trial-badge";
-            badge.style.cssText = "margin-left:10px; background:rgba(245,158,11,0.15); border:1px solid rgba(245,158,11,0.3); color:#fbbf24; font-size:10px; font-weight:600; padding:2px 8px; border-radius:4px; white-space:nowrap;";
-            badge.textContent = badgeText;
-            inner.appendChild(badge);
-          }
-        }
-      } else if (existingBadge) {
-        existingBadge.remove();
-      }
       this.updateAlerts();
     },
     updateAlerts() {
@@ -5548,7 +5426,7 @@ input:checked + .slider:before {
         container.className = "elite-alert-overlay";
         root.appendChild(container);
       }
-      const alerts = Store.state.session.activeAlerts || [];
+      const alerts = Store.getActiveSession().activeAlerts || [];
       const existingIds = Array.from(container.children).map((c) => c.dataset.ts);
       alerts.forEach((alert) => {
         if (!existingIds.includes(alert.ts.toString())) {
@@ -5931,11 +5809,8 @@ input:checked + .slider:before {
       if (!flags.enabled)
         return;
       const { session, trades: tradesMap, behavior } = this._resolve(state);
-      if (session?.activeAlerts) {
-        const lastAlert = session.activeAlerts.slice().reverse().find((a) => a.type === "VELOCITY");
-        if (lastAlert && Date.now() - lastAlert.ts < 6e4) {
-          return;
-        }
+      if (behavior.lastOvertradingAlertTs && Date.now() - behavior.lastOvertradingAlertTs < 3e5) {
+        return;
       }
       const trades = Object.values(tradesMap || {}).sort((a, b) => a.ts - b.ts);
       if (trades.length < 5)
@@ -5954,7 +5829,7 @@ input:checked + .slider:before {
           "OVERTRADING: You're trading too fast. Stop and evaluate setups."
         );
         behavior.overtradingFrequency = (behavior.overtradingFrequency || 0) + 1;
-        state.lastOvertradingAlert = Date.now();
+        behavior.lastOvertradingAlertTs = Date.now();
       }
     },
     monitorProfitOverstay(state) {
@@ -7122,6 +6997,44 @@ input:checked + .slider:before {
 
   // src/modules/license.js
   init_store();
+
+  // src/modules/logger.js
+  var Logger = {
+    isProduction: false,
+    // Set to true in prod builds
+    info(msg, ...args) {
+      if (this.isProduction)
+        return;
+      console.log(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
+    },
+    warn(msg, ...args) {
+      console.warn(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
+    },
+    error(msg, ...args) {
+      console.error(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
+    },
+    cleanArgs(args) {
+      return args.map((arg) => {
+        if (arg instanceof Error) {
+          return { name: arg.name, message: arg.message, stack: arg.stack };
+        }
+        if (typeof DOMException !== "undefined" && arg instanceof DOMException) {
+          return { name: arg.name, message: arg.message, code: arg.code };
+        }
+        if (typeof arg === "object" && arg !== null) {
+          const clean = { ...arg };
+          ["key", "secret", "token", "auth", "password"].forEach((k) => {
+            if (k in clean)
+              clean[k] = "***REDACTED***";
+          });
+          return clean;
+        }
+        return arg;
+      });
+    }
+  };
+
+  // src/modules/license.js
   var WHOP_PRODUCT_URL = "https://whop.com/crowd-ctrl/zero-elite/";
   var REVALIDATION_INTERVAL_MS = 24 * 60 * 60 * 1e3;
   var License = {
@@ -7403,24 +7316,6 @@ input:checked + .slider:before {
                     <div class="paywall-key-status" style="margin-top:8px; font-size:12px; min-height:18px;"></div>
                 </div>
 
-                ${!Trial.hasBeenUsed() ? `
-                <div class="paywall-promo-section" style="margin-top:12px; border-top:1px solid rgba(255,255,255,0.05); padding-top:12px;">
-                    <button class="paywall-btn text" data-act="show-promo-input" style="background:none; border:none; color:#f59e0b; font-size:12px; cursor:pointer; padding:6px; width:100%; text-align:center;">
-                        Have a promo code?
-                    </button>
-                    <div class="paywall-promo-input-section" style="display:none; margin-top:8px;">
-                        <div style="display:flex; gap:8px;">
-                            <input type="text" class="paywall-promo-code-input" placeholder="Enter promo code" maxlength="32"
-                                style="flex:1; background:rgba(255,255,255,0.05); border:1px solid rgba(245,158,11,0.2); border-radius:6px; padding:10px 12px; color:#f8fafc; font-size:13px; outline:none; text-transform:uppercase;">
-                            <button class="paywall-btn" data-act="redeem-promo" style="background:rgba(245,158,11,0.15); border:1px solid rgba(245,158,11,0.3); color:#fbbf24; padding:10px 16px; border-radius:6px; font-weight:600; font-size:13px; cursor:pointer; white-space:nowrap;">
-                                Redeem
-                            </button>
-                        </div>
-                        <div class="paywall-promo-status" style="margin-top:8px; font-size:12px; min-height:18px;"></div>
-                    </div>
-                </div>
-                ` : ""}
-
                 <div class="paywall-footer">
                     <p style="font-size:11px; color:#475569; margin-top:12px;">Manage your membership at whop.com/orders</p>
                 </div>
@@ -7440,52 +7335,6 @@ input:checked + .slider:before {
             const input = keySection.querySelector(".paywall-license-input");
             if (input)
               input.focus();
-          }
-        }
-        if (e.target.closest('[data-act="show-promo-input"]')) {
-          const promoSection = overlay.querySelector(".paywall-promo-input-section");
-          if (promoSection) {
-            promoSection.style.display = promoSection.style.display === "none" ? "block" : "none";
-            const input = promoSection.querySelector(".paywall-promo-code-input");
-            if (input)
-              input.focus();
-          }
-        }
-        if (e.target.closest('[data-act="redeem-promo"]')) {
-          const input = overlay.querySelector(".paywall-promo-code-input");
-          const statusEl = overlay.querySelector(".paywall-promo-status");
-          const code = input?.value?.trim();
-          if (!code) {
-            if (statusEl) {
-              statusEl.textContent = "Please enter a promo code";
-              statusEl.style.color = "#f59e0b";
-            }
-            return;
-          }
-          const btn = e.target.closest('[data-act="redeem-promo"]');
-          const origText = btn.textContent;
-          btn.textContent = "Redeeming...";
-          btn.disabled = true;
-          if (statusEl) {
-            statusEl.textContent = "Validating promo code...";
-            statusEl.style.color = "#94a3b8";
-          }
-          const result = await Trial.redeem(code);
-          btn.textContent = origText;
-          btn.disabled = false;
-          if (result.ok) {
-            if (statusEl) {
-              statusEl.textContent = `Elite Trial Activated \u2014 ${result.sessions} Sessions`;
-              statusEl.style.color = "#10b981";
-            }
-            this._showSuccessToast(`Elite Trial \u2014 ${result.sessions} Sessions`);
-            setTimeout(() => overlay.remove(), 1500);
-          } else {
-            const errorMsg = result.error === "invalid_code" ? "Invalid promo code" : result.error === "already_used" ? "You've already used a trial" : result.error === "code_expired" ? "This promo code has expired" : result.error === "code_exhausted" ? "This promo code has been fully redeemed" : result.error === "code_inactive" ? "This promo code is no longer active" : "Could not verify code \u2014 check your connection";
-            if (statusEl) {
-              statusEl.textContent = errorMsg;
-              statusEl.style.color = "#ef4444";
-            }
           }
         }
         if (e.target.closest('[data-act="activate"]')) {
@@ -7558,143 +7407,6 @@ input:checked + .slider:before {
         return false;
       const flags = FeatureManager.resolveFlags(Store.state, featureName);
       return flags.gated;
-    },
-    showTrialExpiredModal() {
-      const root = OverlayManager.getShadowRoot();
-      const existing = root.getElementById("trial-expired-modal-overlay");
-      if (existing)
-        existing.remove();
-      const overlay = document.createElement("div");
-      overlay.id = "trial-expired-modal-overlay";
-      overlay.className = "paywall-modal-overlay";
-      overlay.innerHTML = `
-            <div class="paywall-modal">
-                <div class="paywall-header">
-                    <div class="paywall-badge">
-                        ${ICONS.ZERO}
-                        <span>TRIAL COMPLETE</span>
-                    </div>
-                    <button class="paywall-close" data-act="close">${ICONS.X}</button>
-                </div>
-
-                <div class="paywall-hero">
-                    <h2 class="paywall-title">Your Elite Trial Has Ended</h2>
-                    <p class="paywall-subtitle">
-                        You've completed all ${Store.state?.settings?.trial?.sessionsLimit || 5} trial sessions.
-                        If you enjoyed advanced analytics, discipline scoring, and tilt detection,
-                        consider upgrading to keep all premium features.
-                    </p>
-                </div>
-
-                <div class="paywall-features">
-                    <div class="feature-item">
-                        <svg class="feature-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-                        <div class="feature-text">
-                            <div class="feature-name">Trade Planning</div>
-                            <div class="feature-desc">Stop losses, targets, and thesis capture</div>
-                        </div>
-                    </div>
-                    <div class="feature-item">
-                        <svg class="feature-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"></path><path d="m9 12 2 2 4-4"></path></svg>
-                        <div class="feature-text">
-                            <div class="feature-name">Discipline Scoring</div>
-                            <div class="feature-desc">Track how well you follow your rules</div>
-                        </div>
-                    </div>
-                    <div class="feature-item">
-                        <svg class="feature-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-                        <div class="feature-text">
-                            <div class="feature-name">Tilt Detection</div>
-                            <div class="feature-desc">Real-time alerts for emotional trading</div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="paywall-pricing" style="text-align:center; margin:16px 0 8px; font-size:12px; color:#94a3b8; line-height:1.6;">
-                    <span style="color:#f8fafc; font-weight:600;">$19/mo</span> &middot;
-                    <span style="color:#f8fafc; font-weight:600;">$149/yr</span>
-                </div>
-
-                <div class="paywall-actions" style="display:flex; flex-direction:column; gap:8px;">
-                    <button class="paywall-btn primary" data-act="purchase" style="background:linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color:white; border:none; padding:12px 20px; border-radius:8px; font-weight:700; font-size:14px; cursor:pointer;">
-                        Get Elite on Whop
-                    </button>
-                    <button class="paywall-btn text" data-act="show-key-input" style="background:none; border:none; color:#8b5cf6; font-size:12px; cursor:pointer; padding:6px;">
-                        I have a license key
-                    </button>
-                </div>
-
-                <div class="paywall-key-section" style="display:none; margin-top:12px;">
-                    <div style="display:flex; gap:8px;">
-                        <input type="text" class="paywall-license-input" placeholder="Enter license key (mem_xxx...)" maxlength="64"
-                            style="flex:1; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:6px; padding:10px 12px; color:#f8fafc; font-size:13px; outline:none;">
-                        <button class="paywall-btn" data-act="activate" style="background:rgba(139,92,246,0.15); border:1px solid rgba(139,92,246,0.3); color:#a78bfa; padding:10px 16px; border-radius:6px; font-weight:600; font-size:13px; cursor:pointer; white-space:nowrap;">
-                            Activate
-                        </button>
-                    </div>
-                    <div class="paywall-key-status" style="margin-top:8px; font-size:12px; min-height:18px;"></div>
-                </div>
-
-                <div class="paywall-footer">
-                    <p style="font-size:11px; color:#475569; margin-top:12px;">Your trading data is preserved. Elite unlocks deeper analysis.</p>
-                </div>
-            </div>
-        `;
-      overlay.addEventListener("click", async (e) => {
-        if (e.target === overlay || e.target.closest('[data-act="close"]')) {
-          overlay.remove();
-        }
-        if (e.target.closest('[data-act="purchase"]')) {
-          License.openPurchasePage();
-        }
-        if (e.target.closest('[data-act="show-key-input"]')) {
-          const keySection = overlay.querySelector(".paywall-key-section");
-          if (keySection) {
-            keySection.style.display = keySection.style.display === "none" ? "block" : "none";
-            const input = keySection.querySelector(".paywall-license-input");
-            if (input)
-              input.focus();
-          }
-        }
-        if (e.target.closest('[data-act="activate"]')) {
-          const input = overlay.querySelector(".paywall-license-input");
-          const statusEl = overlay.querySelector(".paywall-key-status");
-          const key = input?.value?.trim();
-          if (!key) {
-            if (statusEl) {
-              statusEl.textContent = "Please enter a license key";
-              statusEl.style.color = "#f59e0b";
-            }
-            return;
-          }
-          const btn = e.target.closest('[data-act="activate"]');
-          const origText = btn.textContent;
-          btn.textContent = "Verifying...";
-          btn.disabled = true;
-          if (statusEl) {
-            statusEl.textContent = "Verifying your license...";
-            statusEl.style.color = "#94a3b8";
-          }
-          const result = await License.activate(key);
-          btn.textContent = origText;
-          btn.disabled = false;
-          if (result.ok) {
-            if (statusEl) {
-              statusEl.textContent = "Elite activated!";
-              statusEl.style.color = "#10b981";
-            }
-            this._showSuccessToast(License.getPlanLabel());
-            setTimeout(() => overlay.remove(), 1500);
-          } else {
-            const errorMsg = result.error === "invalid_key" ? "Invalid license key" : result.error === "invalid_product" ? "Key not for this product" : result.error === "membership_inactive" ? "Membership is not active" : "Verification failed \u2014 try again";
-            if (statusEl) {
-              statusEl.textContent = errorMsg;
-              statusEl.style.color = "#ef4444";
-            }
-          }
-        }
-      });
-      root.appendChild(overlay);
     }
   };
 
@@ -9720,500 +9432,6 @@ canvas#equity-canvas {
 
   // src/modules/ui/buy-hud.js
   init_store();
-  function px2(n) {
-    return n + "px";
-  }
-  function clamp2(v, min, max) {
-    return Math.max(min, Math.min(max, v));
-  }
-  var BuyHud = {
-    // UI State
-    buyHudTab: "buy",
-    buyHudEdit: false,
-    tradePlanExpanded: false,
-    lastEmotionTradeId: null,
-    // Debounce: one prompt per trade
-    // State for reuse
-    makeDraggableRef: null,
-    mountBuyHud(makeDraggable, force = false) {
-      if (makeDraggable)
-        this.makeDraggableRef = makeDraggable;
-      const dragger = makeDraggable || this.makeDraggableRef;
-      const container = OverlayManager.getContainer();
-      const rootId = IDS.buyHud;
-      let root = container.querySelector("#" + rootId);
-      if (!Store.state.settings.enabled) {
-        if (root)
-          root.style.display = "none";
-        return;
-      }
-      if (root)
-        root.style.display = "";
-      if (!root) {
-        root = document.createElement("div");
-        root.id = rootId;
-        root.className = Store.state.settings.buyHudDocked ? "docked" : "floating";
-        if (!Store.state.settings.buyHudDocked) {
-          const safeX = window.innerWidth - 340;
-          root.style.left = px2(safeX > 0 ? safeX : 20);
-          root.style.top = "100px";
-          root.style.right = "auto";
-        }
-        container.appendChild(root);
-        this.renderBuyHudContent(root, dragger);
-        this.setupBuyHudInteractions(root);
-      } else if (force) {
-        this.renderBuyHudContent(root, dragger);
-      } else {
-        this.refreshMarketContext(root);
-      }
-    },
-    refreshMarketContext(root) {
-      const container = root.querySelector(".market-context-container");
-      if (container) {
-        container.innerHTML = this.renderMarketContext().replace('<div class="market-context-container" style="margin-bottom:12px;">', "").replace(/<\/div>\s*$/, "");
-      }
-    },
-    renderBuyHudContent(root, makeDraggable) {
-      const isBuy = this.buyHudTab === "buy";
-      const actionText = isBuy ? "ZER\xD8 BUY" : "ZER\xD8 SELL";
-      const actionClass = isBuy ? "action" : "action sell";
-      const label = isBuy ? "Amount (SOL)" : "Amount (%)";
-      const oldField = root.querySelector('input[data-k="field"]');
-      const oldVal = oldField ? oldField.value : "";
-      root.innerHTML = `
-            <div class="panel">
-                <div class="panelHeader">
-                    <div class="panelTitle"><span class="dot"></span> ZER\xD8 TRADE</div>
-                    <div class="panelBtns">
-                        <button class="btn" data-act="edit">${this.buyHudEdit ? "Done" : "Edit"}</button>
-                        <button class="btn" data-act="dock">${Store.state.settings.buyHudDocked ? "Float" : "Dock"}</button>
-                    </div>
-                </div>
-                <div class="tabs">
-                    <div class="tab ${isBuy ? "active" : ""}" data-act="tab-buy">Buy</div>
-                    <div class="tab ${!isBuy ? "active" : ""}" data-act="tab-sell">Sell</div>
-                </div>
-                <div class="body">
-                    ${this.renderMarketContext()}
-                    <div class="fieldLabel">${label}</div>
-                    <input class="field" type="text" inputmode="decimal" data-k="field" placeholder="0.0" value="${oldVal}">
-
-                    <div class="quickRow">
-                        ${this.renderQuickButtons(isBuy)}
-                    </div>
-
-                    ${isBuy ? `
-                    <div class="strategyRow">
-                         <div class="fieldLabel">Context / Strategy</div>
-                         <select class="strategySelect" data-k="strategy">
-                            ${(Store.state.settings.strategies || ["Trend"]).map((s) => `<option value="${s}">${s}</option>`).join("")}
-                         </select>
-                    </div>
-                    ${this.renderTradePlanFields()}
-                    ` : ""}
-
-                    <button class="${actionClass}" data-act="action">${actionText}</button>
-                    <div class="status" data-k="status">Ready to trade</div>
-                </div>
-            </div>
-        `;
-      this.bindHeaderDrag(root, makeDraggable);
-    },
-    renderQuickButtons(isBuy) {
-      const values = isBuy ? Store.state.settings.quickBuySols : Store.state.settings.quickSellPcts;
-      return values.map((v) => `
-            <button class="qbtn" data-act="quick" data-val="${v}">${v}${isBuy ? " SOL" : "%"}</button>
-        `).join("");
-    },
-    bindHeaderDrag(root, makeDraggable) {
-      const header = root.querySelector(".panelHeader");
-      if (!header || !makeDraggable)
-        return;
-      makeDraggable(header, (dx, dy) => {
-        if (Store.state.settings.buyHudDocked)
-          return;
-        const s = Store.state.settings;
-        if (!s.buyHudPos) {
-          const rect = root.getBoundingClientRect();
-          s.buyHudPos = { x: rect.left, y: rect.top };
-        }
-        s.buyHudPos.x = clamp2(s.buyHudPos.x + dx, 0, window.innerWidth - 300);
-        s.buyHudPos.y = clamp2(s.buyHudPos.y + dy, 34, window.innerHeight - 300);
-        root.style.setProperty("left", px2(s.buyHudPos.x), "important");
-        root.style.setProperty("top", px2(s.buyHudPos.y), "important");
-        root.style.setProperty("right", "auto", "important");
-      }, async () => {
-        if (!Store.state.settings.buyHudDocked)
-          await Store.save();
-      });
-    },
-    setupBuyHudInteractions(root) {
-      root.addEventListener("keydown", (e) => {
-        if (e.target.matches("input, select, textarea")) {
-          e.stopPropagation();
-        }
-      });
-      root.addEventListener("click", async (e) => {
-        const t = e.target;
-        if (t.matches("input") || t.matches("select"))
-          return;
-        const actEl = t.closest("[data-act]");
-        if (!actEl)
-          return;
-        const act = actEl.getAttribute("data-act");
-        e.preventDefault();
-        if (act === "dock") {
-          Store.state.settings.buyHudDocked = !Store.state.settings.buyHudDocked;
-          await Store.save();
-          this.updateBuyHud();
-        }
-        if (act === "tab-buy") {
-          this.buyHudTab = "buy";
-          this.mountBuyHud(null, true);
-        }
-        if (act === "tab-sell") {
-          this.buyHudTab = "sell";
-          this.mountBuyHud(null, true);
-        }
-        if (act === "quick") {
-          const val = actEl.getAttribute("data-val");
-          const field2 = root.querySelector('input[data-k="field"]');
-          if (field2) {
-            field2.value = val;
-            await this.executeTrade(root);
-          }
-        }
-        if (act === "action") {
-          await this.executeTrade(root);
-        }
-        if (act === "upgrade-plan") {
-          Paywall.showUpgradeModal("TRADE_PLAN");
-        }
-        if (act === "edit") {
-          this.buyHudEdit = !this.buyHudEdit;
-          this.mountBuyHud();
-        }
-        if (act === "toggle-plan") {
-          this.tradePlanExpanded = !this.tradePlanExpanded;
-          this.mountBuyHud();
-        }
-      });
-    },
-    showEmotionSelector(tradeId) {
-      const emoFlags = FeatureManager.resolveFlags(Store.state, "EMOTION_TRACKING");
-      if (!emoFlags.enabled || Store.state.settings.showJournal === false)
-        return;
-      if (!tradeId || tradeId === this.lastEmotionTradeId)
-        return;
-      this.lastEmotionTradeId = tradeId;
-      const container = OverlayManager.getContainer();
-      const existing = container.querySelector(".emotion-modal-overlay");
-      if (existing)
-        existing.remove();
-      const overlay = document.createElement("div");
-      overlay.className = "emotion-modal-overlay";
-      overlay.style.position = "fixed";
-      overlay.style.zIndex = "2147483647";
-      overlay.style.background = "transparent";
-      overlay.style.width = "100vw";
-      overlay.style.height = "100vh";
-      overlay.style.pointerEvents = "none";
-      overlay.style.display = "flex";
-      overlay.style.flexDirection = "column";
-      overlay.style.fontFamily = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-      const emotions = [
-        { id: "calm", label: "Calm", icon: ICONS.EMO_CALM },
-        { id: "anxious", label: "Anxious", icon: ICONS.EMO_ANXIOUS },
-        { id: "excited", label: "Excited", icon: ICONS.EMO_EXCITED },
-        { id: "angry", label: "Angry/Rev", icon: ICONS.EMO_ANGRY },
-        { id: "bored", label: "Bored", icon: ICONS.EMO_BORED },
-        { id: "confident", label: "Confident", icon: ICONS.EMO_CONFIDENT }
-      ];
-      overlay.innerHTML = `
-            <div class="emotion-modal" style="position:absolute; pointer-events:auto; box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 1px solid rgba(20,184,166,0.2); width:320px;">
-                <div class="emotion-title">POST-TRADE CHECK</div>
-                <div class="emotion-subtitle">How are you feeling right now?</div>
-                <div class="emotion-grid">
-                    ${emotions.map((e) => `
-                        <button class="emotion-btn" data-emo="${e.id}">
-                            <span class="emotion-icon">${e.icon}</span> ${e.label}
-                        </button>
-                    `).join("")}
-                </div>
-                <div style="margin-top:12px; display:flex; align-items:center; justify-content:space-between; gap:10px; border-top:1px solid rgba(255,255,255,0.05); padding-top:8px;">
-                     <label style="display:flex; align-items:center; gap:6px; font-size:10px; color:#64748b; cursor:pointer;">
-                        <input type="checkbox" class="journal-opt-out"> Don't show again
-                    </label>
-                    <button class="emotion-skip" style="font-size:11px; padding:4px 8px; background:transparent; border:none; color:#94a3b8; cursor:pointer;">Skip</button>
-                </div>
-            </div>
-        `;
-      const buyHud = container.querySelector("#" + IDS.buyHud);
-      const modal = overlay.querySelector(".emotion-modal");
-      if (buyHud) {
-        const rect = buyHud.getBoundingClientRect();
-        modal.style.top = rect.bottom + 12 + "px";
-        modal.style.left = rect.left + "px";
-      } else {
-        modal.style.top = "100px";
-        modal.style.left = "50%";
-        modal.style.transform = "translateX(-50%)";
-      }
-      container.appendChild(overlay);
-      const close = async () => {
-        if (overlay.querySelector(".journal-opt-out").checked) {
-          Store.state.settings.showJournal = false;
-          await Store.save();
-        }
-        overlay.remove();
-      };
-      overlay.querySelectorAll(".emotion-btn").forEach((btn) => {
-        btn.onclick = async () => {
-          const emo = btn.getAttribute("data-emo");
-          await Trading.tagTrade(tradeId, { emotion: emo });
-          close();
-        };
-      });
-      overlay.querySelector(".emotion-skip").onclick = close;
-    },
-    updateBuyHud() {
-      const root = OverlayManager.getContainer().querySelector("#" + IDS.buyHud);
-      if (!root || !Store.state)
-        return;
-      if (!Store.state.settings.enabled) {
-        root.style.display = "none";
-        return;
-      }
-      root.style.display = "";
-      root.className = Store.state.settings.buyHudDocked ? "docked" : "floating";
-      if (!Store.state.settings.buyHudDocked) {
-        const p = Store.state.settings.buyHudPos;
-        if (p) {
-          const maxX = window.innerWidth - 300;
-          const safeX = clamp2(p.x, 0, maxX > 0 ? maxX : 0);
-          root.style.setProperty("left", px2(safeX), "important");
-          root.style.setProperty("top", px2(p.y), "important");
-          root.style.setProperty("right", "auto", "important");
-        } else {
-          const safeX = window.innerWidth - 340;
-          root.style.setProperty("left", px2(safeX > 0 ? safeX : 20), "important");
-          root.style.setProperty("top", "100px", "important");
-          root.style.setProperty("right", "auto", "important");
-        }
-      } else {
-        root.style.left = "";
-        root.style.top = "";
-        root.style.right = "";
-      }
-    },
-    renderMarketContext() {
-      if (!Store.state)
-        return "";
-      const flags = FeatureManager.resolveFlags(Store.state, "MARKET_CONTEXT");
-      if (!flags.visible)
-        return "";
-      const ctx = Market.context;
-      const isGated = flags.gated;
-      let content = "";
-      if (isGated) {
-        content = `
-                <div class="market-badge gated" style="cursor:pointer;" onclick="this.dispatchEvent(new CustomEvent('zero-upgrade', { bubbles:true, detail:'MARKET_CONTEXT' }))">
-                    ${ICONS.LOCK} MARKET CONTEXT (ELITE)
-                </div>
-            `;
-      } else if (ctx) {
-        const vol = (ctx.vol24h / 1e6).toFixed(1) + "M";
-        const chg = ctx.priceChange24h.toFixed(1) + "%";
-        const chgColor = ctx.priceChange24h >= 0 ? "#10b981" : "#ef4444";
-        content = `
-                <div class="market-badge">
-                    <div class="mitem">VOL <span>$${vol}</span></div>
-                    <div class="mitem">24H <span style="color:${chgColor}">${chg}</span></div>
-                </div>
-            `;
-      } else {
-        content = `
-                <div class="market-badge loading">Fetching market data...</div>
-            `;
-      }
-      return `
-            <div class="market-context-container" style="margin-bottom:12px;">
-                ${content}
-            </div>
-        `;
-    },
-    renderTradePlanFields() {
-      if (!Store.state)
-        return "";
-      const flags = FeatureManager.resolveFlags(Store.state, "TRADE_PLAN");
-      if (!flags.visible)
-        return "";
-      const isGated = flags.gated;
-      const isExpanded = this.tradePlanExpanded;
-      const plan = Store.state.pendingPlan || {};
-      if (!isExpanded) {
-        return `
-                <div class="plan-toggle" data-act="toggle-plan" style="display:flex; justify-content:space-between; align-items:center;">
-                    <span style="display:flex; align-items:center; gap:6px;">
-                        ${ICONS.TARGET} ${isGated ? "TRADE PLAN (ELITE)" : "ADD TRADE PLAN"}
-                    </span>
-                    ${ICONS.CHEVRON_DOWN}
-                </div>
-            `;
-      }
-      if (isGated) {
-        return `
-                <div class="trade-plan-section gated">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                        <span class="plan-title">${ICONS.TARGET} Trade Plan</span>
-                        <div class="plan-collapse-arrow" data-act="toggle-plan">${ICONS.CHEVRON_UP}</div>
-                    </div>
-                    <div data-act="upgrade-plan">
-                        <div class="plan-gated-badge">
-                            ${ICONS.LOCK}
-                            <span>TRADE PLAN (ELITE)</span>
-                        </div>
-                        <div class="plan-gated-hint">Define stop loss, targets & thesis</div>
-                    </div>
-                </div>
-            `;
-      }
-      return `
-            <div class="trade-plan-section">
-                <div class="plan-header">
-                    <span class="plan-title">${ICONS.TARGET} Trade Plan</span>
-                    <div style="display:flex; align-items:center; gap:8px;">
-                        <span class="plan-tag">ELITE</span>
-                        <div class="plan-collapse-arrow" data-act="toggle-plan">${ICONS.CHEVRON_UP}</div>
-                    </div>
-                </div>
-                <div class="plan-row">
-                    <div class="plan-field">
-                        <label class="plan-label">Stop Loss</label>
-                        <div class="plan-input-wrap">
-                            <input type="text" class="plan-input" data-k="stopLoss" placeholder="0.00" value="${plan.stopLoss || ""}">
-                            <span class="plan-unit">USD</span>
-                        </div>
-                    </div>
-                    <div class="plan-field">
-                        <label class="plan-label">Target</label>
-                        <div class="plan-input-wrap">
-                            <input type="text" class="plan-input" data-k="target" placeholder="0.00" value="${plan.target || ""}">
-                            <span class="plan-unit">USD</span>
-                        </div>
-                    </div>
-                </div>
-                <div class="plan-field full">
-                    <label class="plan-label">Entry Thesis <span class="optional">(optional)</span></label>
-                    <textarea class="plan-textarea" data-k="thesis" placeholder="Why are you taking this trade?" rows="2">${plan.thesis || ""}</textarea>
-                </div>
-            </div>
-        `;
-    },
-    // Save pending plan values as user types
-    savePendingPlan(root) {
-      if (!Store.state.pendingPlan) {
-        Store.state.pendingPlan = { stopLoss: null, target: null, thesis: "", maxRiskPct: null };
-      }
-      const stopEl = root.querySelector('[data-k="stopLoss"]');
-      const targetEl = root.querySelector('[data-k="target"]');
-      const thesisEl = root.querySelector('[data-k="thesis"]');
-      if (stopEl) {
-        const val = parseFloat(stopEl.value);
-        Store.state.pendingPlan.stopLoss = isNaN(val) ? null : val;
-      }
-      if (targetEl) {
-        const val = parseFloat(targetEl.value);
-        Store.state.pendingPlan.target = isNaN(val) ? null : val;
-      }
-      if (thesisEl) {
-        Store.state.pendingPlan.thesis = thesisEl.value.trim();
-      }
-    },
-    // Get and clear pending plan for trade execution
-    consumePendingPlan() {
-      const plan = Store.state.pendingPlan || {};
-      Store.state.pendingPlan = { stopLoss: null, target: null, thesis: "", maxRiskPct: null };
-      return {
-        plannedStop: plan.stopLoss || null,
-        plannedTarget: plan.target || null,
-        entryThesis: plan.thesis || "",
-        riskDefined: !!(plan.stopLoss && plan.stopLoss > 0)
-      };
-    },
-    // Clear plan input fields in the UI
-    clearPlanFields(root) {
-      const stopEl = root.querySelector('[data-k="stopLoss"]');
-      const targetEl = root.querySelector('[data-k="target"]');
-      const thesisEl = root.querySelector('[data-k="thesis"]');
-      if (stopEl)
-        stopEl.value = "";
-      if (targetEl)
-        targetEl.value = "";
-      if (thesisEl)
-        thesisEl.value = "";
-    },
-    async executeTrade(root) {
-      const field2 = root.querySelector('input[data-k="field"]');
-      const val = parseFloat(field2?.value || "0");
-      const status = root.querySelector('[data-k="status"]');
-      const strategyEl = root.querySelector('select[data-k="strategy"]');
-      const strategy = strategyEl ? strategyEl.value : "Trend";
-      if (val <= 0) {
-        if (status)
-          status.textContent = "Invalid amount";
-        return;
-      }
-      status.textContent = "Executing...";
-      if (this.buyHudTab === "buy") {
-        this.savePendingPlan(root);
-      }
-      const tokenInfo = TokenDetector.getCurrentToken();
-      const tradePlan = this.buyHudTab === "buy" ? this.consumePendingPlan() : null;
-      let res;
-      try {
-        if (this.buyHudTab === "buy") {
-          res = await Trading.buy(val, strategy, tokenInfo, tradePlan);
-        } else {
-          res = await Trading.sell(val, strategy, tokenInfo);
-        }
-      } catch (err) {
-        status.textContent = "Error: " + err.message;
-        status.style.color = "#ef4444";
-        return;
-      }
-      if (res && res.success) {
-        status.textContent = "Trade logged!";
-        field2.value = "";
-        if (res.trade && res.trade.id) {
-          const fullTrade = Store.state.trades && Store.state.trades[res.trade.id] ? Store.state.trades[res.trade.id] : Store.state.fills ? Store.state.fills.find((f) => f.id === res.trade.id) : null;
-          if (fullTrade) {
-            const bridgeTrade = {
-              ...fullTrade,
-              side: fullTrade.side === "ENTRY" ? "BUY" : fullTrade.side === "EXIT" ? "SELL" : fullTrade.side,
-              priceUsd: fullTrade.fillPriceUsd || fullTrade.priceUsd,
-              marketCap: fullTrade.marketCapUsdAtFill || fullTrade.marketCap
-            };
-            window.postMessage({ __paper: true, type: "PAPER_DRAW_MARKER", trade: bridgeTrade }, "*");
-          }
-        }
-        this.clearPlanFields(root);
-        if (window.ZeroHUD && window.ZeroHUD.updateAll) {
-          window.ZeroHUD.updateAll();
-        }
-        setTimeout(() => {
-          this.showEmotionSelector(res.trade.id);
-        }, 500);
-      } else {
-        status.textContent = res.error || "Error executing trade";
-        status.style.color = "#ef4444";
-      }
-    }
-  };
-
-  // src/modules/ui/shadow-hud.js
-  init_store();
 
   // src/services/socialx/types.js
   var FIELD_STATUS = {
@@ -11006,6 +10224,770 @@ canvas#equity-canvas {
     return count;
   }
 
+  // src/modules/ui/market-context-renderer.js
+  var MarketContextRenderer = {
+    renderTrustSummary() {
+      const data = NarrativeTrust.getData();
+      const score = data.score;
+      const confidence = data.confidence;
+      const isLoading = NarrativeTrust.loading;
+      if (isLoading) {
+        return `
+                <div class="sh-trust-summary sh-trust-loading-state">
+                    <div class="sh-loading-text">Scanning market context...</div>
+                    <div class="sh-loading-bar"><div class="sh-loading-bar-fill"></div></div>
+                </div>
+            `;
+      }
+      if (score === null) {
+        return `
+                <div class="sh-trust-summary">
+                    <div class="sh-trust-score">Trust: <span class="score-val">--</span>/100</div>
+                    <div class="sh-trust-bar"><div class="sh-trust-bar-fill" style="width:0%"></div></div>
+                    <span class="sh-confidence-badge low">no data</span>
+                </div>
+            `;
+      }
+      const barClass = score >= 70 ? "high" : score >= 40 ? "mid" : "low";
+      return `
+            <div class="sh-trust-summary">
+                <div class="sh-trust-score">Trust: <span class="score-val">${score}</span>/100</div>
+                <div class="sh-trust-bar"><div class="sh-trust-bar-fill ${barClass}" style="width:${score}%"></div></div>
+                <span class="sh-confidence-badge ${confidence}">${confidence}</span>
+            </div>
+        `;
+    },
+    renderSignals() {
+      const isLoading = NarrativeTrust.loading;
+      if (isLoading) {
+        return `<div class="sh-signals"><span class="sh-signal-label sh-signal-loading">Waiting for data...</span></div>`;
+      }
+      const signals = NarrativeTrust.getSignals();
+      const items = [
+        { key: "xAccountAge", label: "X" },
+        { key: "recentActivity", label: "Activity" },
+        { key: "xCommunities", label: "X Comm" },
+        { key: "developerHistory", label: "Dev" }
+      ];
+      const presentCount = items.filter((item) => signals[item.key] !== "unavailable").length;
+      return `
+            <div class="sh-signals">
+                ${items.map((item) => {
+        const val = signals[item.key];
+        const cls = val === "unavailable" ? "unavailable" : val === "detected" || val === "active" || val === "established" || val === "known" ? "positive" : "neutral";
+        return `<div class="sh-signal-dot ${cls}" title="${item.label}: ${val}"></div>`;
+      }).join("")}
+                <span class="sh-signal-label">${presentCount} of ${items.length} signals</span>
+            </div>
+        `;
+    },
+    renderTabs(activeTab, actName = "tab") {
+      const tabs = [
+        { id: "xAccount", label: "X", icon: ICONS.TAB_X_ACCOUNT },
+        { id: "website", label: "Website", icon: ICONS.TAB_WEBSITE },
+        { id: "developer", label: "Dev", icon: ICONS.TAB_DEVELOPER }
+      ];
+      return `
+            <div class="sh-tabs">
+                ${tabs.map((t) => `
+                    <div class="sh-tab ${t.id === activeTab ? "active" : ""}" data-act="${actName}" data-tab="${t.id}">
+                        <span class="sh-tab-icon">${t.icon}</span> ${t.label}
+                    </div>
+                `).join("")}
+            </div>
+        `;
+    },
+    renderTabContent(activeTab) {
+      const vm = NarrativeTrust.getViewModel();
+      if (!vm) {
+        return '<div class="sh-empty">Fetching context data...</div>';
+      }
+      switch (activeTab) {
+        case "xAccount":
+          return this.renderXAccountTab(vm.xAccount);
+        case "website":
+          return this.renderWebsiteTab(vm.website);
+        case "developer":
+          return this.renderDeveloperTab(vm.developer);
+        default:
+          return "";
+      }
+    },
+    renderXAccountTab(x) {
+      if (!x)
+        return "";
+      const enrichedRows = [
+        { label: "Age", f: x.age },
+        { label: "Followers", f: x.followers },
+        { label: "CA Mentions", f: x.caMentions },
+        { label: "Renames", f: x.renameCount }
+      ].filter((r) => r.f && r.f.status === "ok").map((r) => this.field(r.label, r.f)).join("");
+      let commHtml;
+      const comm = x.communities;
+      if (comm && comm.status === "ok" && comm.items.length > 0) {
+        const itemsHtml = comm.items.map((item) => {
+          const meta = [];
+          if (item.memberCount != null)
+            meta.push(`${item.memberCount} members`);
+          if (item.activityLevel && item.activityLevel !== "unknown")
+            meta.push(item.activityLevel);
+          const metaStr = meta.length > 0 ? ` <span style="opacity:0.6; font-size:10px;">(${meta.join(" \xB7 ")})</span>` : "";
+          return `<div class="nt-community-item"><a href="${item.url}" target="_blank" rel="noopener" style="color:#a78bfa; text-decoration:none;">${this.escapeHtml(item.name)}</a>${metaStr}</div>`;
+        }).join("");
+        commHtml = `
+                <div class="nt-section-divider" style="margin:8px 0 4px; padding-top:6px; border-top:1px solid rgba(255,255,255,0.06);">
+                    <div class="nt-label" style="font-weight:600; margin-bottom:4px;">X Communities</div>
+                    ${itemsHtml}
+                </div>
+            `;
+      } else {
+        commHtml = `
+                <div class="nt-section-divider" style="margin:8px 0 4px; padding-top:6px; border-top:1px solid rgba(255,255,255,0.06);">
+                    <div class="nt-field unavailable"><div class="nt-label">X Communities</div><div class="nt-value">No X community detected</div></div>
+                </div>
+            `;
+      }
+      return `
+            ${this.field("Account", x.handle)}
+            ${this.field("URL", x.url)}
+            ${enrichedRows}
+            ${commHtml}
+        `;
+    },
+    renderWebsiteTab(w) {
+      if (!w)
+        return "";
+      return `
+            ${this.field("Domain", w.domain)}
+            ${this.field("URL", w.url)}
+            ${this.field("Domain Age", w.domainAge)}
+            ${this.field("Content", w.contentSummary)}
+            ${this.field("Narrative", w.narrativeConsistency)}
+        `;
+    },
+    renderDeveloperTab(d) {
+      if (!d)
+        return "";
+      return `
+            ${this.field("Deployer", d.knownLaunches)}
+            ${this.field("Recent (30d)", d.recentLaunches)}
+            ${this.field("Mint Age", d.historicalSummary)}
+        `;
+    },
+    field(label, vmField) {
+      let display, isUnavailable, isStale;
+      if (vmField && typeof vmField === "object" && "display" in vmField) {
+        display = vmField.display;
+        isUnavailable = vmField.status !== "ok" && vmField.status !== "stale_cached";
+        isStale = vmField.status === "stale_cached";
+      } else {
+        display = vmField || "Not detected";
+        isUnavailable = !vmField || vmField === "unavailable";
+        isStale = false;
+      }
+      const cls = isUnavailable ? "unavailable" : isStale ? "stale" : "";
+      return `
+            <div class="nt-field ${cls}">
+                <div class="nt-label">${label}</div>
+                <div class="nt-value">${display}</div>
+            </div>
+        `;
+    },
+    escapeHtml(str) {
+      const div = document.createElement("div");
+      div.textContent = str;
+      return div.innerHTML;
+    }
+  };
+
+  // src/modules/ui/buy-hud.js
+  function px2(n) {
+    return n + "px";
+  }
+  function clamp2(v, min, max) {
+    return Math.max(min, Math.min(max, v));
+  }
+  var BuyHud = {
+    // UI State
+    buyHudTab: "buy",
+    buyHudEdit: false,
+    tradePlanExpanded: false,
+    lastEmotionTradeId: null,
+    // Debounce: one prompt per trade
+    // Market Context state (Elite Paper Mode)
+    marketContextExpanded: false,
+    marketContextTab: "xAccount",
+    _ntSubscribed: false,
+    // State for reuse
+    makeDraggableRef: null,
+    mountBuyHud(makeDraggable, force = false) {
+      if (makeDraggable)
+        this.makeDraggableRef = makeDraggable;
+      const dragger = makeDraggable || this.makeDraggableRef;
+      if (!this._ntSubscribed && FeatureManager.isElite(Store.state)) {
+        NarrativeTrust.subscribe(() => this._refreshFullMarketContext());
+        this._ntSubscribed = true;
+      }
+      const container = OverlayManager.getContainer();
+      const rootId = IDS.buyHud;
+      let root = container.querySelector("#" + rootId);
+      if (!Store.state.settings.enabled) {
+        if (root)
+          root.style.display = "none";
+        return;
+      }
+      if (root)
+        root.style.display = "";
+      if (!root) {
+        root = document.createElement("div");
+        root.id = rootId;
+        root.className = Store.state.settings.buyHudDocked ? "docked" : "floating";
+        if (!Store.state.settings.buyHudDocked) {
+          const safeX = window.innerWidth - 340;
+          root.style.left = px2(safeX > 0 ? safeX : 20);
+          root.style.top = "100px";
+          root.style.right = "auto";
+        }
+        container.appendChild(root);
+        this.renderBuyHudContent(root, dragger);
+        this.setupBuyHudInteractions(root);
+      } else if (force) {
+        this.renderBuyHudContent(root, dragger);
+      } else {
+        this.refreshMarketContext(root);
+      }
+    },
+    refreshMarketContext(root) {
+      if (!FeatureManager.resolveFlags(Store.state, "MARKET_CONTEXT").gated && FeatureManager.isElite(Store.state)) {
+        return;
+      }
+      const container = root.querySelector(".market-context-container");
+      if (container) {
+        container.innerHTML = this.renderMarketContext().replace('<div class="market-context-container" style="margin-bottom:12px;">', "").replace(/<\/div>\s*$/, "");
+      }
+    },
+    _refreshFullMarketContext() {
+      const container = OverlayManager.getContainer();
+      if (!container)
+        return;
+      const root = container.querySelector("#" + IDS.buyHud);
+      if (!root)
+        return;
+      const summaryEl = root.querySelector(".sh-trust-summary");
+      if (summaryEl)
+        summaryEl.outerHTML = MarketContextRenderer.renderTrustSummary();
+      const signalsEl = root.querySelector(".sh-signals");
+      if (signalsEl)
+        signalsEl.outerHTML = MarketContextRenderer.renderSignals();
+      if (this.marketContextExpanded) {
+        const tabContent = root.querySelector("[data-tab-content]");
+        if (tabContent)
+          tabContent.innerHTML = MarketContextRenderer.renderTabContent(this.marketContextTab);
+      }
+    },
+    renderBuyHudContent(root, makeDraggable) {
+      const isBuy = this.buyHudTab === "buy";
+      const actionText = isBuy ? "ZER\xD8 BUY" : "ZER\xD8 SELL";
+      const actionClass = isBuy ? "action" : "action sell";
+      const label = isBuy ? "Amount (SOL)" : "Amount (%)";
+      const oldField = root.querySelector('input[data-k="field"]');
+      const oldVal = oldField ? oldField.value : "";
+      root.innerHTML = `
+            <div class="panel">
+                <div class="panelHeader">
+                    <div class="panelTitle"><span class="dot"></span> ZER\xD8 TRADE</div>
+                    <div class="panelBtns">
+                        <button class="btn" data-act="edit">${this.buyHudEdit ? "Done" : "Edit"}</button>
+                        <button class="btn" data-act="dock">${Store.state.settings.buyHudDocked ? "Float" : "Dock"}</button>
+                    </div>
+                </div>
+                <div class="tabs">
+                    <div class="tab ${isBuy ? "active" : ""}" data-act="tab-buy">Buy</div>
+                    <div class="tab ${!isBuy ? "active" : ""}" data-act="tab-sell">Sell</div>
+                </div>
+                <div class="body">
+                    ${this.renderMarketContext()}
+                    <div class="fieldLabel">${label}</div>
+                    <input class="field" type="text" inputmode="decimal" data-k="field" placeholder="0.0" value="${oldVal}">
+
+                    <div class="quickRow">
+                        ${this.renderQuickButtons(isBuy)}
+                    </div>
+
+                    ${isBuy ? `
+                    <div class="strategyRow">
+                         <div class="fieldLabel">Context / Strategy</div>
+                         <select class="strategySelect" data-k="strategy">
+                            ${(Store.state.settings.strategies || ["Trend"]).map((s) => `<option value="${s}">${s}</option>`).join("")}
+                         </select>
+                    </div>
+                    ${this.renderTradePlanFields()}
+                    ` : ""}
+
+                    <button class="${actionClass}" data-act="action">${actionText}</button>
+                    <div class="status" data-k="status">Ready to trade</div>
+                </div>
+            </div>
+        `;
+      this.bindHeaderDrag(root, makeDraggable);
+    },
+    renderQuickButtons(isBuy) {
+      const values = isBuy ? Store.state.settings.quickBuySols : Store.state.settings.quickSellPcts;
+      if (this.buyHudEdit) {
+        return values.map((v, i) => `
+                <input class="qbtn-edit" type="text" inputmode="decimal"
+                       data-idx="${i}" data-edit="quick"
+                       value="${v}" placeholder="${v}">
+            `).join("");
+      }
+      return values.map((v) => `
+            <button class="qbtn" data-act="quick" data-val="${v}">${v}${isBuy ? " SOL" : "%"}</button>
+        `).join("");
+    },
+    _saveQuickButtonEdits(root) {
+      const isBuy = this.buyHudTab === "buy";
+      const inputs = root.querySelectorAll('input[data-edit="quick"]');
+      const newValues = [];
+      inputs.forEach((input) => {
+        let val = parseFloat(input.value);
+        if (!isNaN(val) && val > 0) {
+          if (!isBuy)
+            val = Math.min(Math.max(val, 1), 100);
+          newValues.push(val);
+        }
+      });
+      if (newValues.length > 0) {
+        if (isBuy) {
+          Store.state.settings.quickBuySols = newValues;
+        } else {
+          Store.state.settings.quickSellPcts = newValues;
+        }
+        Store.save();
+      }
+    },
+    bindHeaderDrag(root, makeDraggable) {
+      const header = root.querySelector(".panelHeader");
+      if (!header || !makeDraggable)
+        return;
+      makeDraggable(header, (dx, dy) => {
+        if (Store.state.settings.buyHudDocked)
+          return;
+        const s = Store.state.settings;
+        if (!s.buyHudPos) {
+          const rect = root.getBoundingClientRect();
+          s.buyHudPos = { x: rect.left, y: rect.top };
+        }
+        s.buyHudPos.x = clamp2(s.buyHudPos.x + dx, 0, window.innerWidth - 300);
+        s.buyHudPos.y = clamp2(s.buyHudPos.y + dy, 34, window.innerHeight - 300);
+        root.style.setProperty("left", px2(s.buyHudPos.x), "important");
+        root.style.setProperty("top", px2(s.buyHudPos.y), "important");
+        root.style.setProperty("right", "auto", "important");
+      }, async () => {
+        if (!Store.state.settings.buyHudDocked)
+          await Store.save();
+      });
+    },
+    setupBuyHudInteractions(root) {
+      root.addEventListener("keydown", (e) => {
+        if (e.target.matches("input, select, textarea")) {
+          e.stopPropagation();
+        }
+      });
+      root.addEventListener("click", async (e) => {
+        const t = e.target;
+        if (t.matches("input") || t.matches("select"))
+          return;
+        const actEl = t.closest("[data-act]");
+        if (!actEl)
+          return;
+        const act = actEl.getAttribute("data-act");
+        e.preventDefault();
+        if (act === "dock") {
+          Store.state.settings.buyHudDocked = !Store.state.settings.buyHudDocked;
+          await Store.save();
+          this.updateBuyHud();
+        }
+        if (act === "tab-buy") {
+          if (this.buyHudEdit) {
+            this._saveQuickButtonEdits(root);
+            this.buyHudEdit = false;
+          }
+          this.buyHudTab = "buy";
+          this.mountBuyHud(null, true);
+        }
+        if (act === "tab-sell") {
+          if (this.buyHudEdit) {
+            this._saveQuickButtonEdits(root);
+            this.buyHudEdit = false;
+          }
+          this.buyHudTab = "sell";
+          this.mountBuyHud(null, true);
+        }
+        if (act === "quick") {
+          if (this.buyHudEdit)
+            return;
+          const val = actEl.getAttribute("data-val");
+          const field2 = root.querySelector('input[data-k="field"]');
+          if (field2) {
+            field2.value = val;
+            await this.executeTrade(root);
+          }
+        }
+        if (act === "action") {
+          await this.executeTrade(root);
+        }
+        if (act === "upgrade-plan") {
+          Paywall.showUpgradeModal("TRADE_PLAN");
+        }
+        if (act === "upgrade-market-context") {
+          Paywall.showUpgradeModal("MARKET_CONTEXT");
+        }
+        if (act === "edit") {
+          if (this.buyHudEdit)
+            this._saveQuickButtonEdits(root);
+          this.buyHudEdit = !this.buyHudEdit;
+          this.mountBuyHud(null, true);
+        }
+        if (act === "toggle-plan") {
+          this.tradePlanExpanded = !this.tradePlanExpanded;
+          this.mountBuyHud();
+        }
+        if (act === "toggle-market-context") {
+          this.marketContextExpanded = !this.marketContextExpanded;
+          const body = root.querySelector('[data-body="marketContext"]');
+          if (body)
+            body.classList.toggle("collapsed");
+          const chevron = actEl.querySelector(".sh-section-chevron");
+          if (chevron)
+            chevron.classList.toggle("expanded");
+        }
+        if (act === "mc-tab") {
+          const tab = actEl.getAttribute("data-tab");
+          this.marketContextTab = tab;
+          root.querySelectorAll(".zero-market-context .sh-tab").forEach((el) => {
+            el.classList.toggle("active", el.getAttribute("data-tab") === tab);
+          });
+          const tabContent = root.querySelector(".zero-market-context [data-tab-content]");
+          if (tabContent)
+            tabContent.innerHTML = MarketContextRenderer.renderTabContent(tab);
+        }
+      });
+    },
+    showEmotionSelector(tradeId) {
+      const emoFlags = FeatureManager.resolveFlags(Store.state, "EMOTION_TRACKING");
+      if (!emoFlags.enabled || Store.state.settings.showJournal === false)
+        return;
+      if (!tradeId || tradeId === this.lastEmotionTradeId)
+        return;
+      this.lastEmotionTradeId = tradeId;
+      const container = OverlayManager.getContainer();
+      const existing = container.querySelector(".emotion-modal-overlay");
+      if (existing)
+        existing.remove();
+      const overlay = document.createElement("div");
+      overlay.className = "emotion-modal-overlay";
+      overlay.style.position = "fixed";
+      overlay.style.zIndex = "2147483647";
+      overlay.style.background = "transparent";
+      overlay.style.width = "100vw";
+      overlay.style.height = "100vh";
+      overlay.style.pointerEvents = "none";
+      overlay.style.display = "flex";
+      overlay.style.flexDirection = "column";
+      overlay.style.fontFamily = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+      const emotions = [
+        { id: "calm", label: "Calm", icon: ICONS.EMO_CALM },
+        { id: "anxious", label: "Anxious", icon: ICONS.EMO_ANXIOUS },
+        { id: "excited", label: "Excited", icon: ICONS.EMO_EXCITED },
+        { id: "angry", label: "Angry/Rev", icon: ICONS.EMO_ANGRY },
+        { id: "bored", label: "Bored", icon: ICONS.EMO_BORED },
+        { id: "confident", label: "Confident", icon: ICONS.EMO_CONFIDENT }
+      ];
+      overlay.innerHTML = `
+            <div class="emotion-modal" style="position:absolute; pointer-events:auto; box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 1px solid rgba(20,184,166,0.2); width:320px;">
+                <div class="emotion-title">POST-TRADE CHECK</div>
+                <div class="emotion-subtitle">How are you feeling right now?</div>
+                <div class="emotion-grid">
+                    ${emotions.map((e) => `
+                        <button class="emotion-btn" data-emo="${e.id}">
+                            <span class="emotion-icon">${e.icon}</span> ${e.label}
+                        </button>
+                    `).join("")}
+                </div>
+                <div style="margin-top:12px; display:flex; align-items:center; justify-content:space-between; gap:10px; border-top:1px solid rgba(255,255,255,0.05); padding-top:8px;">
+                     <label style="display:flex; align-items:center; gap:6px; font-size:10px; color:#64748b; cursor:pointer;">
+                        <input type="checkbox" class="journal-opt-out"> Don't show again
+                    </label>
+                    <button class="emotion-skip" style="font-size:11px; padding:4px 8px; background:transparent; border:none; color:#94a3b8; cursor:pointer;">Skip</button>
+                </div>
+            </div>
+        `;
+      const buyHud = container.querySelector("#" + IDS.buyHud);
+      const modal = overlay.querySelector(".emotion-modal");
+      if (buyHud) {
+        const rect = buyHud.getBoundingClientRect();
+        modal.style.top = rect.bottom + 12 + "px";
+        modal.style.left = rect.left + "px";
+      } else {
+        modal.style.top = "100px";
+        modal.style.left = "50%";
+        modal.style.transform = "translateX(-50%)";
+      }
+      container.appendChild(overlay);
+      const close = async () => {
+        if (overlay.querySelector(".journal-opt-out").checked) {
+          Store.state.settings.showJournal = false;
+          await Store.save();
+        }
+        overlay.remove();
+      };
+      overlay.querySelectorAll(".emotion-btn").forEach((btn) => {
+        btn.onclick = async () => {
+          const emo = btn.getAttribute("data-emo");
+          await Trading.tagTrade(tradeId, { emotion: emo });
+          close();
+        };
+      });
+      overlay.querySelector(".emotion-skip").onclick = close;
+    },
+    updateBuyHud() {
+      const root = OverlayManager.getContainer().querySelector("#" + IDS.buyHud);
+      if (!root || !Store.state)
+        return;
+      if (!Store.state.settings.enabled) {
+        root.style.display = "none";
+        return;
+      }
+      root.style.display = "";
+      root.className = Store.state.settings.buyHudDocked ? "docked" : "floating";
+      if (!Store.state.settings.buyHudDocked) {
+        const p = Store.state.settings.buyHudPos;
+        if (p) {
+          const maxX = window.innerWidth - 300;
+          const safeX = clamp2(p.x, 0, maxX > 0 ? maxX : 0);
+          root.style.setProperty("left", px2(safeX), "important");
+          root.style.setProperty("top", px2(p.y), "important");
+          root.style.setProperty("right", "auto", "important");
+        } else {
+          const safeX = window.innerWidth - 340;
+          root.style.setProperty("left", px2(safeX > 0 ? safeX : 20), "important");
+          root.style.setProperty("top", "100px", "important");
+          root.style.setProperty("right", "auto", "important");
+        }
+      } else {
+        root.style.left = "";
+        root.style.top = "";
+        root.style.right = "";
+      }
+    },
+    renderMarketContext() {
+      if (!Store.state)
+        return "";
+      const flags = FeatureManager.resolveFlags(Store.state, "MARKET_CONTEXT");
+      if (!flags.visible)
+        return "";
+      const isGated = flags.gated;
+      if (isGated) {
+        return `
+                <div class="market-context-container" style="margin-bottom:12px;">
+                    <div class="market-badge gated" style="cursor:pointer;" data-act="upgrade-market-context">
+                        ${ICONS.LOCK} MARKET CONTEXT (ELITE)
+                    </div>
+                </div>
+            `;
+      }
+      return `
+            <div class="market-context-container zero-market-context" style="margin-bottom:12px;">
+                <div class="sh-section-header" data-act="toggle-market-context">
+                    <div class="sh-section-header-left">
+                        <div class="sh-section-icon">${ICONS.TRUST_SHIELD}</div>
+                        <div class="sh-section-title">Market Context</div>
+                    </div>
+                    <div class="sh-section-chevron ${this.marketContextExpanded ? "expanded" : ""}">${ICONS.CHEVRON_DOWN}</div>
+                </div>
+                ${MarketContextRenderer.renderTrustSummary()}
+                ${MarketContextRenderer.renderSignals()}
+                <div class="sh-section-body ${this.marketContextExpanded ? "" : "collapsed"}" data-body="marketContext">
+                    ${MarketContextRenderer.renderTabs(this.marketContextTab, "mc-tab")}
+                    <div class="sh-tab-content" data-tab-content>
+                        ${MarketContextRenderer.renderTabContent(this.marketContextTab)}
+                    </div>
+                </div>
+            </div>
+        `;
+    },
+    renderTradePlanFields() {
+      if (!Store.state)
+        return "";
+      const flags = FeatureManager.resolveFlags(Store.state, "TRADE_PLAN");
+      if (!flags.visible)
+        return "";
+      const isGated = flags.gated;
+      const isExpanded = this.tradePlanExpanded;
+      const plan = Store.state.pendingPlan || {};
+      if (!isExpanded) {
+        return `
+                <div class="plan-toggle" data-act="toggle-plan" style="display:flex; justify-content:space-between; align-items:center;">
+                    <span style="display:flex; align-items:center; gap:6px;">
+                        ${ICONS.TARGET} ${isGated ? "TRADE PLAN (ELITE)" : "ADD TRADE PLAN"}
+                    </span>
+                    ${ICONS.CHEVRON_DOWN}
+                </div>
+            `;
+      }
+      if (isGated) {
+        return `
+                <div class="trade-plan-section gated">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <span class="plan-title">${ICONS.TARGET} Trade Plan</span>
+                        <div class="plan-collapse-arrow" data-act="toggle-plan">${ICONS.CHEVRON_UP}</div>
+                    </div>
+                    <div data-act="upgrade-plan">
+                        <div class="plan-gated-badge">
+                            ${ICONS.LOCK}
+                            <span>TRADE PLAN (ELITE)</span>
+                        </div>
+                        <div class="plan-gated-hint">Define stop loss, targets & thesis</div>
+                    </div>
+                </div>
+            `;
+      }
+      return `
+            <div class="trade-plan-section">
+                <div class="plan-header">
+                    <span class="plan-title">${ICONS.TARGET} Trade Plan</span>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span class="plan-tag">ELITE</span>
+                        <div class="plan-collapse-arrow" data-act="toggle-plan">${ICONS.CHEVRON_UP}</div>
+                    </div>
+                </div>
+                <div class="plan-row">
+                    <div class="plan-field">
+                        <label class="plan-label">Stop Loss</label>
+                        <div class="plan-input-wrap">
+                            <input type="text" class="plan-input" data-k="stopLoss" placeholder="0.00" value="${plan.stopLoss || ""}">
+                            <span class="plan-unit">USD</span>
+                        </div>
+                    </div>
+                    <div class="plan-field">
+                        <label class="plan-label">Target</label>
+                        <div class="plan-input-wrap">
+                            <input type="text" class="plan-input" data-k="target" placeholder="0.00" value="${plan.target || ""}">
+                            <span class="plan-unit">USD</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="plan-field full">
+                    <label class="plan-label">Entry Thesis <span class="optional">(optional)</span></label>
+                    <textarea class="plan-textarea" data-k="thesis" placeholder="Why are you taking this trade?" rows="2">${plan.thesis || ""}</textarea>
+                </div>
+            </div>
+        `;
+    },
+    // Save pending plan values as user types
+    savePendingPlan(root) {
+      if (!Store.state.pendingPlan) {
+        Store.state.pendingPlan = { stopLoss: null, target: null, thesis: "", maxRiskPct: null };
+      }
+      const stopEl = root.querySelector('[data-k="stopLoss"]');
+      const targetEl = root.querySelector('[data-k="target"]');
+      const thesisEl = root.querySelector('[data-k="thesis"]');
+      if (stopEl) {
+        const val = parseFloat(stopEl.value);
+        Store.state.pendingPlan.stopLoss = isNaN(val) ? null : val;
+      }
+      if (targetEl) {
+        const val = parseFloat(targetEl.value);
+        Store.state.pendingPlan.target = isNaN(val) ? null : val;
+      }
+      if (thesisEl) {
+        Store.state.pendingPlan.thesis = thesisEl.value.trim();
+      }
+    },
+    // Get and clear pending plan for trade execution
+    consumePendingPlan() {
+      const plan = Store.state.pendingPlan || {};
+      Store.state.pendingPlan = { stopLoss: null, target: null, thesis: "", maxRiskPct: null };
+      return {
+        plannedStop: plan.stopLoss || null,
+        plannedTarget: plan.target || null,
+        entryThesis: plan.thesis || "",
+        riskDefined: !!(plan.stopLoss && plan.stopLoss > 0)
+      };
+    },
+    // Clear plan input fields in the UI
+    clearPlanFields(root) {
+      const stopEl = root.querySelector('[data-k="stopLoss"]');
+      const targetEl = root.querySelector('[data-k="target"]');
+      const thesisEl = root.querySelector('[data-k="thesis"]');
+      if (stopEl)
+        stopEl.value = "";
+      if (targetEl)
+        targetEl.value = "";
+      if (thesisEl)
+        thesisEl.value = "";
+    },
+    async executeTrade(root) {
+      const field2 = root.querySelector('input[data-k="field"]');
+      const val = parseFloat(field2?.value || "0");
+      const status = root.querySelector('[data-k="status"]');
+      const strategyEl = root.querySelector('select[data-k="strategy"]');
+      const strategy = strategyEl ? strategyEl.value : "Trend";
+      if (val <= 0) {
+        if (status)
+          status.textContent = "Invalid amount";
+        return;
+      }
+      status.textContent = "Executing...";
+      if (this.buyHudTab === "buy") {
+        this.savePendingPlan(root);
+      }
+      const tokenInfo = TokenDetector.getCurrentToken();
+      const tradePlan = this.buyHudTab === "buy" ? this.consumePendingPlan() : null;
+      let res;
+      try {
+        if (this.buyHudTab === "buy") {
+          res = await Trading.buy(val, strategy, tokenInfo, tradePlan);
+        } else {
+          res = await Trading.sell(val, strategy, tokenInfo);
+        }
+      } catch (err) {
+        status.textContent = "Error: " + err.message;
+        status.style.color = "#ef4444";
+        return;
+      }
+      if (res && res.success) {
+        status.textContent = "Trade logged!";
+        field2.value = "";
+        if (res.trade && res.trade.id) {
+          const fullTrade = Store.state.trades && Store.state.trades[res.trade.id] ? Store.state.trades[res.trade.id] : Store.state.fills ? Store.state.fills.find((f) => f.id === res.trade.id) : null;
+          if (fullTrade) {
+            const bridgeTrade = {
+              ...fullTrade,
+              side: fullTrade.side === "ENTRY" ? "BUY" : fullTrade.side === "EXIT" ? "SELL" : fullTrade.side,
+              priceUsd: fullTrade.fillPriceUsd || fullTrade.priceUsd,
+              marketCap: fullTrade.marketCapUsdAtFill || fullTrade.marketCap
+            };
+            window.postMessage({ __paper: true, type: "PAPER_DRAW_MARKER", trade: bridgeTrade }, "*");
+          }
+        }
+        this.clearPlanFields(root);
+        if (window.ZeroHUD && window.ZeroHUD.updateAll) {
+          window.ZeroHUD.updateAll();
+        }
+        setTimeout(() => {
+          this.showEmotionSelector(res.trade.id);
+        }, 500);
+      } else {
+        status.textContent = res.error || "Error executing trade";
+        status.style.color = "#ef4444";
+      }
+    }
+  };
+
+  // src/modules/ui/shadow-hud.js
+  init_store();
+
   // src/modules/core/trade-notes.js
   init_store();
   var MAX_NOTES = 50;
@@ -11194,7 +11176,7 @@ canvas#equity-canvas {
                 <div class="sh-subtitle">${subtitle}</div>
 
                 <!-- Section 1: Market Context -->
-                <div class="sh-section" data-section="marketContext">
+                <div class="sh-section zero-market-context" data-section="marketContext">
                     <div class="sh-section-header" data-act="toggle-section" data-target="marketContext">
                         <div class="sh-section-header-left">
                             <div class="sh-section-icon">${ICONS.TRUST_SHIELD}</div>
@@ -11202,12 +11184,12 @@ canvas#equity-canvas {
                         </div>
                         <div class="sh-section-chevron ${this.marketContextExpanded ? "expanded" : ""}">${ICONS.CHEVRON_DOWN}</div>
                     </div>
-                    ${this._renderTrustSummary()}
-                    ${this._renderSignals()}
+                    ${MarketContextRenderer.renderTrustSummary()}
+                    ${MarketContextRenderer.renderSignals()}
                     <div class="sh-section-body ${this.marketContextExpanded ? "" : "collapsed"}" data-body="marketContext">
-                        ${this._renderTabs()}
+                        ${MarketContextRenderer.renderTabs(this.activeTab, "tab")}
                         <div class="sh-tab-content" data-tab-content>
-                            ${this._renderTabContent()}
+                            ${MarketContextRenderer.renderTabContent(this.activeTab)}
                         </div>
                     </div>
                 </div>
@@ -11253,177 +11235,18 @@ canvas#equity-canvas {
         `;
       this.bindDrag(root, makeDraggable);
     },
-    // ==================== Market Context Rendering ====================
+    // ==================== Market Context Rendering (delegated) ====================
     _renderTrustSummary() {
-      const data = NarrativeTrust.getData();
-      const score = data.score;
-      const confidence = data.confidence;
-      const isLoading = NarrativeTrust.loading;
-      if (isLoading) {
-        return `
-                <div class="sh-trust-summary sh-trust-loading-state">
-                    <div class="sh-loading-text">Scanning market context...</div>
-                    <div class="sh-loading-bar"><div class="sh-loading-bar-fill"></div></div>
-                </div>
-            `;
-      }
-      if (score === null) {
-        return `
-                <div class="sh-trust-summary">
-                    <div class="sh-trust-score">Trust: <span class="score-val">--</span>/100</div>
-                    <div class="sh-trust-bar"><div class="sh-trust-bar-fill" style="width:0%"></div></div>
-                    <span class="sh-confidence-badge low">no data</span>
-                </div>
-            `;
-      }
-      const barClass = score >= 70 ? "high" : score >= 40 ? "mid" : "low";
-      return `
-            <div class="sh-trust-summary">
-                <div class="sh-trust-score">Trust: <span class="score-val">${score}</span>/100</div>
-                <div class="sh-trust-bar"><div class="sh-trust-bar-fill ${barClass}" style="width:${score}%"></div></div>
-                <span class="sh-confidence-badge ${confidence}">${confidence}</span>
-            </div>
-        `;
+      return MarketContextRenderer.renderTrustSummary();
     },
     _renderSignals() {
-      const isLoading = NarrativeTrust.loading;
-      if (isLoading) {
-        return `<div class="sh-signals"><span class="sh-signal-label sh-signal-loading">Waiting for data...</span></div>`;
-      }
-      const signals = NarrativeTrust.getSignals();
-      const items = [
-        { key: "xAccountAge", label: "X" },
-        { key: "recentActivity", label: "Activity" },
-        { key: "xCommunities", label: "X Comm" },
-        { key: "developerHistory", label: "Dev" }
-      ];
-      const presentCount = items.filter((item) => signals[item.key] !== "unavailable").length;
-      return `
-            <div class="sh-signals">
-                ${items.map((item) => {
-        const val = signals[item.key];
-        const cls = val === "unavailable" ? "unavailable" : val === "detected" || val === "active" || val === "established" || val === "known" ? "positive" : "neutral";
-        return `<div class="sh-signal-dot ${cls}" title="${item.label}: ${val}"></div>`;
-      }).join("")}
-                <span class="sh-signal-label">${presentCount} of ${items.length} signals</span>
-            </div>
-        `;
+      return MarketContextRenderer.renderSignals();
     },
     _renderTabs() {
-      const tabs = [
-        { id: "xAccount", label: "X", icon: ICONS.TAB_X_ACCOUNT },
-        { id: "website", label: "Website", icon: ICONS.TAB_WEBSITE },
-        { id: "developer", label: "Dev", icon: ICONS.TAB_DEVELOPER }
-      ];
-      return `
-            <div class="sh-tabs">
-                ${tabs.map((t) => `
-                    <div class="sh-tab ${t.id === this.activeTab ? "active" : ""}" data-act="tab" data-tab="${t.id}">
-                        <span class="sh-tab-icon">${t.icon}</span> ${t.label}
-                    </div>
-                `).join("")}
-            </div>
-        `;
+      return MarketContextRenderer.renderTabs(this.activeTab, "tab");
     },
     _renderTabContent() {
-      const vm = NarrativeTrust.getViewModel();
-      if (!vm) {
-        return '<div class="sh-empty">Fetching context data...</div>';
-      }
-      switch (this.activeTab) {
-        case "xAccount":
-          return this._renderXAccountTab(vm.xAccount);
-        case "website":
-          return this._renderWebsiteTab(vm.website);
-        case "developer":
-          return this._renderDeveloperTab(vm.developer);
-        default:
-          return "";
-      }
-    },
-    _renderXAccountTab(x) {
-      if (!x)
-        return "";
-      const enrichedRows = [
-        { label: "Age", f: x.age },
-        { label: "Followers", f: x.followers },
-        { label: "CA Mentions", f: x.caMentions },
-        { label: "Renames", f: x.renameCount }
-      ].filter((r) => r.f && r.f.status === "ok").map((r) => this._field(r.label, r.f)).join("");
-      let commHtml;
-      const comm = x.communities;
-      if (comm && comm.status === "ok" && comm.items.length > 0) {
-        const itemsHtml = comm.items.map((item) => {
-          const meta = [];
-          if (item.memberCount != null)
-            meta.push(`${item.memberCount} members`);
-          if (item.activityLevel && item.activityLevel !== "unknown")
-            meta.push(item.activityLevel);
-          const metaStr = meta.length > 0 ? ` <span style="opacity:0.6; font-size:10px;">(${meta.join(" \xB7 ")})</span>` : "";
-          return `<div class="nt-community-item"><a href="${item.url}" target="_blank" rel="noopener" style="color:#a78bfa; text-decoration:none;">${this._escapeHtml(item.name)}</a>${metaStr}</div>`;
-        }).join("");
-        commHtml = `
-                <div class="nt-section-divider" style="margin:8px 0 4px; padding-top:6px; border-top:1px solid rgba(255,255,255,0.06);">
-                    <div class="nt-label" style="font-weight:600; margin-bottom:4px;">X Communities</div>
-                    ${itemsHtml}
-                </div>
-            `;
-      } else {
-        commHtml = `
-                <div class="nt-section-divider" style="margin:8px 0 4px; padding-top:6px; border-top:1px solid rgba(255,255,255,0.06);">
-                    <div class="nt-field unavailable"><div class="nt-label">X Communities</div><div class="nt-value">No X community detected</div></div>
-                </div>
-            `;
-      }
-      return `
-            ${this._field("Account", x.handle)}
-            ${this._field("URL", x.url)}
-            ${enrichedRows}
-            ${commHtml}
-        `;
-    },
-    _renderWebsiteTab(w) {
-      if (!w)
-        return "";
-      return `
-            ${this._field("Domain", w.domain)}
-            ${this._field("URL", w.url)}
-            ${this._field("Domain Age", w.domainAge)}
-            ${this._field("Content", w.contentSummary)}
-            ${this._field("Narrative", w.narrativeConsistency)}
-        `;
-    },
-    _renderDeveloperTab(d) {
-      if (!d)
-        return "";
-      return `
-            ${this._field("Deployer", d.knownLaunches)}
-            ${this._field("Recent (30d)", d.recentLaunches)}
-            ${this._field("Mint Age", d.historicalSummary)}
-        `;
-    },
-    /**
-     * Render a key-value field. Accepts a VMField { display, status } or a raw string.
-     * Never outputs "Data unavailable". Uses status-aware display text.
-     */
-    _field(label, vmField) {
-      let display, isUnavailable, isStale;
-      if (vmField && typeof vmField === "object" && "display" in vmField) {
-        display = vmField.display;
-        isUnavailable = vmField.status !== "ok" && vmField.status !== "stale_cached";
-        isStale = vmField.status === "stale_cached";
-      } else {
-        display = vmField || "Not detected";
-        isUnavailable = !vmField || vmField === "unavailable";
-        isStale = false;
-      }
-      const cls = isUnavailable ? "unavailable" : isStale ? "stale" : "";
-      return `
-            <div class="nt-field ${cls}">
-                <div class="nt-label">${label}</div>
-                <div class="nt-value">${display}</div>
-            </div>
-        `;
+      return MarketContextRenderer.renderTabContent(this.activeTab);
     },
     // ==================== Notes Rendering ====================
     _renderNotesList() {
@@ -11445,27 +11268,22 @@ canvas#equity-canvas {
             `;
       }).join("");
     },
-    _escapeHtml(str) {
-      const div = document.createElement("div");
-      div.textContent = str;
-      return div.innerHTML;
-    },
     // ==================== Partial Updates ====================
     _updateMarketContext(root) {
       if (!root)
         return;
       const summaryEl = root.querySelector(".sh-trust-summary");
       if (summaryEl) {
-        summaryEl.outerHTML = this._renderTrustSummary();
+        summaryEl.outerHTML = MarketContextRenderer.renderTrustSummary();
       }
       const signalsEl = root.querySelector(".sh-signals");
       if (signalsEl) {
-        signalsEl.outerHTML = this._renderSignals();
+        signalsEl.outerHTML = MarketContextRenderer.renderSignals();
       }
       if (this.marketContextExpanded) {
         const tabContent = root.querySelector("[data-tab-content]");
         if (tabContent) {
-          tabContent.innerHTML = this._renderTabContent();
+          tabContent.innerHTML = MarketContextRenderer.renderTabContent(this.activeTab);
         }
       }
     },
@@ -11577,7 +11395,7 @@ canvas#equity-canvas {
       });
       const tabContent = root.querySelector("[data-tab-content]");
       if (tabContent) {
-        tabContent.innerHTML = this._renderTabContent();
+        tabContent.innerHTML = MarketContextRenderer.renderTabContent(this.activeTab);
       }
     },
     // ==================== Drag ====================

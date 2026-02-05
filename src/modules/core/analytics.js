@@ -435,15 +435,10 @@ export const Analytics = {
 
     const { session, trades: tradesMap, behavior } = this._resolve(state);
 
-    // RATE LIMIT: Check if we alerted recently (60s cooldown)
-    if (session?.activeAlerts) {
-      const lastAlert = session.activeAlerts
-        .slice()
-        .reverse()
-        .find((a) => a.type === "VELOCITY");
-      if (lastAlert && Date.now() - lastAlert.ts < 60000) {
-        return; // Suppressed by rate limit
-      }
+    // RATE LIMIT: 5-min cooldown matches the detection window
+    // so the same set of trades can't re-trigger the alert
+    if (behavior.lastOvertradingAlertTs && Date.now() - behavior.lastOvertradingAlertTs < 300000) {
+      return;
     }
 
     const trades = Object.values(tradesMap || {}).sort((a, b) => a.ts - b.ts);
@@ -467,7 +462,7 @@ export const Analytics = {
         "OVERTRADING: You're trading too fast. Stop and evaluate setups."
       );
       behavior.overtradingFrequency = (behavior.overtradingFrequency || 0) + 1;
-      state.lastOvertradingAlert = Date.now();
+      behavior.lastOvertradingAlertTs = Date.now();
     }
   },
 
