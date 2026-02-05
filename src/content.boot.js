@@ -7,6 +7,7 @@ import { HUD } from './modules/ui/hud.js';
 import { PnlCalculator } from './modules/core/pnl-calculator.js';
 import { DiagnosticsStore } from './modules/diagnostics-store.js';
 import { Logger } from './modules/logger.js';
+import { CoachingBanner } from './modules/ui/coaching-banner.js';
 
 (async () => {
     "use strict";
@@ -60,6 +61,7 @@ import { Logger } from './modules/logger.js';
         Logger.info('Init Overlay...');
         OverlayManager.init(PLATFORM.name);
         Professor.init(); // Init Onboarding
+        CoachingBanner.injectStyles(); // Init Live Trade Coaching styles
     } catch (e) {
         Logger.error('Overlay Init Failed:', e);
     }

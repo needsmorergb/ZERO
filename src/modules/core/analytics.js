@@ -1,6 +1,7 @@
 import { Store } from "../store.js";
 import { FeatureManager } from "../featureManager.js";
 import { Market } from "./market.js";
+import { CoachingFeedback } from "./coaching-feedback.js";
 
 // Event Categories
 export const EVENT_CATEGORIES = {
@@ -367,6 +368,9 @@ export const Analytics = {
     this.detectStrategyDrift(trade, state);
     this.monitorMarketRegime(state);
     this.updateProfile(state);
+
+    // Live Trade Coaching - record outcome to update confidence scores
+    CoachingFeedback.recordOutcome(trade);
   },
 
   monitorMarketRegime(state) {

@@ -11,6 +11,10 @@ import { Dashboard } from './dashboard.js';
 import { Insights } from './insights.js';
 import { SettingsPanel } from './settings-panel.js';
 import { Market } from '../core/market.js';
+import { CoachingEvaluator } from '../core/coaching-evaluator.js';
+import { CoachingBanner } from './coaching-banner.js';
+import { CoachingFeedback } from '../core/coaching-feedback.js';
+
 function px(n) { return n + 'px'; }
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 
@@ -578,6 +582,24 @@ export const PnlHud = {
 
         // Find the token info for this position
         const tokenInfo = { symbol: pos.symbol, mint: pos.mint };
+
+        // Live Trade Coaching - evaluate pre-trade signals (non-blocking)
+        const coachingContext = {
+            side: 'SELL',
+            mint,
+            pct,
+            position: pos,
+            currentPnl: Store.state.session?.realized || 0
+        };
+        const coaching = CoachingEvaluator.evaluate(coachingContext, Store.state);
+        if (coaching) {
+            CoachingBanner.show(
+                coaching,
+                (triggerId) => CoachingFeedback.recordDismiss(triggerId),
+                (triggerId, duration) => CoachingFeedback.recordPause(triggerId, duration)
+            );
+            CoachingFeedback.recordShown(coaching.triggerId, coachingContext);
+        }
 
         // Execute sell through Trading module
         const result = await Trading.sell(pct, 'Quick Sell', tokenInfo);

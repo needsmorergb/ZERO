@@ -13,6 +13,7 @@ export const FEATURES = {
   SHARE_TO_X: "free",
 
   // Elite: Interpretation, context, behavioral intelligence
+  LIVE_COACHING: "elite",
   TRADE_PLAN: "elite",
   DISCIPLINE_SCORING: "elite",
   AI_DEBRIEF: "elite",
@@ -47,6 +48,11 @@ export const FEATURES = {
  */
 export const TEASED_FEATURES = {
   ELITE: [
+    {
+      id: "ELITE_LIVE_COACHING",
+      name: "Live Trade Coaching",
+      desc: "Real-time behavioral alerts before trades when your edge is at risk.",
+    },
     {
       id: "ELITE_TRADE_PLAN",
       name: "Trade Planning",

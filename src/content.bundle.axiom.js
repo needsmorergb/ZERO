@@ -163,6 +163,9 @@
         eventLog: [],
         // { ts, type, category, message, data }
         // Categories: TRADE, ALERT, DISCIPLINE, SYSTEM, MILESTONE
+        // Live Trade Coaching History
+        coachingHistory: {},
+        // { triggerId: { confidence, shown, heeded, ignored, correctWarnings, falseAlarms, lastShownAt, pausedUntil } }
         // --- Shadow Mode Session State (separate from paper) ---
         shadowSession: {
           id: null,
@@ -4497,6 +4500,7 @@ input:checked + .slider:before {
     EQUITY_CHARTS: "free",
     SHARE_TO_X: "free",
     // Elite: Interpretation, context, behavioral intelligence
+    LIVE_COACHING: "elite",
     TRADE_PLAN: "elite",
     DISCIPLINE_SCORING: "elite",
     AI_DEBRIEF: "elite",
@@ -4525,6 +4529,11 @@ input:checked + .slider:before {
   };
   var TEASED_FEATURES = {
     ELITE: [
+      {
+        id: "ELITE_LIVE_COACHING",
+        name: "Live Trade Coaching",
+        desc: "Real-time behavioral alerts before trades when your edge is at risk."
+      },
       {
         id: "ELITE_TRADE_PLAN",
         name: "Trade Planning",
@@ -5447,131 +5456,21 @@ input:checked + .slider:before {
   };
 
   // src/modules/trial.js
-  init_store();
-
-  // src/modules/logger.js
-  var Logger = {
-    isProduction: false,
-    // Set to true in prod builds
-    info(msg, ...args) {
-      if (this.isProduction)
-        return;
-      console.log(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
-    },
-    warn(msg, ...args) {
-      console.warn(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
-    },
-    error(msg, ...args) {
-      console.error(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
-    },
-    cleanArgs(args) {
-      return args.map((arg) => {
-        if (arg instanceof Error) {
-          return { name: arg.name, message: arg.message, stack: arg.stack };
-        }
-        if (typeof DOMException !== "undefined" && arg instanceof DOMException) {
-          return { name: arg.name, message: arg.message, code: arg.code };
-        }
-        if (typeof arg === "object" && arg !== null) {
-          const clean = { ...arg };
-          ["key", "secret", "token", "auth", "password"].forEach((k) => {
-            if (k in clean)
-              clean[k] = "***REDACTED***";
-          });
-          return clean;
-        }
-        return arg;
-      });
-    }
-  };
-
-  // src/modules/trial.js
   var Trial = {
-    /**
-     * Check if the trial is currently active (redeemed, not expired, sessions remaining).
-     * @returns {boolean}
-     */
     isActive() {
-      const t = Store.state?.settings?.trial;
-      if (!t || !t.activated || t.expired)
-        return false;
-      return (t.sessionsUsed || 0) < (t.sessionsLimit || 5);
+      return false;
     },
-    /**
-     * Check if a promo has ever been redeemed (blocks re-trial).
-     * @returns {boolean}
-     */
     hasBeenUsed() {
-      return Store.state?.settings?.trial?.activated === true;
+      return false;
     },
-    /**
-     * Get remaining trial sessions.
-     * @returns {number}
-     */
     sessionsRemaining() {
-      const t = Store.state?.settings?.trial;
-      if (!t || !t.activated)
-        return 0;
-      return Math.max(0, (t.sessionsLimit || 5) - (t.sessionsUsed || 0));
+      return 0;
     },
-    /**
-     * Get total trial sessions.
-     * @returns {number}
-     */
     sessionsTotal() {
-      return Store.state?.settings?.trial?.sessionsLimit || 5;
+      return 0;
     },
-    /**
-     * Get number of sessions used.
-     * @returns {number}
-     */
-    sessionsUsed() {
-      return Store.state?.settings?.trial?.sessionsUsed || 0;
-    },
-    /**
-     * Redeem a promo code. Sends to background → worker for validation.
-     * @param {string} code
-     * @returns {Promise<{ ok: boolean, sessions?: number, error?: string }>}
-     */
     async redeem(code) {
-      if (!code || typeof code !== "string" || code.trim().length < 3) {
-        return { ok: false, error: "invalid_code" };
-      }
-      if (this.hasBeenUsed()) {
-        return { ok: false, error: "already_used" };
-      }
-      code = code.trim().toUpperCase();
-      Logger.info("[Trial] Redeeming promo code...");
-      const response = await new Promise((resolve) => {
-        chrome.runtime.sendMessage(
-          { type: "REDEEM_PROMO", promoCode: code },
-          (res) => {
-            if (chrome.runtime.lastError) {
-              resolve({ ok: false, error: chrome.runtime.lastError.message });
-              return;
-            }
-            resolve(res || { ok: false, error: "no_response" });
-          }
-        );
-      });
-      if (response.ok) {
-        const sessions = response.sessions || 5;
-        Store.state.settings.trial = {
-          promoCode: code,
-          activated: true,
-          activatedAt: Date.now(),
-          sessionsUsed: 0,
-          sessionsLimit: sessions,
-          expired: false,
-          expiredAt: null
-        };
-        Store.validateState();
-        await Store.save();
-        Logger.info(`[Trial] Promo redeemed: ${sessions} sessions`);
-        return { ok: true, sessions };
-      }
-      Logger.warn("[Trial] Promo redemption failed:", response.error);
-      return { ok: false, error: response.error || "redemption_failed" };
+      return { success: false, error: "Trial system not available" };
     }
   };
 
@@ -5739,6 +5638,164 @@ input:checked + .slider:before {
 
   // src/modules/core/analytics.js
   init_store();
+
+  // src/modules/core/coaching-feedback.js
+  init_store();
+  var CoachingFeedback = {
+    /**
+     * Record that a coaching alert was shown
+     * Called immediately when banner appears
+     *
+     * @param {string} triggerId - The trigger that fired
+     * @param {Object} context - Trade context { side, solAmount, strategy, mint }
+     */
+    recordShown(triggerId, context) {
+      const state = Store.state;
+      if (!state)
+        return;
+      if (!state.coachingHistory) {
+        state.coachingHistory = {};
+      }
+      if (!state.coachingHistory[triggerId]) {
+        state.coachingHistory[triggerId] = {
+          confidence: 0.5,
+          // Start at 50% confidence
+          shown: 0,
+          // Times shown
+          heeded: 0,
+          // Times user paused
+          ignored: 0,
+          // Times user dismissed
+          correctWarnings: 0,
+          // Warning shown -> trade lost
+          falseAlarms: 0,
+          // Warning shown -> trade won
+          lastShownAt: 0,
+          pendingContext: null
+        };
+      }
+      const tracker = state.coachingHistory[triggerId];
+      tracker.shown++;
+      tracker.lastShownAt = Date.now();
+      tracker.pendingContext = {
+        ...context,
+        shownAt: Date.now()
+      };
+      Store.save();
+      console.log(`[Coaching] Recorded show for ${triggerId} (shown: ${tracker.shown})`);
+    },
+    /**
+     * Record trade outcome to update confidence scores
+     * Called from Analytics.updateStreaks() after a SELL trade completes
+     *
+     * @param {Object} trade - The completed sell trade
+     */
+    recordOutcome(trade) {
+      const state = Store.state;
+      if (!state?.coachingHistory)
+        return;
+      const wasLoss = (trade.realizedPnlSol || 0) < 0;
+      for (const [triggerId, tracker] of Object.entries(state.coachingHistory)) {
+        if (!tracker.pendingContext)
+          continue;
+        const timeSinceShown = Date.now() - tracker.pendingContext.shownAt;
+        if (timeSinceShown > 5 * 60 * 1e3) {
+          tracker.pendingContext = null;
+          continue;
+        }
+        if (tracker.pendingContext.mint && trade.mint && tracker.pendingContext.mint !== trade.mint) {
+          continue;
+        }
+        if (wasLoss) {
+          tracker.correctWarnings++;
+          tracker.confidence = Math.min(1, tracker.confidence + 0.05);
+          console.log(`[Coaching] ${triggerId} warning validated (loss). Confidence: ${(tracker.confidence * 100).toFixed(0)}%`);
+        } else {
+          tracker.falseAlarms++;
+          tracker.confidence = Math.max(0.1, tracker.confidence - 0.03);
+          console.log(`[Coaching] ${triggerId} was false alarm (win). Confidence: ${(tracker.confidence * 100).toFixed(0)}%`);
+        }
+        tracker.pendingContext = null;
+      }
+      Store.save();
+    },
+    /**
+     * Record user dismissed the coaching alert
+     * Called when user clicks the X button
+     *
+     * @param {string} triggerId - The trigger that was dismissed
+     */
+    recordDismiss(triggerId) {
+      const state = Store.state;
+      if (!state?.coachingHistory?.[triggerId])
+        return;
+      state.coachingHistory[triggerId].ignored++;
+      console.log(`[Coaching] ${triggerId} dismissed (ignored: ${state.coachingHistory[triggerId].ignored})`);
+      Store.save();
+    },
+    /**
+     * Record user clicked "Pause 5 min"
+     * This shows the user trusts the coaching system
+     *
+     * @param {string} triggerId - The trigger that was paused
+     * @param {number} duration - Pause duration in milliseconds
+     */
+    recordPause(triggerId, duration) {
+      const state = Store.state;
+      if (!state?.coachingHistory?.[triggerId])
+        return;
+      const tracker = state.coachingHistory[triggerId];
+      tracker.heeded++;
+      tracker.pausedUntil = Date.now() + duration;
+      tracker.confidence = Math.min(1, tracker.confidence + 0.02);
+      console.log(`[Coaching] ${triggerId} paused for ${duration / 6e4} min (heeded: ${tracker.heeded})`);
+      Store.save();
+    },
+    /**
+     * Get coaching stats for a specific trigger
+     *
+     * @param {string} triggerId
+     * @returns {Object|null} - Tracker stats or null
+     */
+    getStats(triggerId) {
+      const state = Store.state;
+      return state?.coachingHistory?.[triggerId] || null;
+    },
+    /**
+     * Get overall coaching effectiveness stats
+     *
+     * @returns {Object} - { totalShown, totalCorrect, totalFalse, accuracy }
+     */
+    getOverallStats() {
+      const state = Store.state;
+      if (!state?.coachingHistory) {
+        return { totalShown: 0, totalCorrect: 0, totalFalse: 0, accuracy: null };
+      }
+      let totalShown = 0;
+      let totalCorrect = 0;
+      let totalFalse = 0;
+      for (const tracker of Object.values(state.coachingHistory)) {
+        totalShown += tracker.shown || 0;
+        totalCorrect += tracker.correctWarnings || 0;
+        totalFalse += tracker.falseAlarms || 0;
+      }
+      const total = totalCorrect + totalFalse;
+      const accuracy = total > 0 ? (totalCorrect / total * 100).toFixed(1) : null;
+      return { totalShown, totalCorrect, totalFalse, accuracy };
+    },
+    /**
+     * Reset coaching history (for testing)
+     */
+    reset() {
+      const state = Store.state;
+      if (state) {
+        state.coachingHistory = {};
+        Store.save();
+      }
+    }
+  };
+
+  // src/modules/core/analytics.js
   var EVENT_CATEGORIES = {
     TRADE: "TRADE",
     ALERT: "ALERT",
@@ -6023,6 +6080,7 @@ input:checked + .slider:before {
       this.detectStrategyDrift(trade, state);
       this.monitorMarketRegime(state);
       this.updateProfile(state);
+      CoachingFeedback.recordOutcome(trade);
     },
     monitorMarketRegime(state) {
       const flags = FeatureManager.resolveFlags(state, "ADVANCED_COACHING");
@@ -7497,6 +7555,44 @@ input:checked + .slider:before {
 
   // src/modules/license.js
   init_store();
+
+  // src/modules/logger.js
+  var Logger = {
+    isProduction: false,
+    // Set to true in prod builds
+    info(msg, ...args) {
+      if (this.isProduction)
+        return;
+      console.log(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
+    },
+    warn(msg, ...args) {
+      console.warn(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
+    },
+    error(msg, ...args) {
+      console.error(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
+    },
+    cleanArgs(args) {
+      return args.map((arg) => {
+        if (arg instanceof Error) {
+          return { name: arg.name, message: arg.message, stack: arg.stack };
+        }
+        if (typeof DOMException !== "undefined" && arg instanceof DOMException) {
+          return { name: arg.name, message: arg.message, code: arg.code };
+        }
+        if (typeof arg === "object" && arg !== null) {
+          const clean = { ...arg };
+          ["key", "secret", "token", "auth", "password"].forEach((k) => {
+            if (k in clean)
+              clean[k] = "***REDACTED***";
+          });
+          return clean;
+        }
+        return arg;
+      });
+    }
+  };
+
+  // src/modules/license.js
   var WHOP_PRODUCT_URL = "https://whop.com/crowd-ctrl/zero-elite/";
   var REVALIDATION_INTERVAL_MS = 24 * 60 * 60 * 1e3;
   var License = {
@@ -10640,6 +10736,625 @@ canvas#equity-canvas {
     }
   };
 
+  // src/modules/core/coaching-evaluator.js
+  init_store();
+  function getTradesInWindow(state, windowMs) {
+    const now = Date.now();
+    const trades = Object.values(state.trades || {}).filter((t) => t.mode === (state.settings?.tradingMode || "paper")).filter((t) => now - t.ts < windowMs).sort((a, b) => a.ts - b.ts);
+    return trades;
+  }
+  function getOverallWinRate(state) {
+    const trades = Object.values(state.trades || {}).filter((t) => t.mode === (state.settings?.tradingMode || "paper")).filter((t) => t.side === "SELL");
+    if (trades.length < 5)
+      return null;
+    const wins = trades.filter((t) => (t.realizedPnlSol || 0) > 0).length;
+    return (wins / trades.length * 100).toFixed(0);
+  }
+  function getRapidTradeWinRate(state) {
+    const trades = Object.values(state.trades || {}).filter((t) => t.mode === (state.settings?.tradingMode || "paper")).sort((a, b) => a.ts - b.ts);
+    let rapidSells = [];
+    for (let i = 1; i < trades.length; i++) {
+      if (trades[i].ts - trades[i - 1].ts < 6e4) {
+        if (trades[i].side === "SELL") {
+          rapidSells.push(trades[i]);
+        }
+      }
+    }
+    if (rapidSells.length < 3)
+      return null;
+    const wins = rapidSells.filter((t) => (t.realizedPnlSol || 0) > 0).length;
+    return (wins / rapidSells.length * 100).toFixed(0);
+  }
+  function getAveragePositionSize(state) {
+    const buyTrades = Object.values(state.trades || {}).filter((t) => t.mode === (state.settings?.tradingMode || "paper")).filter((t) => t.side === "BUY");
+    if (buyTrades.length < 3)
+      return 10;
+    const startSol = state.settings?.startSol || 10;
+    const sizes = buyTrades.map((t) => t.solAmount / startSol * 100);
+    return sizes.reduce((a, b) => a + b, 0) / sizes.length;
+  }
+  function getAverageSessionPnl(state) {
+    const history = state.sessionHistory || [];
+    if (history.length < 2)
+      return 0.5;
+    const pnls = history.map((s) => s.realized || 0).filter((p) => p > 0);
+    if (pnls.length === 0)
+      return 0.5;
+    return pnls.reduce((a, b) => a + b, 0) / pnls.length;
+  }
+  function parseOptimalMax(optimalRange) {
+    if (!optimalRange)
+      return 60;
+    if (optimalRange.includes("<"))
+      return 30;
+    if (optimalRange.includes(">"))
+      return 180;
+    const match = optimalRange.match(/(\d+)-(\d+)/);
+    if (match)
+      return parseInt(match[2], 10);
+    return 60;
+  }
+  function getTimeSlot(hour) {
+    if (hour >= 6 && hour < 12)
+      return "morning";
+    if (hour >= 12 && hour < 18)
+      return "afternoon";
+    if (hour >= 18 && hour < 24)
+      return "evening";
+    return "night";
+  }
+  function findStrategyWinRate(strategyStats, strategy) {
+    if (!strategyStats?.top)
+      return null;
+    const found = strategyStats.top.find((s) => s.name === strategy);
+    return found ? parseFloat(found.winRate) : null;
+  }
+  function hasMinimumData(state) {
+    const trades = Object.values(state.trades || {}).filter((t) => t.mode === (state.settings?.tradingMode || "paper"));
+    return trades.length >= 10;
+  }
+  var TRIGGERS = {
+    RAPID_TRADES: {
+      id: "rapid_trades",
+      evaluate: (context, state) => {
+        const recentTrades = getTradesInWindow(state, 2 * 60 * 1e3);
+        if (recentTrades.length < 3)
+          return null;
+        const historicalWinRate = getOverallWinRate(state);
+        const rapidWinRate = getRapidTradeWinRate(state);
+        if (!historicalWinRate || !rapidWinRate) {
+          return {
+            triggerId: "rapid_trades",
+            severity: 70,
+            confidence: state.coachingHistory?.rapid_trades?.confidence || 0.5,
+            data: { recentCount: recentTrades.length, historicalWinRate: null, rapidWinRate: null }
+          };
+        }
+        return {
+          triggerId: "rapid_trades",
+          severity: 70,
+          confidence: state.coachingHistory?.rapid_trades?.confidence || 0.5,
+          data: { recentCount: recentTrades.length, historicalWinRate, rapidWinRate }
+        };
+      },
+      getMessage: (data, isElite) => {
+        if (!isElite || !data.historicalWinRate || !data.rapidWinRate) {
+          return {
+            main: "Rapid trading pattern detected.\nThis behavior historically underperforms.",
+            footer: "Upgrade to Elite to view personalized coaching."
+          };
+        }
+        return {
+          main: `Your last ${data.recentCount} trades were placed in under 2 minutes.
+When entries cluster this tightly, your win rate drops from ${data.historicalWinRate}% to ${data.rapidWinRate}%.
+Consider spacing the next entry.`
+        };
+      }
+    },
+    STRATEGY_DRIFT: {
+      id: "strategy_drift",
+      evaluate: (context, state) => {
+        const { strategy } = context;
+        if (!strategy || strategy === "Unknown" || strategy === "Other")
+          return null;
+        const trades = Object.values(state.trades || {}).filter((t) => t.mode === (state.settings?.tradingMode || "paper")).sort((a, b) => a.ts - b.ts);
+        const buyTrades = trades.filter((t) => t.side === "BUY");
+        const sellTrades = trades.filter((t) => t.side === "SELL");
+        if (buyTrades.length < 5 || sellTrades.length < 5)
+          return null;
+        const strategyStats = Analytics._analyzeBestStrategies(buyTrades, sellTrades, trades);
+        if (!strategyStats?.top?.[0])
+          return null;
+        const bestStrategy = strategyStats.top[0];
+        const currentStrategyWR = findStrategyWinRate(strategyStats, strategy);
+        if (currentStrategyWR === null)
+          return null;
+        if (currentStrategyWR >= parseFloat(bestStrategy.winRate) - 15)
+          return null;
+        return {
+          triggerId: "strategy_drift",
+          severity: 50,
+          confidence: state.coachingHistory?.strategy_drift?.confidence || 0.5,
+          data: {
+            currentStrategy: strategy,
+            currentWR: currentStrategyWR,
+            bestStrategy: bestStrategy.name,
+            bestWR: bestStrategy.winRate
+          }
+        };
+      },
+      getMessage: (data, isElite) => {
+        if (!isElite) {
+          return {
+            main: "Strategy alignment alert.\nYour selected approach has lower historical performance.",
+            footer: "Upgrade to Elite to view personalized coaching."
+          };
+        }
+        return {
+          main: `This session favors your ${data.bestStrategy} strategy (${data.bestWR}% WR).
+Your ${data.currentStrategy} setup is currently ${data.currentWR}%.
+Edge appears stronger when you stay aligned.`
+        };
+      }
+    },
+    SESSION_FATIGUE: {
+      id: "session_fatigue",
+      evaluate: (context, state) => {
+        const sessionStart = state.session?.startTime || Date.now();
+        const sessionMinutes = (Date.now() - sessionStart) / 6e4;
+        if (sessionMinutes < 60)
+          return null;
+        const trades = Object.values(state.trades || {}).filter((t) => t.mode === (state.settings?.tradingMode || "paper")).sort((a, b) => a.ts - b.ts);
+        if (trades.length < 10)
+          return null;
+        const optimalLength = Analytics._analyzeOptimalSessionLength(trades, state);
+        if (!optimalLength?.optimal)
+          return null;
+        const optimalMax = parseOptimalMax(optimalLength.optimal);
+        if (sessionMinutes <= optimalMax)
+          return null;
+        return {
+          triggerId: "session_fatigue",
+          severity: 60,
+          confidence: state.coachingHistory?.session_fatigue?.confidence || 0.5,
+          data: { currentMinutes: Math.round(sessionMinutes), optimalMax }
+        };
+      },
+      getMessage: (data, isElite) => {
+        if (!isElite) {
+          return {
+            main: "Extended session detected.\nPerformance typically declines in longer sessions.",
+            footer: "Upgrade to Elite to view personalized coaching."
+          };
+        }
+        return {
+          main: `You've been active for ${data.currentMinutes} minutes.
+Historically, performance declines after ~${data.optimalMax} minutes.
+This is where discipline matters most.`
+        };
+      }
+    },
+    OVERSIZED_POSITION: {
+      id: "oversized_position",
+      evaluate: (context, state) => {
+        const { solAmount, side } = context;
+        if (side !== "BUY" || !solAmount)
+          return null;
+        const balance = state.session?.balance || 0;
+        if (balance <= 0)
+          return null;
+        const positionPct = solAmount / balance * 100;
+        const avgPositionPct = getAveragePositionSize(state);
+        if (positionPct <= avgPositionPct * 2 || positionPct < 15)
+          return null;
+        return {
+          triggerId: "oversized_position",
+          severity: 80,
+          confidence: state.coachingHistory?.oversized_position?.confidence || 0.5,
+          data: { positionPct: Math.round(positionPct), avgPct: Math.round(avgPositionPct) }
+        };
+      },
+      getMessage: (data, isElite) => {
+        if (!isElite) {
+          return {
+            main: "Position size exceeds typical range.\nThis carries elevated drawdown exposure.",
+            footer: "Upgrade to Elite to view personalized coaching."
+          };
+        }
+        return {
+          main: `This position represents ${data.positionPct}% of your balance.
+Your average profitable risk is ~${data.avgPct}%.
+This entry carries elevated drawdown exposure.`
+        };
+      }
+    },
+    POOR_TIME_OF_DAY: {
+      id: "poor_time_of_day",
+      evaluate: (context, state) => {
+        const trades = Object.values(state.trades || {}).filter((t) => t.mode === (state.settings?.tradingMode || "paper")).filter((t) => t.side === "SELL");
+        if (trades.length < 10)
+          return null;
+        const timeAnalysis = Analytics._analyzeBestTimeOfDay(trades);
+        if (!timeAnalysis?.worst || !timeAnalysis?.best)
+          return null;
+        const currentHour = (/* @__PURE__ */ new Date()).getHours();
+        const currentSlot = getTimeSlot(currentHour);
+        if (currentSlot !== timeAnalysis.worst.name)
+          return null;
+        if (parseFloat(timeAnalysis.worst.winRate) > 40)
+          return null;
+        return {
+          triggerId: "poor_time_of_day",
+          severity: 40,
+          confidence: state.coachingHistory?.poor_time_of_day?.confidence || 0.5,
+          data: {
+            currentSlot: timeAnalysis.worst.range,
+            winRate: timeAnalysis.worst.winRate,
+            bestSlot: timeAnalysis.best.range,
+            bestWinRate: timeAnalysis.best.winRate
+          }
+        };
+      },
+      getMessage: (data, isElite) => {
+        if (!isElite) {
+          return {
+            main: "Trading outside optimal hours.\nLiquidity conditions may be suboptimal.",
+            footer: "Upgrade to Elite to view personalized coaching."
+          };
+        }
+        return {
+          main: `This trade falls outside your strongest trading window.
+${data.currentSlot} sessions average ${data.winRate}% win rate.
+Your best window is ${data.bestSlot} (${data.bestWinRate}%).`
+        };
+      }
+    },
+    LOSS_STREAK: {
+      id: "loss_streak",
+      evaluate: (context, state) => {
+        const lossStreak = state.session?.lossStreak || 0;
+        if (lossStreak < 2)
+          return null;
+        return {
+          triggerId: "loss_streak",
+          severity: 65,
+          confidence: state.coachingHistory?.loss_streak?.confidence || 0.5,
+          data: { streakLength: lossStreak }
+        };
+      },
+      getMessage: (data, isElite) => {
+        if (!isElite) {
+          return {
+            main: "Consecutive losses detected.\nTrades after this pattern historically underperform.",
+            footer: "Upgrade to Elite to view personalized coaching."
+          };
+        }
+        return {
+          main: `${data.streakLength} consecutive losses detected.
+Trades placed immediately after this pattern historically underperform.
+A short pause tends to preserve session equity.`
+        };
+      }
+    },
+    PROFIT_GIVEBACK: {
+      id: "profit_giveback",
+      evaluate: (context, state) => {
+        const currentPnl = state.session?.realized || 0;
+        if (currentPnl <= 0)
+          return null;
+        const avgSessionPnl = getAverageSessionPnl(state);
+        if (currentPnl <= avgSessionPnl)
+          return null;
+        return {
+          triggerId: "profit_giveback",
+          severity: 55,
+          confidence: state.coachingHistory?.profit_giveback?.confidence || 0.5,
+          data: { currentPnl: currentPnl.toFixed(2), avgPnl: avgSessionPnl.toFixed(2) }
+        };
+      },
+      getMessage: (data, isElite) => {
+        if (!isElite) {
+          return {
+            main: "Session profit exceeds historical average.\nThis level often precedes profit giveback.",
+            footer: "Upgrade to Elite to view personalized coaching."
+          };
+        }
+        return {
+          main: `You're up +${data.currentPnl} SOL this session.
+Your average session close is +${data.avgPnl} SOL.
+This level often precedes profit giveback.`
+        };
+      }
+    }
+  };
+  var CoachingEvaluator = {
+    /**
+     * Evaluates all triggers and returns the highest-severity alert (if any)
+     * @param {Object} context - { side, solAmount, strategy, mint, pct }
+     * @param {Object} state - Full store state
+     * @returns {Object|null} - { triggerId, severity, message, confidence } or null
+     */
+    evaluate(context, state) {
+      if (state.settings?.tradingMode === "analysis")
+        return null;
+      if (!hasMinimumData(state))
+        return null;
+      const isElite = FeatureManager.isElite(state);
+      const results = [];
+      for (const trigger of Object.values(TRIGGERS)) {
+        try {
+          const result = trigger.evaluate(context, state);
+          if (result && result.severity > 0) {
+            if (result.confidence < 0.3)
+              continue;
+            if (this.isOnCooldown(state, result.triggerId))
+              continue;
+            if (this.isPaused(state, result.triggerId))
+              continue;
+            const message = trigger.getMessage(result.data, isElite);
+            results.push({ ...result, message });
+          }
+        } catch (e) {
+          console.warn(`[Coaching] Trigger ${trigger.id} failed:`, e);
+        }
+      }
+      if (results.length === 0)
+        return null;
+      results.sort((a, b) => b.severity - a.severity);
+      return results[0];
+    },
+    /**
+     * Check if trigger is on cooldown (prevent spam)
+     * 5 minute cooldown per trigger
+     */
+    isOnCooldown(state, triggerId) {
+      const lastShown = state.coachingHistory?.[triggerId]?.lastShownAt || 0;
+      const cooldownMs = 5 * 60 * 1e3;
+      return Date.now() - lastShown < cooldownMs;
+    },
+    /**
+     * Check if user has paused this trigger
+     */
+    isPaused(state, triggerId) {
+      const pausedUntil = state.coachingHistory?.[triggerId]?.pausedUntil || 0;
+      return Date.now() < pausedUntil;
+    }
+  };
+
+  // src/modules/ui/coaching-banner.js
+  var CoachingBanner = {
+    activeTimeout: null,
+    currentTriggerId: null,
+    /**
+     * Show coaching banner
+     * Returns immediately - does NOT block trade
+     *
+     * @param {Object} evaluation - { triggerId, severity, message, confidence }
+     * @param {Function} onDismiss - Called when user dismisses
+     * @param {Function} onPause - Called when user clicks "Pause 5 min"
+     */
+    show(evaluation, onDismiss, onPause) {
+      this.hide();
+      const container = document.querySelector(".zero-buy-hud") || document.querySelector(".zero-pnl-hud");
+      if (!container) {
+        console.warn("[Coaching] No HUD container found");
+        return;
+      }
+      this.currentTriggerId = evaluation.triggerId;
+      const banner = document.createElement("div");
+      banner.className = "zero-coaching-banner";
+      banner.setAttribute("data-trigger", evaluation.triggerId);
+      const mainText = evaluation.message.main.replace(/\n/g, "<br>");
+      const footerHtml = evaluation.message.footer ? `<div class="coaching-footer">${evaluation.message.footer}</div>` : "";
+      banner.innerHTML = `
+            <div class="coaching-content">
+                <div class="coaching-icon"></div>
+                <div class="coaching-text">
+                    <div class="coaching-main">${mainText}</div>
+                    ${footerHtml}
+                </div>
+                <button class="coaching-dismiss" aria-label="Dismiss">&times;</button>
+            </div>
+            <div class="coaching-actions">
+                <button class="coaching-pause">Pause 5 min</button>
+            </div>
+        `;
+      const dismissBtn = banner.querySelector(".coaching-dismiss");
+      dismissBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.hide();
+        if (onDismiss)
+          onDismiss(evaluation.triggerId);
+      });
+      const pauseBtn = banner.querySelector(".coaching-pause");
+      pauseBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.hide();
+        if (onPause)
+          onPause(evaluation.triggerId, 5 * 60 * 1e3);
+      });
+      if (evaluation.message.footer) {
+        const upgradeBtn = document.createElement("button");
+        upgradeBtn.className = "coaching-upgrade";
+        upgradeBtn.textContent = "Unlock Live Coaching";
+        upgradeBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          window.dispatchEvent(new CustomEvent("zero-show-paywall", {
+            detail: { source: "coaching" }
+          }));
+          this.hide();
+        });
+        banner.querySelector(".coaching-actions").appendChild(upgradeBtn);
+      }
+      container.appendChild(banner);
+      this.activeTimeout = setTimeout(() => {
+        this.hide();
+      }, 8e3);
+      console.log(`[Coaching] Showed ${evaluation.triggerId} alert (severity: ${evaluation.severity})`);
+    },
+    /**
+     * Hide coaching banner
+     */
+    hide() {
+      if (this.activeTimeout) {
+        clearTimeout(this.activeTimeout);
+        this.activeTimeout = null;
+      }
+      this.currentTriggerId = null;
+      document.querySelectorAll(".zero-coaching-banner").forEach((el) => {
+        el.remove();
+      });
+    },
+    /**
+     * Inject coaching styles into the page
+     * Call once during initialization
+     */
+    injectStyles() {
+      if (document.getElementById("zero-coaching-styles"))
+        return;
+      const style = document.createElement("style");
+      style.id = "zero-coaching-styles";
+      style.textContent = `
+            .zero-coaching-banner {
+                margin-top: 8px;
+                padding: 12px;
+                background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+                border: 1px solid rgba(255, 193, 7, 0.3);
+                border-radius: 8px;
+                font-size: 12px;
+                color: #e0e0e0;
+                animation: coachingFadeIn 0.2s ease-out;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            }
+
+            @keyframes coachingFadeIn {
+                from {
+                    opacity: 0;
+                    transform: translateY(-4px);
+                }
+                to {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+            }
+
+            .coaching-content {
+                display: flex;
+                gap: 10px;
+                align-items: flex-start;
+            }
+
+            .coaching-icon {
+                width: 20px;
+                height: 20px;
+                flex-shrink: 0;
+                background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%);
+                border-radius: 50%;
+                position: relative;
+            }
+
+            .coaching-icon::after {
+                content: '';
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                width: 2px;
+                height: 8px;
+                background: #1a1a2e;
+                border-radius: 1px;
+            }
+
+            .coaching-icon::before {
+                content: '';
+                position: absolute;
+                top: 12px;
+                left: 50%;
+                transform: translateX(-50%);
+                width: 2px;
+                height: 2px;
+                background: #1a1a2e;
+                border-radius: 50%;
+            }
+
+            .coaching-text {
+                flex: 1;
+                min-width: 0;
+            }
+
+            .coaching-main {
+                line-height: 1.5;
+                color: #f5f5f5;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            }
+
+            .coaching-footer {
+                margin-top: 8px;
+                padding-top: 8px;
+                border-top: 1px solid rgba(255, 255, 255, 0.1);
+                color: #ffc107;
+                font-size: 11px;
+            }
+
+            .coaching-dismiss {
+                background: none;
+                border: none;
+                color: #666;
+                font-size: 20px;
+                cursor: pointer;
+                padding: 0 4px;
+                line-height: 1;
+                transition: color 0.15s ease;
+            }
+
+            .coaching-dismiss:hover {
+                color: #fff;
+            }
+
+            .coaching-actions {
+                margin-top: 10px;
+                display: flex;
+                gap: 8px;
+                flex-wrap: wrap;
+            }
+
+            .coaching-pause {
+                background: rgba(255, 193, 7, 0.1);
+                border: 1px solid rgba(255, 193, 7, 0.25);
+                color: #ffc107;
+                padding: 6px 12px;
+                border-radius: 4px;
+                font-size: 11px;
+                cursor: pointer;
+                transition: all 0.15s ease;
+            }
+
+            .coaching-pause:hover {
+                background: rgba(255, 193, 7, 0.2);
+                border-color: rgba(255, 193, 7, 0.4);
+            }
+
+            .coaching-upgrade {
+                background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%);
+                border: none;
+                color: #1a1a2e;
+                padding: 6px 12px;
+                border-radius: 4px;
+                font-size: 11px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.15s ease;
+            }
+
+            .coaching-upgrade:hover {
+                transform: translateY(-1px);
+                box-shadow: 0 2px 8px rgba(255, 193, 7, 0.3);
+            }
+        `;
+      document.head.appendChild(style);
+    }
+  };
+
   // src/modules/ui/pnl-hud.js
   function px(n) {
     return n + "px";
@@ -11141,6 +11856,22 @@ canvas#equity-canvas {
         return;
       }
       const tokenInfo = { symbol: pos.symbol, mint: pos.mint };
+      const coachingContext = {
+        side: "SELL",
+        mint,
+        pct,
+        position: pos,
+        currentPnl: Store.state.session?.realized || 0
+      };
+      const coaching = CoachingEvaluator.evaluate(coachingContext, Store.state);
+      if (coaching) {
+        CoachingBanner.show(
+          coaching,
+          (triggerId) => CoachingFeedback.recordDismiss(triggerId),
+          (triggerId, duration) => CoachingFeedback.recordPause(triggerId, duration)
+        );
+        CoachingFeedback.recordShown(coaching.triggerId, coachingContext);
+      }
       const result = await Trading.sell(pct, "Quick Sell", tokenInfo);
       if (result.success) {
         console.log(`[PnlHud] Quick sell ${pct}% of ${pos.symbol} successful`);
@@ -12660,6 +13391,21 @@ canvas#equity-canvas {
       }
       const tokenInfo = TokenDetector.getCurrentToken();
       const tradePlan = this.buyHudTab === "buy" ? this.consumePendingPlan() : null;
+      const coachingContext = {
+        side: this.buyHudTab === "buy" ? "BUY" : "SELL",
+        solAmount: val,
+        strategy,
+        mint: tokenInfo?.mint
+      };
+      const coaching = CoachingEvaluator.evaluate(coachingContext, Store.state);
+      if (coaching) {
+        CoachingBanner.show(
+          coaching,
+          (triggerId) => CoachingFeedback.recordDismiss(triggerId),
+          (triggerId, duration) => CoachingFeedback.recordPause(triggerId, duration)
+        );
+        CoachingFeedback.recordShown(coaching.triggerId, coachingContext);
+      }
       let res;
       try {
         if (this.buyHudTab === "buy") {

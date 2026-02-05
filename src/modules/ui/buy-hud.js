@@ -9,6 +9,9 @@ import { Market } from '../core/market.js';
 import { ICONS } from './icons.js';
 import { NarrativeTrust } from '../core/narrative-trust.js';
 import { MarketContextRenderer } from './market-context-renderer.js';
+import { CoachingEvaluator } from '../core/coaching-evaluator.js';
+import { CoachingBanner } from './coaching-banner.js';
+import { CoachingFeedback } from '../core/coaching-feedback.js';
 
 function px(n) { return n + 'px'; }
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
@@ -586,6 +589,23 @@ export const BuyHud = {
 
         // Get trade plan data (BUY only)
         const tradePlan = this.buyHudTab === 'buy' ? this.consumePendingPlan() : null;
+
+        // Live Trade Coaching - evaluate pre-trade signals (non-blocking)
+        const coachingContext = {
+            side: this.buyHudTab === 'buy' ? 'BUY' : 'SELL',
+            solAmount: val,
+            strategy,
+            mint: tokenInfo?.mint
+        };
+        const coaching = CoachingEvaluator.evaluate(coachingContext, Store.state);
+        if (coaching) {
+            CoachingBanner.show(
+                coaching,
+                (triggerId) => CoachingFeedback.recordDismiss(triggerId),
+                (triggerId, duration) => CoachingFeedback.recordPause(triggerId, duration)
+            );
+            CoachingFeedback.recordShown(coaching.triggerId, coachingContext);
+        }
 
         let res;
         try {

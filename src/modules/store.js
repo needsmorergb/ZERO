@@ -101,6 +101,8 @@ const DEFAULTS = {
     // Persistent Event Log (up to 100 events)
     eventLog: [], // { ts, type, category, message, data }
     // Categories: TRADE, ALERT, DISCIPLINE, SYSTEM, MILESTONE
+    // Live Trade Coaching History
+    coachingHistory: {}, // { triggerId: { confidence, shown, heeded, ignored, correctWarnings, falseAlarms, lastShownAt, pausedUntil } }
 
     // --- Shadow Mode Session State (separate from paper) ---
     shadowSession: {
