@@ -162,7 +162,7 @@ export const ModeManager = {
    * Whether the Shadow HUD should be rendered in the DOM.
    */
   shouldShowShadowHud() {
-    return FeatureManager.isElite(Store.state);
+    return FeatureManager.isElite(Store.state) && this.isRealTrading();
   },
 
   /**
