@@ -64,7 +64,39 @@
           // Onboarding State
           onboardingSeen: false,
           onboardingVersion: null,
-          onboardingCompletedAt: null
+          onboardingCompletedAt: null,
+          // License / Whop Membership
+          license: {
+            key: null,
+            // Whop license key (mem_xxx or license string)
+            valid: false,
+            // Last known validation result
+            lastVerified: null,
+            // Timestamp (ms) of last successful verification
+            expiresAt: null,
+            // ISO string or null (founders = lifetime)
+            status: "none",
+            // 'none' | 'active' | 'expired' | 'cancelled' | 'error'
+            plan: null
+            // 'monthly' | 'annual' | 'founders'
+          },
+          // Promo Trial (5-session Elite trial via promo code)
+          trial: {
+            promoCode: null,
+            // Redeemed promo code string
+            activated: false,
+            // Has a promo ever been redeemed? (one-time only)
+            activatedAt: null,
+            // Timestamp (ms) of activation
+            sessionsUsed: 0,
+            // Sessions started since activation
+            sessionsLimit: 5,
+            // Max sessions (server can override per campaign)
+            expired: false,
+            // true once sessionsUsed >= sessionsLimit
+            expiredAt: null
+            // Timestamp when trial expired
+          }
         },
         // Session as first-class object
         session: {
@@ -114,7 +146,8 @@
           notes: [],
           hudDocked: false,
           hudPos: { x: 20, y: 400 },
-          narrativeTrustCache: {}
+          narrativeTrustCache: {},
+          walletAddress: null
         },
         behavior: {
           tiltFrequency: 0,
@@ -130,11 +163,67 @@
         eventLog: [],
         // { ts, type, category, message, data }
         // Categories: TRADE, ALERT, DISCIPLINE, SYSTEM, MILESTONE
-        schemaVersion: 2,
+        // --- Shadow Mode Session State (separate from paper) ---
+        shadowSession: {
+          id: null,
+          startTime: 0,
+          endTime: null,
+          balance: 0,
+          // Auto-detected from wallet on first trade
+          equity: 0,
+          realized: 0,
+          trades: [],
+          equityHistory: [],
+          winStreak: 0,
+          lossStreak: 0,
+          tradeCount: 0,
+          disciplineScore: 100,
+          activeAlerts: [],
+          status: "active",
+          notes: ""
+        },
+        shadowSessionHistory: [],
+        // Uncapped — real sessions can be long
+        shadowTrades: {},
+        shadowPositions: {},
+        shadowBehavior: {
+          tiltFrequency: 0,
+          panicSells: 0,
+          fomoTrades: 0,
+          sunkCostFrequency: 0,
+          overtradingFrequency: 0,
+          profitNeglectFrequency: 0,
+          strategyDriftFrequency: 0,
+          profile: "Disciplined"
+        },
+        shadowEventLog: [],
+        schemaVersion: 3,
         version: "2.0.0"
       };
       Store = {
         state: null,
+        // --- Mode-aware accessors ---
+        isShadowMode() {
+          return this.state?.settings?.tradingMode === "shadow";
+        },
+        getActiveSession() {
+          return this.isShadowMode() ? this.state.shadowSession : this.state.session;
+        },
+        getActivePositions() {
+          return this.isShadowMode() ? this.state.shadowPositions : this.state.positions;
+        },
+        getActiveTrades() {
+          return this.isShadowMode() ? this.state.shadowTrades : this.state.trades;
+        },
+        getActiveBehavior() {
+          return this.isShadowMode() ? this.state.shadowBehavior : this.state.behavior;
+        },
+        getActiveEventLog() {
+          return this.isShadowMode() ? this.state.shadowEventLog : this.state.eventLog;
+        },
+        getActiveSessionHistory() {
+          return this.isShadowMode() ? this.state.shadowSessionHistory : this.state.sessionHistory;
+        },
         async load() {
           let timeoutId;
           const loadLogic = new Promise((resolve) => {
@@ -167,6 +256,11 @@
                   this.save();
                 } else {
                   this.state = deepMerge(DEFAULTS, saved);
+                  if (this.state.schemaVersion < 3) {
+                    console.log("[ZER\xD8] Migrating schema v2 -> v3 (license + trial state)");
+                    this.state.schemaVersion = 3;
+                    this.save();
+                  }
                 }
                 this.validateState();
                 resolve(this.state);
@@ -261,6 +355,20 @@
             }
             if (DEV_FORCE_ELITE) {
               this.state.settings.tier = "elite";
+            } else if (this.state.settings.license?.valid && this.state.settings.license?.lastVerified) {
+              const GRACE_MS = 72 * 60 * 60 * 1e3;
+              const elapsed = Date.now() - this.state.settings.license.lastVerified;
+              if (elapsed < GRACE_MS) {
+                this.state.settings.tier = "elite";
+              } else {
+                this.state.settings.tier = "free";
+                this.state.settings.license.valid = false;
+                this.state.settings.license.status = "expired";
+              }
+            } else if (this.state.settings.trial?.activated && !this.state.settings.trial?.expired && (this.state.settings.trial?.sessionsUsed || 0) < (this.state.settings.trial?.sessionsLimit || 5)) {
+              this.state.settings.tier = "elite";
+            } else {
+              this.state.settings.tier = "free";
             }
             if (this.state.fills) {
               this.state.fills.forEach((f) => {
@@ -282,31 +390,52 @@
               this.state.session.id = this.generateSessionId();
               this.state.session.startTime = Date.now();
             }
+            if (this.state.settings.tradingMode === "shadow" && this.state.shadowSession && !this.state.shadowSession.id) {
+              this.state.shadowSession.id = this.generateSessionId();
+              this.state.shadowSession.startTime = Date.now();
+            }
           }
         },
         generateSessionId() {
           return `session_${Date.now()}_${Math.floor(Math.random() * 1e4)}`;
         },
         // Start a new session (archive current if it has trades)
-        async startNewSession() {
-          const currentSession = this.state.session;
-          if (currentSession.trades && currentSession.trades.length > 0) {
-            currentSession.endTime = Date.now();
-            currentSession.status = "completed";
-            if (!this.state.sessionHistory)
-              this.state.sessionHistory = [];
-            this.state.sessionHistory.push({ ...currentSession });
-            if (this.state.sessionHistory.length > 10) {
-              this.state.sessionHistory = this.state.sessionHistory.slice(-10);
+        // options.shadow: force shadow session reset (otherwise uses current mode)
+        async startNewSession(options = {}) {
+          const isShadow = options.shadow !== void 0 ? options.shadow : this.isShadowMode();
+          if (!isShadow) {
+            this._trialJustExpired = false;
+            const trial = this.state.settings.trial;
+            if (trial?.activated && !trial?.expired) {
+              trial.sessionsUsed = (trial.sessionsUsed || 0) + 1;
+              if (trial.sessionsUsed >= (trial.sessionsLimit || 5)) {
+                trial.expired = true;
+                trial.expiredAt = Date.now();
+                this.validateState();
+                this._trialJustExpired = true;
+              }
             }
           }
-          const startSol = this.state.settings.startSol || 10;
-          this.state.session = {
+          const sessionKey = isShadow ? "shadowSession" : "session";
+          const historyKey = isShadow ? "shadowSessionHistory" : "sessionHistory";
+          const currentSession = this.state[sessionKey];
+          if (currentSession && currentSession.trades && currentSession.trades.length > 0) {
+            currentSession.endTime = Date.now();
+            currentSession.status = "completed";
+            if (!this.state[historyKey])
+              this.state[historyKey] = [];
+            this.state[historyKey].push({ ...currentSession });
+            if (!isShadow && this.state[historyKey].length > 10) {
+              this.state[historyKey] = this.state[historyKey].slice(-10);
+            }
+          }
+          const startBalance = isShadow ? 0 : this.state.settings.startSol || 10;
+          this.state[sessionKey] = {
             id: this.generateSessionId(),
             startTime: Date.now(),
             endTime: null,
-            balance: startSol,
-            equity: startSol,
+            balance: startBalance,
+            equity: startBalance,
             realized: 0,
             trades: [],
             equityHistory: [],
@@ -315,39 +444,48 @@
             tradeCount: 0,
             disciplineScore: 100,
             activeAlerts: [],
-            status: "active"
+            status: "active",
+            notes: ""
           };
-          delete this.state._milestone_2x;
-          delete this.state._milestone_3x;
-          delete this.state._milestone_5x;
+          const prefix = isShadow ? "_shadow_milestone_" : "_milestone_";
+          delete this.state[prefix + "2x"];
+          delete this.state[prefix + "3x"];
+          delete this.state[prefix + "5x"];
+          if (!isShadow) {
+            delete this.state._milestone_2x;
+            delete this.state._milestone_3x;
+            delete this.state._milestone_5x;
+          }
           await this.save();
-          return this.state.session;
+          return this.state[sessionKey];
         },
         // Get current session duration in minutes
         isElite() {
           return (this.state?.settings?.tier || "free") === "elite";
         },
+        // Get current session duration in minutes (mode-aware)
         getSessionDuration() {
-          const session = this.state?.session;
+          const session = this.getActiveSession();
           if (!session || !session.startTime)
             return 0;
           const endTime = session.endTime || Date.now();
           return Math.floor((endTime - session.startTime) / 6e4);
         },
-        // Get session summary
+        // Get session summary (mode-aware)
         getSessionSummary() {
-          const session = this.state?.session;
+          const session = this.getActiveSession();
+          const tradesMap = this.getActiveTrades();
           if (!session)
             return null;
-          const trades = session.trades || [];
-          const sellTrades = trades.map((id) => this.state.trades[id]).filter((t) => t && t.side === "SELL");
+          const tradeIds = session.trades || [];
+          const sellTrades = tradeIds.map((id) => tradesMap[id]).filter((t) => t && t.side === "SELL");
           const wins = sellTrades.filter((t) => (t.realizedPnlSol || 0) > 0).length;
           const losses = sellTrades.filter((t) => (t.realizedPnlSol || 0) < 0).length;
           const winRate = sellTrades.length > 0 ? (wins / sellTrades.length * 100).toFixed(1) : 0;
           return {
             id: session.id,
             duration: this.getSessionDuration(),
-            tradeCount: trades.length,
+            tradeCount: tradeIds.length,
             wins,
             losses,
             winRate,
@@ -5172,6 +5310,135 @@ input:checked + .slider:before {
     }
   };
 
+  // src/modules/trial.js
+  init_store();
+
+  // src/modules/logger.js
+  var Logger = {
+    isProduction: false,
+    // Set to true in prod builds
+    info(msg, ...args) {
+      if (this.isProduction)
+        return;
+      console.log(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
+    },
+    warn(msg, ...args) {
+      console.warn(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
+    },
+    error(msg, ...args) {
+      console.error(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
+    },
+    cleanArgs(args) {
+      return args.map((arg) => {
+        if (arg instanceof Error) {
+          return { name: arg.name, message: arg.message, stack: arg.stack };
+        }
+        if (typeof DOMException !== "undefined" && arg instanceof DOMException) {
+          return { name: arg.name, message: arg.message, code: arg.code };
+        }
+        if (typeof arg === "object" && arg !== null) {
+          const clean = { ...arg };
+          ["key", "secret", "token", "auth", "password"].forEach((k) => {
+            if (k in clean)
+              clean[k] = "***REDACTED***";
+          });
+          return clean;
+        }
+        return arg;
+      });
+    }
+  };
+
+  // src/modules/trial.js
+  var Trial = {
+    /**
+     * Check if the trial is currently active (redeemed, not expired, sessions remaining).
+     * @returns {boolean}
+     */
+    isActive() {
+      const t = Store.state?.settings?.trial;
+      if (!t || !t.activated || t.expired)
+        return false;
+      return (t.sessionsUsed || 0) < (t.sessionsLimit || 5);
+    },
+    /**
+     * Check if a promo has ever been redeemed (blocks re-trial).
+     * @returns {boolean}
+     */
+    hasBeenUsed() {
+      return Store.state?.settings?.trial?.activated === true;
+    },
+    /**
+     * Get remaining trial sessions.
+     * @returns {number}
+     */
+    sessionsRemaining() {
+      const t = Store.state?.settings?.trial;
+      if (!t || !t.activated)
+        return 0;
+      return Math.max(0, (t.sessionsLimit || 5) - (t.sessionsUsed || 0));
+    },
+    /**
+     * Get total trial sessions.
+     * @returns {number}
+     */
+    sessionsTotal() {
+      return Store.state?.settings?.trial?.sessionsLimit || 5;
+    },
+    /**
+     * Get number of sessions used.
+     * @returns {number}
+     */
+    sessionsUsed() {
+      return Store.state?.settings?.trial?.sessionsUsed || 0;
+    },
+    /**
+     * Redeem a promo code. Sends to background → worker for validation.
+     * @param {string} code
+     * @returns {Promise<{ ok: boolean, sessions?: number, error?: string }>}
+     */
+    async redeem(code) {
+      if (!code || typeof code !== "string" || code.trim().length < 3) {
+        return { ok: false, error: "invalid_code" };
+      }
+      if (this.hasBeenUsed()) {
+        return { ok: false, error: "already_used" };
+      }
+      code = code.trim().toUpperCase();
+      Logger.info("[Trial] Redeeming promo code...");
+      const response = await new Promise((resolve) => {
+        chrome.runtime.sendMessage(
+          { type: "REDEEM_PROMO", promoCode: code },
+          (res) => {
+            if (chrome.runtime.lastError) {
+              resolve({ ok: false, error: chrome.runtime.lastError.message });
+              return;
+            }
+            resolve(res || { ok: false, error: "no_response" });
+          }
+        );
+      });
+      if (response.ok) {
+        const sessions = response.sessions || 5;
+        Store.state.settings.trial = {
+          promoCode: code,
+          activated: true,
+          activatedAt: Date.now(),
+          sessionsUsed: 0,
+          sessionsLimit: sessions,
+          expired: false,
+          expiredAt: null
+        };
+        Store.validateState();
+        await Store.save();
+        Logger.info(`[Trial] Promo redeemed: ${sessions} sessions`);
+        return { ok: true, sessions };
+      }
+      Logger.warn("[Trial] Promo redemption failed:", response.error);
+      return { ok: false, error: response.error || "redemption_failed" };
+    }
+  };
+
   // src/modules/ui/banner.js
   var Banner = {
     ensurePageOffset() {
@@ -5207,12 +5474,14 @@ input:checked + .slider:before {
       bar = document.createElement("div");
       bar.id = IDS.banner;
       const modeHint = ModesUI.getBannerHint();
+      const trialBadge = Trial.isActive() ? `<div class="trial-badge" style="margin-left:10px; background:rgba(245,158,11,0.15); border:1px solid rgba(245,158,11,0.3); color:#fbbf24; font-size:10px; font-weight:600; padding:2px 8px; border-radius:4px; white-space:nowrap;">ELITE TRIAL \u2014 ${Trial.sessionsRemaining()}/${Trial.sessionsTotal()}</div>` : "";
       bar.innerHTML = `
             <div class="inner" style="cursor:pointer;" title="Click to toggle ZER\xD8 Mode">
                 <div class="dot"></div>
                 <div class="label">ZER\xD8 MODE</div>
                 <div class="state">ENABLED</div>
                 <div class="hint" style="margin-left:8px; opacity:0.5; font-size:11px;">${modeHint}</div>
+                ${trialBadge}
             </div>
             <div style="position:absolute; right:20px; font-size:10px; color:#334155; pointer-events:none;">v${Store.state?.version || "0.9.1"}</div>
         `;
@@ -5241,6 +5510,24 @@ input:checked + .slider:before {
       const hintEl = bar.querySelector(".hint");
       if (hintEl)
         hintEl.textContent = ModesUI.getBannerHint();
+      const existingBadge = bar.querySelector(".trial-badge");
+      if (Trial.isActive()) {
+        const badgeText = `ELITE TRIAL \u2014 ${Trial.sessionsRemaining()}/${Trial.sessionsTotal()}`;
+        if (existingBadge) {
+          existingBadge.textContent = badgeText;
+        } else {
+          const inner = bar.querySelector(".inner");
+          if (inner) {
+            const badge = document.createElement("div");
+            badge.className = "trial-badge";
+            badge.style.cssText = "margin-left:10px; background:rgba(245,158,11,0.15); border:1px solid rgba(245,158,11,0.3); color:#fbbf24; font-size:10px; font-weight:600; padding:2px 8px; border-radius:4px; white-space:nowrap;";
+            badge.textContent = badgeText;
+            inner.appendChild(badge);
+          }
+        }
+      } else if (existingBadge) {
+        existingBadge.remove();
+      }
       this.updateAlerts();
     },
     updateAlerts() {
@@ -6835,44 +7122,6 @@ input:checked + .slider:before {
 
   // src/modules/license.js
   init_store();
-
-  // src/modules/logger.js
-  var Logger = {
-    isProduction: false,
-    // Set to true in prod builds
-    info(msg, ...args) {
-      if (this.isProduction)
-        return;
-      console.log(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
-    },
-    warn(msg, ...args) {
-      console.warn(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
-    },
-    error(msg, ...args) {
-      console.error(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
-    },
-    cleanArgs(args) {
-      return args.map((arg) => {
-        if (arg instanceof Error) {
-          return { name: arg.name, message: arg.message, stack: arg.stack };
-        }
-        if (typeof DOMException !== "undefined" && arg instanceof DOMException) {
-          return { name: arg.name, message: arg.message, code: arg.code };
-        }
-        if (typeof arg === "object" && arg !== null) {
-          const clean = { ...arg };
-          ["key", "secret", "token", "auth", "password"].forEach((k) => {
-            if (k in clean)
-              clean[k] = "***REDACTED***";
-          });
-          return clean;
-        }
-        return arg;
-      });
-    }
-  };
-
-  // src/modules/license.js
   var WHOP_PRODUCT_URL = "https://whop.com/crowd-ctrl/zero-elite/";
   var REVALIDATION_INTERVAL_MS = 24 * 60 * 60 * 1e3;
   var License = {
@@ -7154,6 +7403,24 @@ input:checked + .slider:before {
                     <div class="paywall-key-status" style="margin-top:8px; font-size:12px; min-height:18px;"></div>
                 </div>
 
+                ${!Trial.hasBeenUsed() ? `
+                <div class="paywall-promo-section" style="margin-top:12px; border-top:1px solid rgba(255,255,255,0.05); padding-top:12px;">
+                    <button class="paywall-btn text" data-act="show-promo-input" style="background:none; border:none; color:#f59e0b; font-size:12px; cursor:pointer; padding:6px; width:100%; text-align:center;">
+                        Have a promo code?
+                    </button>
+                    <div class="paywall-promo-input-section" style="display:none; margin-top:8px;">
+                        <div style="display:flex; gap:8px;">
+                            <input type="text" class="paywall-promo-code-input" placeholder="Enter promo code" maxlength="32"
+                                style="flex:1; background:rgba(255,255,255,0.05); border:1px solid rgba(245,158,11,0.2); border-radius:6px; padding:10px 12px; color:#f8fafc; font-size:13px; outline:none; text-transform:uppercase;">
+                            <button class="paywall-btn" data-act="redeem-promo" style="background:rgba(245,158,11,0.15); border:1px solid rgba(245,158,11,0.3); color:#fbbf24; padding:10px 16px; border-radius:6px; font-weight:600; font-size:13px; cursor:pointer; white-space:nowrap;">
+                                Redeem
+                            </button>
+                        </div>
+                        <div class="paywall-promo-status" style="margin-top:8px; font-size:12px; min-height:18px;"></div>
+                    </div>
+                </div>
+                ` : ""}
+
                 <div class="paywall-footer">
                     <p style="font-size:11px; color:#475569; margin-top:12px;">Manage your membership at whop.com/orders</p>
                 </div>
@@ -7173,6 +7440,52 @@ input:checked + .slider:before {
             const input = keySection.querySelector(".paywall-license-input");
             if (input)
               input.focus();
+          }
+        }
+        if (e.target.closest('[data-act="show-promo-input"]')) {
+          const promoSection = overlay.querySelector(".paywall-promo-input-section");
+          if (promoSection) {
+            promoSection.style.display = promoSection.style.display === "none" ? "block" : "none";
+            const input = promoSection.querySelector(".paywall-promo-code-input");
+            if (input)
+              input.focus();
+          }
+        }
+        if (e.target.closest('[data-act="redeem-promo"]')) {
+          const input = overlay.querySelector(".paywall-promo-code-input");
+          const statusEl = overlay.querySelector(".paywall-promo-status");
+          const code = input?.value?.trim();
+          if (!code) {
+            if (statusEl) {
+              statusEl.textContent = "Please enter a promo code";
+              statusEl.style.color = "#f59e0b";
+            }
+            return;
+          }
+          const btn = e.target.closest('[data-act="redeem-promo"]');
+          const origText = btn.textContent;
+          btn.textContent = "Redeeming...";
+          btn.disabled = true;
+          if (statusEl) {
+            statusEl.textContent = "Validating promo code...";
+            statusEl.style.color = "#94a3b8";
+          }
+          const result = await Trial.redeem(code);
+          btn.textContent = origText;
+          btn.disabled = false;
+          if (result.ok) {
+            if (statusEl) {
+              statusEl.textContent = `Elite Trial Activated \u2014 ${result.sessions} Sessions`;
+              statusEl.style.color = "#10b981";
+            }
+            this._showSuccessToast(`Elite Trial \u2014 ${result.sessions} Sessions`);
+            setTimeout(() => overlay.remove(), 1500);
+          } else {
+            const errorMsg = result.error === "invalid_code" ? "Invalid promo code" : result.error === "already_used" ? "You've already used a trial" : result.error === "code_expired" ? "This promo code has expired" : result.error === "code_exhausted" ? "This promo code has been fully redeemed" : result.error === "code_inactive" ? "This promo code is no longer active" : "Could not verify code \u2014 check your connection";
+            if (statusEl) {
+              statusEl.textContent = errorMsg;
+              statusEl.style.color = "#ef4444";
+            }
           }
         }
         if (e.target.closest('[data-act="activate"]')) {
@@ -7245,6 +7558,143 @@ input:checked + .slider:before {
         return false;
       const flags = FeatureManager.resolveFlags(Store.state, featureName);
       return flags.gated;
+    },
+    showTrialExpiredModal() {
+      const root = OverlayManager.getShadowRoot();
+      const existing = root.getElementById("trial-expired-modal-overlay");
+      if (existing)
+        existing.remove();
+      const overlay = document.createElement("div");
+      overlay.id = "trial-expired-modal-overlay";
+      overlay.className = "paywall-modal-overlay";
+      overlay.innerHTML = `
+            <div class="paywall-modal">
+                <div class="paywall-header">
+                    <div class="paywall-badge">
+                        ${ICONS.ZERO}
+                        <span>TRIAL COMPLETE</span>
+                    </div>
+                    <button class="paywall-close" data-act="close">${ICONS.X}</button>
+                </div>
+
+                <div class="paywall-hero">
+                    <h2 class="paywall-title">Your Elite Trial Has Ended</h2>
+                    <p class="paywall-subtitle">
+                        You've completed all ${Store.state?.settings?.trial?.sessionsLimit || 5} trial sessions.
+                        If you enjoyed advanced analytics, discipline scoring, and tilt detection,
+                        consider upgrading to keep all premium features.
+                    </p>
+                </div>
+
+                <div class="paywall-features">
+                    <div class="feature-item">
+                        <svg class="feature-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                        <div class="feature-text">
+                            <div class="feature-name">Trade Planning</div>
+                            <div class="feature-desc">Stop losses, targets, and thesis capture</div>
+                        </div>
+                    </div>
+                    <div class="feature-item">
+                        <svg class="feature-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"></path><path d="m9 12 2 2 4-4"></path></svg>
+                        <div class="feature-text">
+                            <div class="feature-name">Discipline Scoring</div>
+                            <div class="feature-desc">Track how well you follow your rules</div>
+                        </div>
+                    </div>
+                    <div class="feature-item">
+                        <svg class="feature-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                        <div class="feature-text">
+                            <div class="feature-name">Tilt Detection</div>
+                            <div class="feature-desc">Real-time alerts for emotional trading</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="paywall-pricing" style="text-align:center; margin:16px 0 8px; font-size:12px; color:#94a3b8; line-height:1.6;">
+                    <span style="color:#f8fafc; font-weight:600;">$19/mo</span> &middot;
+                    <span style="color:#f8fafc; font-weight:600;">$149/yr</span>
+                </div>
+
+                <div class="paywall-actions" style="display:flex; flex-direction:column; gap:8px;">
+                    <button class="paywall-btn primary" data-act="purchase" style="background:linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color:white; border:none; padding:12px 20px; border-radius:8px; font-weight:700; font-size:14px; cursor:pointer;">
+                        Get Elite on Whop
+                    </button>
+                    <button class="paywall-btn text" data-act="show-key-input" style="background:none; border:none; color:#8b5cf6; font-size:12px; cursor:pointer; padding:6px;">
+                        I have a license key
+                    </button>
+                </div>
+
+                <div class="paywall-key-section" style="display:none; margin-top:12px;">
+                    <div style="display:flex; gap:8px;">
+                        <input type="text" class="paywall-license-input" placeholder="Enter license key (mem_xxx...)" maxlength="64"
+                            style="flex:1; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:6px; padding:10px 12px; color:#f8fafc; font-size:13px; outline:none;">
+                        <button class="paywall-btn" data-act="activate" style="background:rgba(139,92,246,0.15); border:1px solid rgba(139,92,246,0.3); color:#a78bfa; padding:10px 16px; border-radius:6px; font-weight:600; font-size:13px; cursor:pointer; white-space:nowrap;">
+                            Activate
+                        </button>
+                    </div>
+                    <div class="paywall-key-status" style="margin-top:8px; font-size:12px; min-height:18px;"></div>
+                </div>
+
+                <div class="paywall-footer">
+                    <p style="font-size:11px; color:#475569; margin-top:12px;">Your trading data is preserved. Elite unlocks deeper analysis.</p>
+                </div>
+            </div>
+        `;
+      overlay.addEventListener("click", async (e) => {
+        if (e.target === overlay || e.target.closest('[data-act="close"]')) {
+          overlay.remove();
+        }
+        if (e.target.closest('[data-act="purchase"]')) {
+          License.openPurchasePage();
+        }
+        if (e.target.closest('[data-act="show-key-input"]')) {
+          const keySection = overlay.querySelector(".paywall-key-section");
+          if (keySection) {
+            keySection.style.display = keySection.style.display === "none" ? "block" : "none";
+            const input = keySection.querySelector(".paywall-license-input");
+            if (input)
+              input.focus();
+          }
+        }
+        if (e.target.closest('[data-act="activate"]')) {
+          const input = overlay.querySelector(".paywall-license-input");
+          const statusEl = overlay.querySelector(".paywall-key-status");
+          const key = input?.value?.trim();
+          if (!key) {
+            if (statusEl) {
+              statusEl.textContent = "Please enter a license key";
+              statusEl.style.color = "#f59e0b";
+            }
+            return;
+          }
+          const btn = e.target.closest('[data-act="activate"]');
+          const origText = btn.textContent;
+          btn.textContent = "Verifying...";
+          btn.disabled = true;
+          if (statusEl) {
+            statusEl.textContent = "Verifying your license...";
+            statusEl.style.color = "#94a3b8";
+          }
+          const result = await License.activate(key);
+          btn.textContent = origText;
+          btn.disabled = false;
+          if (result.ok) {
+            if (statusEl) {
+              statusEl.textContent = "Elite activated!";
+              statusEl.style.color = "#10b981";
+            }
+            this._showSuccessToast(License.getPlanLabel());
+            setTimeout(() => overlay.remove(), 1500);
+          } else {
+            const errorMsg = result.error === "invalid_key" ? "Invalid license key" : result.error === "invalid_product" ? "Key not for this product" : result.error === "membership_inactive" ? "Membership is not active" : "Verification failed \u2014 try again";
+            if (statusEl) {
+              statusEl.textContent = errorMsg;
+              statusEl.style.color = "#ef4444";
+            }
+          }
+        }
+      });
+      root.appendChild(overlay);
     }
   };
 
