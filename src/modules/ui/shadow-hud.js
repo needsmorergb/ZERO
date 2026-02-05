@@ -19,6 +19,7 @@ import { NarrativeTrust } from '../core/narrative-trust.js';
 import { TradeNotes } from '../core/trade-notes.js';
 import { Market } from '../core/market.js';
 import { ModeManager } from '../mode-manager.js';
+import { MarketContextRenderer } from './market-context-renderer.js';
 
 function px(n) { return n + 'px'; }
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
@@ -132,7 +133,7 @@ export const ShadowHud = {
                 <div class="sh-subtitle">${subtitle}</div>
 
                 <!-- Section 1: Market Context -->
-                <div class="sh-section" data-section="marketContext">
+                <div class="sh-section zero-market-context" data-section="marketContext">
                     <div class="sh-section-header" data-act="toggle-section" data-target="marketContext">
                         <div class="sh-section-header-left">
                             <div class="sh-section-icon">${ICONS.TRUST_SHIELD}</div>
@@ -140,12 +141,12 @@ export const ShadowHud = {
                         </div>
                         <div class="sh-section-chevron ${this.marketContextExpanded ? 'expanded' : ''}">${ICONS.CHEVRON_DOWN}</div>
                     </div>
-                    ${this._renderTrustSummary()}
-                    ${this._renderSignals()}
+                    ${MarketContextRenderer.renderTrustSummary()}
+                    ${MarketContextRenderer.renderSignals()}
                     <div class="sh-section-body ${this.marketContextExpanded ? '' : 'collapsed'}" data-body="marketContext">
-                        ${this._renderTabs()}
+                        ${MarketContextRenderer.renderTabs(this.activeTab, 'tab')}
                         <div class="sh-tab-content" data-tab-content>
-                            ${this._renderTabContent()}
+                            ${MarketContextRenderer.renderTabContent(this.activeTab)}
                         </div>
                     </div>
                 </div>
@@ -193,199 +194,12 @@ export const ShadowHud = {
         this.bindDrag(root, makeDraggable);
     },
 
-    // ==================== Market Context Rendering ====================
+    // ==================== Market Context Rendering (delegated) ====================
 
-    _renderTrustSummary() {
-        const data = NarrativeTrust.getData();
-        const score = data.score;
-        const confidence = data.confidence;
-        const isLoading = NarrativeTrust.loading;
-
-        if (isLoading) {
-            return `
-                <div class="sh-trust-summary sh-trust-loading-state">
-                    <div class="sh-loading-text">Scanning market context...</div>
-                    <div class="sh-loading-bar"><div class="sh-loading-bar-fill"></div></div>
-                </div>
-            `;
-        }
-
-        if (score === null) {
-            return `
-                <div class="sh-trust-summary">
-                    <div class="sh-trust-score">Trust: <span class="score-val">--</span>/100</div>
-                    <div class="sh-trust-bar"><div class="sh-trust-bar-fill" style="width:0%"></div></div>
-                    <span class="sh-confidence-badge low">no data</span>
-                </div>
-            `;
-        }
-
-        const barClass = score >= 70 ? 'high' : score >= 40 ? 'mid' : 'low';
-        return `
-            <div class="sh-trust-summary">
-                <div class="sh-trust-score">Trust: <span class="score-val">${score}</span>/100</div>
-                <div class="sh-trust-bar"><div class="sh-trust-bar-fill ${barClass}" style="width:${score}%"></div></div>
-                <span class="sh-confidence-badge ${confidence}">${confidence}</span>
-            </div>
-        `;
-    },
-
-    _renderSignals() {
-        const isLoading = NarrativeTrust.loading;
-        if (isLoading) {
-            return `<div class="sh-signals"><span class="sh-signal-label sh-signal-loading">Waiting for data...</span></div>`;
-        }
-
-        const signals = NarrativeTrust.getSignals();
-        const items = [
-            { key: 'xAccountAge', label: 'X' },
-            { key: 'recentActivity', label: 'Activity' },
-            { key: 'xCommunities', label: 'X Comm' },
-            { key: 'developerHistory', label: 'Dev' }
-        ];
-
-        // Only count signals that are actually present (not unavailable)
-        const presentCount = items.filter(item => signals[item.key] !== 'unavailable').length;
-
-        return `
-            <div class="sh-signals">
-                ${items.map(item => {
-                    const val = signals[item.key];
-                    const cls = val === 'unavailable' ? 'unavailable' : (val === 'detected' || val === 'active' || val === 'established' || val === 'known') ? 'positive' : 'neutral';
-                    return `<div class="sh-signal-dot ${cls}" title="${item.label}: ${val}"></div>`;
-                }).join('')}
-                <span class="sh-signal-label">${presentCount} of ${items.length} signals</span>
-            </div>
-        `;
-    },
-
-    _renderTabs() {
-        const tabs = [
-            { id: 'xAccount', label: 'X', icon: ICONS.TAB_X_ACCOUNT },
-            { id: 'website', label: 'Website', icon: ICONS.TAB_WEBSITE },
-            { id: 'developer', label: 'Dev', icon: ICONS.TAB_DEVELOPER }
-        ];
-
-        return `
-            <div class="sh-tabs">
-                ${tabs.map(t => `
-                    <div class="sh-tab ${t.id === this.activeTab ? 'active' : ''}" data-act="tab" data-tab="${t.id}">
-                        <span class="sh-tab-icon">${t.icon}</span> ${t.label}
-                    </div>
-                `).join('')}
-            </div>
-        `;
-    },
-
-    _renderTabContent() {
-        const vm = NarrativeTrust.getViewModel();
-
-        // VM not yet available (loading or pre-fetch)
-        if (!vm) {
-            return '<div class="sh-empty">Fetching context data...</div>';
-        }
-
-        switch (this.activeTab) {
-            case 'xAccount': return this._renderXAccountTab(vm.xAccount);
-            case 'website': return this._renderWebsiteTab(vm.website);
-            case 'developer': return this._renderDeveloperTab(vm.developer);
-            default: return '';
-        }
-    },
-
-    _renderXAccountTab(x) {
-        if (!x) return '';
-
-        // Enriched rows — only render when status === 'ok' (real data present)
-        const enrichedRows = [
-            { label: 'Age', f: x.age },
-            { label: 'Followers', f: x.followers },
-            { label: 'CA Mentions', f: x.caMentions },
-            { label: 'Renames', f: x.renameCount },
-        ].filter(r => r.f && r.f.status === 'ok')
-         .map(r => this._field(r.label, r.f))
-         .join('');
-
-        // X Communities — always shown
-        let commHtml;
-        const comm = x.communities;
-        if (comm && comm.status === 'ok' && comm.items.length > 0) {
-            const itemsHtml = comm.items.map(item => {
-                const meta = [];
-                if (item.memberCount != null) meta.push(`${item.memberCount} members`);
-                if (item.activityLevel && item.activityLevel !== 'unknown') meta.push(item.activityLevel);
-                const metaStr = meta.length > 0 ? ` <span style="opacity:0.6; font-size:10px;">(${meta.join(' \u00b7 ')})</span>` : '';
-                return `<div class="nt-community-item"><a href="${item.url}" target="_blank" rel="noopener" style="color:#a78bfa; text-decoration:none;">${this._escapeHtml(item.name)}</a>${metaStr}</div>`;
-            }).join('');
-            commHtml = `
-                <div class="nt-section-divider" style="margin:8px 0 4px; padding-top:6px; border-top:1px solid rgba(255,255,255,0.06);">
-                    <div class="nt-label" style="font-weight:600; margin-bottom:4px;">X Communities</div>
-                    ${itemsHtml}
-                </div>
-            `;
-        } else {
-            commHtml = `
-                <div class="nt-section-divider" style="margin:8px 0 4px; padding-top:6px; border-top:1px solid rgba(255,255,255,0.06);">
-                    <div class="nt-field unavailable"><div class="nt-label">X Communities</div><div class="nt-value">No X community detected</div></div>
-                </div>
-            `;
-        }
-
-        return `
-            ${this._field('Account', x.handle)}
-            ${this._field('URL', x.url)}
-            ${enrichedRows}
-            ${commHtml}
-        `;
-    },
-
-    _renderWebsiteTab(w) {
-        if (!w) return '';
-        return `
-            ${this._field('Domain', w.domain)}
-            ${this._field('URL', w.url)}
-            ${this._field('Domain Age', w.domainAge)}
-            ${this._field('Content', w.contentSummary)}
-            ${this._field('Narrative', w.narrativeConsistency)}
-        `;
-    },
-
-    _renderDeveloperTab(d) {
-        if (!d) return '';
-        return `
-            ${this._field('Deployer', d.knownLaunches)}
-            ${this._field('Recent (30d)', d.recentLaunches)}
-            ${this._field('Mint Age', d.historicalSummary)}
-        `;
-    },
-
-    /**
-     * Render a key-value field. Accepts a VMField { display, status } or a raw string.
-     * Never outputs "Data unavailable". Uses status-aware display text.
-     */
-    _field(label, vmField) {
-        let display, isUnavailable, isStale;
-
-        if (vmField && typeof vmField === 'object' && 'display' in vmField) {
-            // VMField from view-model.js
-            display = vmField.display;
-            isUnavailable = vmField.status !== 'ok' && vmField.status !== 'stale_cached';
-            isStale = vmField.status === 'stale_cached';
-        } else {
-            // Raw string fallback (legacy / direct values)
-            display = vmField || 'Not detected';
-            isUnavailable = !vmField || vmField === 'unavailable';
-            isStale = false;
-        }
-
-        const cls = isUnavailable ? 'unavailable' : isStale ? 'stale' : '';
-        return `
-            <div class="nt-field ${cls}">
-                <div class="nt-label">${label}</div>
-                <div class="nt-value">${display}</div>
-            </div>
-        `;
-    },
+    _renderTrustSummary() { return MarketContextRenderer.renderTrustSummary(); },
+    _renderSignals() { return MarketContextRenderer.renderSignals(); },
+    _renderTabs() { return MarketContextRenderer.renderTabs(this.activeTab, 'tab'); },
+    _renderTabContent() { return MarketContextRenderer.renderTabContent(this.activeTab); },
 
     // ==================== Notes Rendering ====================
 
@@ -410,34 +224,25 @@ export const ShadowHud = {
         }).join('');
     },
 
-    _escapeHtml(str) {
-        const div = document.createElement('div');
-        div.textContent = str;
-        return div.innerHTML;
-    },
-
     // ==================== Partial Updates ====================
 
     _updateMarketContext(root) {
         if (!root) return;
 
-        // Update trust summary
         const summaryEl = root.querySelector('.sh-trust-summary');
         if (summaryEl) {
-            summaryEl.outerHTML = this._renderTrustSummary();
+            summaryEl.outerHTML = MarketContextRenderer.renderTrustSummary();
         }
 
-        // Update signals
         const signalsEl = root.querySelector('.sh-signals');
         if (signalsEl) {
-            signalsEl.outerHTML = this._renderSignals();
+            signalsEl.outerHTML = MarketContextRenderer.renderSignals();
         }
 
-        // Update tab content if expanded
         if (this.marketContextExpanded) {
             const tabContent = root.querySelector('[data-tab-content]');
             if (tabContent) {
-                tabContent.innerHTML = this._renderTabContent();
+                tabContent.innerHTML = MarketContextRenderer.renderTabContent(this.activeTab);
             }
         }
     },
@@ -559,15 +364,13 @@ export const ShadowHud = {
     _switchTab(root, tab) {
         this.activeTab = tab;
 
-        // Update tab active states
         root.querySelectorAll('.sh-tab').forEach(el => {
             el.classList.toggle('active', el.getAttribute('data-tab') === tab);
         });
 
-        // Update tab content
         const tabContent = root.querySelector('[data-tab-content]');
         if (tabContent) {
-            tabContent.innerHTML = this._renderTabContent();
+            tabContent.innerHTML = MarketContextRenderer.renderTabContent(this.activeTab);
         }
     },
 

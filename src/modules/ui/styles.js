@@ -14,6 +14,7 @@ import { SETTINGS_PANEL_CSS } from "./settings-panel-styles.js";
 import { MODES_CSS } from "./modes-styles.js";
 import { SHADOW_INSIGHTS_CSS } from "./shadow-insights-styles.js";
 import { SHADOW_HUD_CSS } from "./shadow-hud-styles.js";
+import { MARKET_CONTEXT_CSS } from "./market-context-styles.js";
 
 // Concatenate all CSS modules
 export const CSS =
@@ -28,4 +29,5 @@ export const CSS =
   SETTINGS_PANEL_CSS +
   MODES_CSS +
   SHADOW_INSIGHTS_CSS +
-  SHADOW_HUD_CSS;
+  SHADOW_HUD_CSS +
+  MARKET_CONTEXT_CSS;

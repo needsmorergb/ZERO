@@ -7,6 +7,8 @@ import { FeatureManager } from '../featureManager.js';
 import { Paywall } from './paywall.js';
 import { Market } from '../core/market.js';
 import { ICONS } from './icons.js';
+import { NarrativeTrust } from '../core/narrative-trust.js';
+import { MarketContextRenderer } from './market-context-renderer.js';
 
 function px(n) { return n + 'px'; }
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
@@ -18,12 +20,23 @@ export const BuyHud = {
     tradePlanExpanded: false,
     lastEmotionTradeId: null, // Debounce: one prompt per trade
 
+    // Market Context state (Elite Paper Mode)
+    marketContextExpanded: false,
+    marketContextTab: 'xAccount',
+    _ntSubscribed: false,
+
     // State for reuse
     makeDraggableRef: null,
 
     mountBuyHud(makeDraggable, force = false) {
         if (makeDraggable) this.makeDraggableRef = makeDraggable;
         const dragger = makeDraggable || this.makeDraggableRef;
+
+        // Subscribe to NarrativeTrust updates for Elite users (once)
+        if (!this._ntSubscribed && FeatureManager.isElite(Store.state)) {
+            NarrativeTrust.subscribe(() => this._refreshFullMarketContext());
+            this._ntSubscribed = true;
+        }
 
         const container = OverlayManager.getContainer();
         const rootId = IDS.buyHud;
@@ -58,9 +71,31 @@ export const BuyHud = {
     },
 
     refreshMarketContext(root) {
+        // Elite users have full market context — partial update via NarrativeTrust subscription
+        if (!FeatureManager.resolveFlags(Store.state, 'MARKET_CONTEXT').gated && FeatureManager.isElite(Store.state)) {
+            return; // Handled by _refreshFullMarketContext via NarrativeTrust subscription
+        }
         const container = root.querySelector('.market-context-container');
         if (container) {
             container.innerHTML = this.renderMarketContext().replace('<div class="market-context-container" style="margin-bottom:12px;">', '').replace(/<\/div>\s*$/, '');
+        }
+    },
+
+    _refreshFullMarketContext() {
+        const container = OverlayManager.getContainer();
+        if (!container) return;
+        const root = container.querySelector('#' + IDS.buyHud);
+        if (!root) return;
+
+        const summaryEl = root.querySelector('.sh-trust-summary');
+        if (summaryEl) summaryEl.outerHTML = MarketContextRenderer.renderTrustSummary();
+
+        const signalsEl = root.querySelector('.sh-signals');
+        if (signalsEl) signalsEl.outerHTML = MarketContextRenderer.renderSignals();
+
+        if (this.marketContextExpanded) {
+            const tabContent = root.querySelector('[data-tab-content]');
+            if (tabContent) tabContent.innerHTML = MarketContextRenderer.renderTabContent(this.marketContextTab);
         }
     },
 
@@ -122,9 +157,40 @@ export const BuyHud = {
             ? Store.state.settings.quickBuySols
             : Store.state.settings.quickSellPcts;
 
+        if (this.buyHudEdit) {
+            return values.map((v, i) => `
+                <input class="qbtn-edit" type="text" inputmode="decimal"
+                       data-idx="${i}" data-edit="quick"
+                       value="${v}" placeholder="${v}">
+            `).join('');
+        }
+
         return values.map(v => `
             <button class="qbtn" data-act="quick" data-val="${v}">${v}${isBuy ? ' SOL' : '%'}</button>
         `).join('');
+    },
+
+    _saveQuickButtonEdits(root) {
+        const isBuy = this.buyHudTab === 'buy';
+        const inputs = root.querySelectorAll('input[data-edit="quick"]');
+        const newValues = [];
+
+        inputs.forEach(input => {
+            let val = parseFloat(input.value);
+            if (!isNaN(val) && val > 0) {
+                if (!isBuy) val = Math.min(Math.max(val, 1), 100);
+                newValues.push(val);
+            }
+        });
+
+        if (newValues.length > 0) {
+            if (isBuy) {
+                Store.state.settings.quickBuySols = newValues;
+            } else {
+                Store.state.settings.quickSellPcts = newValues;
+            }
+            Store.save();
+        }
     },
 
     bindHeaderDrag(root, makeDraggable) {
@@ -176,19 +242,21 @@ export const BuyHud = {
                 this.updateBuyHud();
             }
             if (act === 'tab-buy') {
+                if (this.buyHudEdit) { this._saveQuickButtonEdits(root); this.buyHudEdit = false; }
                 this.buyHudTab = 'buy';
-                this.mountBuyHud(null, true); // Force Re-render
+                this.mountBuyHud(null, true);
             }
             if (act === 'tab-sell') {
+                if (this.buyHudEdit) { this._saveQuickButtonEdits(root); this.buyHudEdit = false; }
                 this.buyHudTab = 'sell';
-                this.mountBuyHud(null, true); // Force Re-render
+                this.mountBuyHud(null, true);
             }
             if (act === 'quick') {
+                if (this.buyHudEdit) return; // Don't execute during edit mode
                 const val = actEl.getAttribute('data-val');
                 const field = root.querySelector('input[data-k="field"]');
                 if (field) {
                     field.value = val;
-                    // One-click trade
                     await this.executeTrade(root);
                 }
             }
@@ -198,14 +266,33 @@ export const BuyHud = {
             if (act === 'upgrade-plan') {
                 Paywall.showUpgradeModal('TRADE_PLAN');
             }
+            if (act === 'upgrade-market-context') {
+                Paywall.showUpgradeModal('MARKET_CONTEXT');
+            }
             if (act === 'edit') {
-                // Toggle edit mode for quick buttons (Future: implement editing UI)
+                if (this.buyHudEdit) this._saveQuickButtonEdits(root);
                 this.buyHudEdit = !this.buyHudEdit;
-                this.mountBuyHud();
+                this.mountBuyHud(null, true);
             }
             if (act === 'toggle-plan') {
                 this.tradePlanExpanded = !this.tradePlanExpanded;
                 this.mountBuyHud();
+            }
+            if (act === 'toggle-market-context') {
+                this.marketContextExpanded = !this.marketContextExpanded;
+                const body = root.querySelector('[data-body="marketContext"]');
+                if (body) body.classList.toggle('collapsed');
+                const chevron = actEl.querySelector('.sh-section-chevron');
+                if (chevron) chevron.classList.toggle('expanded');
+            }
+            if (act === 'mc-tab') {
+                const tab = actEl.getAttribute('data-tab');
+                this.marketContextTab = tab;
+                root.querySelectorAll('.zero-market-context .sh-tab').forEach(el => {
+                    el.classList.toggle('active', el.getAttribute('data-tab') === tab);
+                });
+                const tabContent = root.querySelector('.zero-market-context [data-tab-content]');
+                if (tabContent) tabContent.innerHTML = MarketContextRenderer.renderTabContent(tab);
             }
         });
     },
@@ -340,36 +427,37 @@ export const BuyHud = {
         const flags = FeatureManager.resolveFlags(Store.state, 'MARKET_CONTEXT');
         if (!flags.visible) return '';
 
-        const ctx = Market.context;
         const isGated = flags.gated;
 
-        let content = '';
+        // Free tier: show locked badge
         if (isGated) {
-            content = `
-                <div class="market-badge gated" style="cursor:pointer;" onclick="this.dispatchEvent(new CustomEvent('zero-upgrade', { bubbles:true, detail:'MARKET_CONTEXT' }))">
-                    ${ICONS.LOCK} MARKET CONTEXT (ELITE)
+            return `
+                <div class="market-context-container" style="margin-bottom:12px;">
+                    <div class="market-badge gated" style="cursor:pointer;" data-act="upgrade-market-context">
+                        ${ICONS.LOCK} MARKET CONTEXT (ELITE)
+                    </div>
                 </div>
-            `;
-        } else if (ctx) {
-            const vol = (ctx.vol24h / 1000000).toFixed(1) + 'M';
-            const chg = ctx.priceChange24h.toFixed(1) + '%';
-            const chgColor = ctx.priceChange24h >= 0 ? '#10b981' : '#ef4444';
-
-            content = `
-                <div class="market-badge">
-                    <div class="mitem">VOL <span>$${vol}</span></div>
-                    <div class="mitem">24H <span style="color:${chgColor}">${chg}</span></div>
-                </div>
-            `;
-        } else {
-            content = `
-                <div class="market-badge loading">Fetching market data...</div>
             `;
         }
 
+        // Elite tier: full market context with trust, signals, and tabbed drawer
         return `
-            <div class="market-context-container" style="margin-bottom:12px;">
-                ${content}
+            <div class="market-context-container zero-market-context" style="margin-bottom:12px;">
+                <div class="sh-section-header" data-act="toggle-market-context">
+                    <div class="sh-section-header-left">
+                        <div class="sh-section-icon">${ICONS.TRUST_SHIELD}</div>
+                        <div class="sh-section-title">Market Context</div>
+                    </div>
+                    <div class="sh-section-chevron ${this.marketContextExpanded ? 'expanded' : ''}">${ICONS.CHEVRON_DOWN}</div>
+                </div>
+                ${MarketContextRenderer.renderTrustSummary()}
+                ${MarketContextRenderer.renderSignals()}
+                <div class="sh-section-body ${this.marketContextExpanded ? '' : 'collapsed'}" data-body="marketContext">
+                    ${MarketContextRenderer.renderTabs(this.marketContextTab, 'mc-tab')}
+                    <div class="sh-tab-content" data-tab-content>
+                        ${MarketContextRenderer.renderTabContent(this.marketContextTab)}
+                    </div>
+                </div>
             </div>
         `;
     },
