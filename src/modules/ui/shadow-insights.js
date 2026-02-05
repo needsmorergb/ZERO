@@ -8,6 +8,7 @@ import { Store } from "../store.js";
 import { ModeManager } from "../mode-manager.js";
 import { OverlayManager } from "./overlay.js";
 import { Analytics } from "../core/analytics.js";
+import { SessionReplay } from "./session-replay.js";
 import { ICONS } from "./icons.js";
 
 export const ShadowInsights = {
@@ -213,14 +214,21 @@ export const ShadowInsights = {
                   .join("")}
 
                 <div class="si-footer">This is not advice. It is a reflection of your behavior.</div>
-                <button class="si-action">Review session details</button>
+                <div class="si-actions">
+                    <button class="si-action-primary">Replay session</button>
+                    <button class="si-action-secondary">Review session details</button>
+                </div>
             </div>
         `;
 
     container.appendChild(overlay);
 
     const dismiss = () => overlay.remove();
-    overlay.querySelector(".si-action").onclick = dismiss;
+    overlay.querySelector(".si-action-primary").onclick = () => {
+      dismiss();
+      SessionReplay.open();
+    };
+    overlay.querySelector(".si-action-secondary").onclick = dismiss;
     overlay.addEventListener("click", (e) => {
       if (e.target === overlay) dismiss();
     });

@@ -206,23 +206,27 @@
         isShadowMode() {
           return this.state?.settings?.tradingMode === "shadow";
         },
+        isRealTradingMode() {
+          const mode = this.state?.settings?.tradingMode;
+          return mode === "shadow" || mode === "analysis";
+        },
         getActiveSession() {
-          return this.isShadowMode() ? this.state.shadowSession : this.state.session;
+          return this.isRealTradingMode() ? this.state.shadowSession : this.state.session;
         },
         getActivePositions() {
-          return this.isShadowMode() ? this.state.shadowPositions : this.state.positions;
+          return this.isRealTradingMode() ? this.state.shadowPositions : this.state.positions;
         },
         getActiveTrades() {
-          return this.isShadowMode() ? this.state.shadowTrades : this.state.trades;
+          return this.isRealTradingMode() ? this.state.shadowTrades : this.state.trades;
         },
         getActiveBehavior() {
-          return this.isShadowMode() ? this.state.shadowBehavior : this.state.behavior;
+          return this.isRealTradingMode() ? this.state.shadowBehavior : this.state.behavior;
         },
         getActiveEventLog() {
-          return this.isShadowMode() ? this.state.shadowEventLog : this.state.eventLog;
+          return this.isRealTradingMode() ? this.state.shadowEventLog : this.state.eventLog;
         },
         getActiveSessionHistory() {
-          return this.isShadowMode() ? this.state.shadowSessionHistory : this.state.sessionHistory;
+          return this.isRealTradingMode() ? this.state.shadowSessionHistory : this.state.sessionHistory;
         },
         async load() {
           let timeoutId;
@@ -3462,6 +3466,55 @@ input:checked + .slider:before {
 .zero-shadow-insights-modal .si-action:hover {
     background: rgba(139, 92, 246, 0.2);
 }
+
+/* Dual CTA buttons for Replay + Review */
+.zero-shadow-insights-modal .si-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+.zero-shadow-insights-modal .si-action-primary {
+    display: block;
+    width: 100%;
+    padding: 11px;
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(139, 92, 246, 0.12));
+    border: 1px solid rgba(139, 92, 246, 0.4);
+    border-radius: 8px;
+    color: #e9d5ff;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    text-align: center;
+    transition: background 0.15s;
+    letter-spacing: 0.2px;
+}
+
+.zero-shadow-insights-modal .si-action-primary:hover {
+    background: rgba(139, 92, 246, 0.3);
+}
+
+.zero-shadow-insights-modal .si-action-secondary {
+    display: block;
+    width: 100%;
+    padding: 11px;
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.15s;
+    letter-spacing: 0.2px;
+}
+
+.zero-shadow-insights-modal .si-action-secondary:hover {
+    background: rgba(255, 255, 255, 0.03);
+    color: #94a3b8;
+}
 `;
 
   // src/modules/ui/shadow-hud-styles.js
@@ -5597,14 +5650,14 @@ input:checked + .slider:before {
   var Analytics = {
     // --- Mode-aware state resolver ---
     _resolve(state) {
-      const isShadow = state.settings?.tradingMode === "shadow";
+      const isReal = Store.isRealTradingMode();
       return {
-        session: isShadow ? state.shadowSession : state.session,
-        trades: isShadow ? state.shadowTrades : state.trades,
-        positions: isShadow ? state.shadowPositions : state.positions,
-        behavior: isShadow ? state.shadowBehavior : state.behavior,
-        eventLog: isShadow ? state.shadowEventLog : state.eventLog,
-        isShadow
+        session: isReal ? state.shadowSession : state.session,
+        trades: isReal ? state.shadowTrades : state.trades,
+        positions: isReal ? state.shadowPositions : state.positions,
+        behavior: isReal ? state.shadowBehavior : state.behavior,
+        eventLog: isReal ? state.shadowEventLog : state.eventLog,
+        isRealTrading: isReal
       };
     },
     // ==========================================
@@ -6682,6 +6735,222 @@ input:checked + .slider:before {
       if (currentSession.length > 0)
         sessions.push(currentSession);
       return sessions;
+    },
+    // ==========================================
+    // CROSS-MODE TRADE FILTERING
+    // ==========================================
+    /**
+     * Merge paper + shadow trades and filter by mode category.
+     * modeFilter: 'paper' | 'real' | 'all'
+     * Returns filtered trades as an object (same shape as trades map).
+     */
+    _getFilteredTradesMap(state, modeFilter) {
+      const paperTrades = state.trades || {};
+      const shadowTrades = state.shadowTrades || {};
+      const merged = Object.assign({}, paperTrades, shadowTrades);
+      if (modeFilter === "all")
+        return merged;
+      const filtered = {};
+      for (const [id, trade] of Object.entries(merged)) {
+        if (modeFilter === "paper") {
+          if (trade.mode === "paper" || trade.mode === void 0) {
+            filtered[id] = trade;
+          }
+        } else if (modeFilter === "real") {
+          if (trade.mode === "analysis" || trade.mode === "shadow") {
+            filtered[id] = trade;
+          }
+        }
+      }
+      return filtered;
+    },
+    // ==========================================
+    // TIME-OF-DAY ANALYSIS
+    // ==========================================
+    /**
+     * Analyze trade performance by hour of day (0-23, local time).
+     * modeFilter: 'paper' | 'real' | 'all'
+     */
+    analyzeTimeOfDay(state, modeFilter) {
+      const tradesMap = this._getFilteredTradesMap(state, modeFilter || "all");
+      const sellTrades = Object.values(tradesMap).filter((t) => t.side === "SELL");
+      const buckets = [];
+      for (let h = 0; h < 24; h++) {
+        buckets.push({ hour: h, netPnl: 0, wins: 0, losses: 0, count: 0 });
+      }
+      for (const trade of sellTrades) {
+        const hour = new Date(trade.ts).getHours();
+        const pnl = trade.realizedPnlSol || 0;
+        buckets[hour].count++;
+        buckets[hour].netPnl += pnl;
+        if (pnl > 0)
+          buckets[hour].wins++;
+        else if (pnl < 0)
+          buckets[hour].losses++;
+      }
+      const qualifying = buckets.filter((b) => b.count >= 5);
+      const topHours = qualifying.slice().sort((a, b) => b.netPnl - a.netPnl).slice(0, 3);
+      return {
+        buckets,
+        topHours,
+        hasEnoughData: qualifying.length >= 1
+      };
+    },
+    // ==========================================
+    // MARKET CAP BUCKET ANALYSIS
+    // ==========================================
+    /**
+     * Analyze trade performance by market cap at fill.
+     * modeFilter: 'paper' | 'real' | 'all'
+     */
+    analyzeMarketCapBuckets(state, modeFilter) {
+      const tradesMap = this._getFilteredTradesMap(state, modeFilter || "all");
+      const sellTrades = Object.values(tradesMap).filter(
+        (t) => t.side === "SELL" && t.marketCapUsdAtFill > 0
+      );
+      const ranges = [
+        { label: "<1M", max: 1e6 },
+        { label: "1-5M", max: 5e6 },
+        { label: "5-20M", max: 2e7 },
+        { label: "20-100M", max: 1e8 },
+        { label: ">100M", max: Infinity }
+      ];
+      const buckets = ranges.map((r) => ({
+        label: r.label,
+        max: r.max,
+        netPnl: 0,
+        wins: 0,
+        losses: 0,
+        count: 0,
+        winRate: 0
+      }));
+      for (const trade of sellTrades) {
+        const mc = trade.marketCapUsdAtFill;
+        for (const bucket of buckets) {
+          if (mc <= bucket.max) {
+            const pnl = trade.realizedPnlSol || 0;
+            bucket.count++;
+            bucket.netPnl += pnl;
+            if (pnl > 0)
+              bucket.wins++;
+            else if (pnl < 0)
+              bucket.losses++;
+            break;
+          }
+        }
+      }
+      for (const bucket of buckets) {
+        bucket.winRate = bucket.count > 0 ? bucket.wins / bucket.count * 100 : 0;
+      }
+      const result = buckets.map(({ label, netPnl, wins, losses, count, winRate }) => ({
+        label,
+        netPnl,
+        wins,
+        losses,
+        count,
+        winRate
+      }));
+      return {
+        buckets: result,
+        hasData: sellTrades.length > 0
+      };
+    },
+    // ==========================================
+    // PLAN ADHERENCE ANALYSIS
+    // ==========================================
+    /**
+     * Analyze how well the trader followed their trade plans.
+     * Uses active trades (mode-aware via Store).
+     */
+    analyzePlanAdherence(state) {
+      const tradesMap = Store.getActiveTrades() || {};
+      const sellTrades = Object.values(tradesMap).filter(
+        (t) => t.side === "SELL" && t.planAdherence
+      );
+      let totalPlanned = sellTrades.length;
+      let stopsRespected = 0;
+      let totalStops = 0;
+      let targetsHit = 0;
+      let totalTargets = 0;
+      for (const trade of sellTrades) {
+        const pa = trade.planAdherence;
+        if (pa.plannedStop !== void 0 && pa.plannedStop !== null) {
+          totalStops++;
+          if (!pa.stopViolated)
+            stopsRespected++;
+        }
+        if (pa.plannedTarget !== void 0 && pa.plannedTarget !== null) {
+          totalTargets++;
+          if (pa.hitTarget)
+            targetsHit++;
+        }
+      }
+      return {
+        totalPlanned,
+        stopsRespected,
+        totalStops,
+        targetsHit,
+        totalTargets
+      };
+    },
+    // ==========================================
+    // EMOTION BREAKDOWN ANALYSIS
+    // ==========================================
+    /**
+     * Analyze trade performance grouped by emotion tag.
+     * Uses active trades (mode-aware via Store).
+     */
+    analyzeEmotionBreakdown(state) {
+      const tradesMap = Store.getActiveTrades() || {};
+      const sellTrades = Object.values(tradesMap).filter(
+        (t) => t.side === "SELL" && t.emotion
+      );
+      const emotionMap = {};
+      for (const trade of sellTrades) {
+        const tag = trade.emotion;
+        if (!emotionMap[tag]) {
+          emotionMap[tag] = { tag, count: 0, netPnl: 0, wins: 0, losses: 0, winRate: 0 };
+        }
+        const entry = emotionMap[tag];
+        const pnl = trade.realizedPnlSol || 0;
+        entry.count++;
+        entry.netPnl += pnl;
+        if (pnl > 0)
+          entry.wins++;
+        else if (pnl < 0)
+          entry.losses++;
+      }
+      const emotions = Object.values(emotionMap);
+      for (const e of emotions) {
+        e.winRate = e.count > 0 ? e.wins / e.count * 100 : 0;
+      }
+      return {
+        emotions,
+        hasData: emotions.length > 0
+      };
+    },
+    // ==========================================
+    // SESSION REPLAY — TRADE LOOKUP
+    // ==========================================
+    /**
+     * Get trades for a specific session (current or historical/archived).
+     * Looks up trade IDs in both paper and shadow trades.
+     * Returns array sorted by timestamp ascending.
+     */
+    getTradesForSession(state, session) {
+      if (!session || !Array.isArray(session.trades) || session.trades.length === 0) {
+        return [];
+      }
+      const paperTrades = state.trades || {};
+      const shadowTrades = state.shadowTrades || {};
+      const results = [];
+      for (const id of session.trades) {
+        const trade = paperTrades[id] || shadowTrades[id];
+        if (trade)
+          results.push(trade);
+      }
+      results.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+      return results;
     },
     calculateConsistencyScore(state) {
       const { trades: tradesMap } = this._resolve(state);
@@ -8105,6 +8374,804 @@ canvas#equity-canvas {
     `;
   }
 
+  // src/modules/ui/session-replay.js
+  init_store();
+  var SESSION_REPLAY_CSS = `
+.replay-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.9);
+    z-index: 2147483647;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.replay-modal {
+    background: linear-gradient(145deg, #0d1117, #161b22);
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    border-radius: 16px;
+    width: 800px;
+    max-width: 95vw;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5);
+}
+
+.replay-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid rgba(139, 92, 246, 0.2);
+    background: rgba(139, 92, 246, 0.05);
+}
+
+.replay-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    font-weight: 800;
+    color: #a78bfa;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.replay-title svg {
+    width: 20px;
+    height: 20px;
+}
+
+.replay-close {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #94a3b8;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.replay-close:hover {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.3);
+    color: #ef4444;
+}
+
+.replay-stats {
+    display: flex;
+    gap: 20px;
+    padding: 12px 20px;
+    background: rgba(0, 0, 0, 0.3);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.replay-stat {
+    text-align: center;
+}
+
+.replay-stat .k {
+    font-size: 10px;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
+
+.replay-stat .v {
+    font-size: 16px;
+    font-weight: 700;
+    color: #f8fafc;
+}
+
+.replay-filters {
+    display: flex;
+    gap: 8px;
+    padding: 12px 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    flex-wrap: wrap;
+}
+
+.filter-btn {
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: transparent;
+    color: #64748b;
+}
+
+.filter-btn:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.filter-btn.active {
+    background: rgba(139, 92, 246, 0.2);
+    border-color: rgba(139, 92, 246, 0.5);
+    color: #a78bfa;
+}
+
+.filter-btn.trade { --accent: #14b8a6; }
+.filter-btn.alert { --accent: #ef4444; }
+.filter-btn.discipline { --accent: #f59e0b; }
+.filter-btn.milestone { --accent: #10b981; }
+
+.filter-btn.active.trade { background: rgba(20, 184, 166, 0.2); border-color: rgba(20, 184, 166, 0.5); color: #14b8a6; }
+.filter-btn.active.alert { background: rgba(239, 68, 68, 0.2); border-color: rgba(239, 68, 68, 0.5); color: #ef4444; }
+.filter-btn.active.discipline { background: rgba(245, 158, 11, 0.2); border-color: rgba(245, 158, 11, 0.5); color: #f59e0b; }
+.filter-btn.active.milestone { background: rgba(16, 185, 129, 0.2); border-color: rgba(16, 185, 129, 0.5); color: #10b981; }
+
+.replay-timeline {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 20px;
+}
+
+.timeline-empty {
+    text-align: center;
+    padding: 40px 20px;
+    color: #64748b;
+}
+
+.timeline-empty svg {
+    width: 48px;
+    height: 48px;
+    margin-bottom: 12px;
+    opacity: 0.5;
+}
+
+.timeline-event {
+    display: flex;
+    gap: 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+    transition: background 0.2s;
+}
+
+.timeline-event:hover {
+    background: rgba(255, 255, 255, 0.02);
+    margin: 0 -20px;
+    padding: 12px 20px;
+}
+
+.timeline-event:last-child {
+    border-bottom: none;
+}
+
+.event-time {
+    flex-shrink: 0;
+    width: 60px;
+    font-size: 11px;
+    color: #64748b;
+    font-weight: 500;
+}
+
+.event-icon {
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.event-icon.trade { background: rgba(20, 184, 166, 0.15); color: #14b8a6; }
+.event-icon.alert { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+.event-icon.discipline { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+.event-icon.milestone { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+.event-icon.system { background: rgba(99, 102, 241, 0.15); color: #6366f1; }
+
+.event-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.event-type {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
+
+.event-type.trade { color: #14b8a6; }
+.event-type.alert { color: #ef4444; }
+.event-type.discipline { color: #f59e0b; }
+.event-type.milestone { color: #10b981; }
+.event-type.system { color: #6366f1; }
+
+.event-message {
+    font-size: 13px;
+    color: #e2e8f0;
+    line-height: 1.4;
+}
+
+.event-data {
+    display: flex;
+    gap: 12px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+}
+
+.event-tag {
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.05);
+    color: #94a3b8;
+}
+
+.event-tag.win { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+.event-tag.loss { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+
+.replay-footer {
+    padding: 12px 20px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.replay-count {
+    font-size: 11px;
+    color: #64748b;
+}
+
+.replay-elite-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    color: #a78bfa;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.locked-replay {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 40px;
+    text-align: center;
+}
+
+.locked-replay svg {
+    width: 64px;
+    height: 64px;
+    color: #a78bfa;
+    margin-bottom: 20px;
+}
+
+.locked-replay h3 {
+    color: #f8fafc;
+    font-size: 18px;
+    margin: 0 0 8px;
+}
+
+.locked-replay p {
+    color: #64748b;
+    font-size: 13px;
+    margin: 0 0 20px;
+    max-width: 300px;
+}
+
+.unlock-btn {
+    background: linear-gradient(135deg, #8b5cf6, #a78bfa);
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-weight: 700;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.unlock-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(139, 92, 246, 0.3);
+}
+
+.replay-equity-section {
+    padding: 16px 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.replay-section-label {
+    font-size: 9px;
+    font-weight: 700;
+    color: #64748b;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+}
+
+#replay-equity-canvas {
+    width: 100%;
+    height: 120px;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.3);
+}
+
+.replay-subheader {
+    font-size: 11px;
+    color: #64748b;
+    font-weight: 500;
+}
+
+.timeline-event.selected {
+    background: rgba(139, 92, 246, 0.08);
+    border-left: 2px solid #8b5cf6;
+    margin: 0 -20px;
+    padding: 12px 18px 12px 20px;
+}
+
+.timeline-event {
+    cursor: pointer;
+}
+
+.replay-no-equity {
+    padding: 16px 20px;
+    text-align: center;
+    font-size: 11px;
+    color: #475569;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+`;
+  var SessionReplay = {
+    isOpen: false,
+    activeFilters: ["TRADE", "ALERT", "DISCIPLINE", "MILESTONE"],
+    _targetSessionId: null,
+    _selectedEventIdx: -1,
+    open(sessionId) {
+      this._targetSessionId = sessionId || null;
+      this._selectedEventIdx = -1;
+      this.isOpen = true;
+      this.render();
+    },
+    close() {
+      this.isOpen = false;
+      this._targetSessionId = null;
+      this._selectedEventIdx = -1;
+      const overlay = OverlayManager.getShadowRoot().querySelector(".replay-overlay");
+      if (overlay)
+        overlay.remove();
+    },
+    toggle() {
+      if (this.isOpen)
+        this.close();
+      else
+        this.open();
+    },
+    _resolveSession() {
+      const state = Store.state;
+      if (!this._targetSessionId) {
+        return {
+          session: Store.getActiveSession(),
+          trades: null,
+          isHistorical: false
+        };
+      }
+      const allHistory = [
+        ...state.sessionHistory || [],
+        ...state.shadowSessionHistory || []
+      ];
+      const session = allHistory.find((s) => s.id === this._targetSessionId);
+      if (!session) {
+        return { session: Store.getActiveSession(), trades: null, isHistorical: false };
+      }
+      const tradeIds = session.trades || [];
+      const allTrades = { ...state.trades || {}, ...state.shadowTrades || {} };
+      const trades = tradeIds.map((id) => allTrades[id]).filter(Boolean).sort((a, b) => a.ts - b.ts);
+      return { session, trades, isHistorical: true };
+    },
+    _getModeLabel(session, trades) {
+      const firstTrade = trades && trades.length > 0 ? trades[0] : null;
+      if (firstTrade) {
+        if (firstTrade.mode === "shadow" || firstTrade.mode === "analysis") {
+          return "Real trades (observed)";
+        }
+      }
+      return "Paper session";
+    },
+    _getSessionDuration(session) {
+      if (!session || !session.startTime)
+        return 0;
+      const endTime = session.endTime || Date.now();
+      return Math.floor((endTime - session.startTime) / 6e4);
+    },
+    render() {
+      const root = OverlayManager.getShadowRoot();
+      let overlay = root.querySelector(".replay-overlay");
+      if (!overlay) {
+        overlay = document.createElement("div");
+        overlay.className = "replay-overlay";
+        if (!root.getElementById("replay-styles")) {
+          const style = document.createElement("style");
+          style.id = "replay-styles";
+          style.textContent = SESSION_REPLAY_CSS;
+          root.appendChild(style);
+        }
+        root.appendChild(overlay);
+      }
+      const state = Store.state;
+      const isElite = FeatureManager.isElite(state);
+      const { session, trades, isHistorical } = this._resolveSession();
+      const modeLabel = this._getModeLabel(session, trades);
+      const duration = isHistorical ? this._getSessionDuration(session) : Store.getSessionDuration();
+      const events = this.getFilteredEvents(state, { session, trades, isHistorical, isElite });
+      const allEvents = this._getAllEvents(state, { session, trades, isHistorical });
+      const eventStats = this._computeEventStats(allEvents, isElite);
+      const hasEquity = session.equityHistory && session.equityHistory.length >= 2;
+      let filterButtons = `
+      <button class="filter-btn trade ${this.activeFilters.includes("TRADE") ? "active" : ""}" data-filter="TRADE">
+        Trades (${eventStats.trades})
+      </button>`;
+      if (isElite) {
+        filterButtons += `
+        <button class="filter-btn alert ${this.activeFilters.includes("ALERT") ? "active" : ""}" data-filter="ALERT">
+          Alerts (${eventStats.alerts})
+        </button>
+        <button class="filter-btn discipline ${this.activeFilters.includes("DISCIPLINE") ? "active" : ""}" data-filter="DISCIPLINE">
+          Discipline (${eventStats.disciplineEvents})
+        </button>`;
+      }
+      filterButtons += `
+      <button class="filter-btn milestone ${this.activeFilters.includes("MILESTONE") ? "active" : ""}" data-filter="MILESTONE">
+        Milestones (${eventStats.milestones})
+      </button>`;
+      overlay.innerHTML = `
+      <div class="replay-modal">
+        <div class="replay-header">
+          <div>
+            <div class="replay-title">
+              ${ICONS.BRAIN}
+              <span>Session Replay</span>
+            </div>
+            <div class="replay-subheader">${modeLabel}</div>
+          </div>
+          <button class="replay-close">${ICONS.X}</button>
+        </div>
+
+        <div class="replay-stats">
+          <div class="replay-stat">
+            <div class="k">Session ID</div>
+            <div class="v" style="font-size:11px; color:#a78bfa;">${session.id ? session.id.split("_")[1] : "--"}</div>
+          </div>
+          <div class="replay-stat">
+            <div class="k">Duration</div>
+            <div class="v">${duration} min</div>
+          </div>
+          <div class="replay-stat">
+            <div class="k">Total Events</div>
+            <div class="v">${eventStats.total}</div>
+          </div>
+          <div class="replay-stat">
+            <div class="k">Trades</div>
+            <div class="v" style="color:#14b8a6;">${eventStats.trades}</div>
+          </div>
+          ${isElite ? `
+          <div class="replay-stat">
+            <div class="k">Alerts</div>
+            <div class="v" style="color:#ef4444;">${eventStats.alerts}</div>
+          </div>
+          <div class="replay-stat">
+            <div class="k">Discipline</div>
+            <div class="v" style="color:#f59e0b;">${eventStats.disciplineEvents}</div>
+          </div>` : ""}
+        </div>
+
+        ${hasEquity ? `
+        <div class="replay-equity-section">
+          <div class="replay-section-label">EQUITY CURVE</div>
+          <canvas id="replay-equity-canvas"></canvas>
+        </div>` : `
+        <div class="replay-no-equity">No equity data for this session</div>`}
+
+        <div class="replay-filters">
+          ${filterButtons}
+        </div>
+
+        <div class="replay-timeline">
+          ${events.length > 0 ? this.renderEvents(events) : this.renderEmpty()}
+        </div>
+
+        <div class="replay-footer">
+          <div class="replay-count">Showing ${events.length} of ${eventStats.total} events</div>
+          ${isElite ? `<div class="replay-elite-badge">${ICONS.BRAIN} ELITE</div>` : ""}
+        </div>
+      </div>`;
+      this.bindEvents(overlay);
+      if (hasEquity) {
+        setTimeout(() => this.drawEquityCurve(overlay, session), 100);
+      }
+    },
+    renderEmpty() {
+      return `
+      <div class="timeline-empty">
+        ${ICONS.TARGET}
+        <div style="font-size:14px; font-weight:600; margin-bottom:4px;">No events yet</div>
+        <div style="font-size:12px;">Start trading to build your session timeline</div>
+      </div>`;
+    },
+    renderEvents(events) {
+      return events.map((event, index) => {
+        const time = new Date(event.ts).toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit"
+        });
+        const category = event.category.toLowerCase();
+        const icon = this.getEventIcon(event.category);
+        const dataTags = this.renderEventData(event);
+        const selectedClass = this._selectedEventIdx === index ? " selected" : "";
+        return `
+          <div class="timeline-event${selectedClass}" data-idx="${index}">
+            <div class="event-time">${time}</div>
+            <div class="event-icon ${category}">${icon}</div>
+            <div class="event-content">
+              <div class="event-type ${category}">${event.type}</div>
+              <div class="event-message">${event.message}</div>
+              ${dataTags ? `<div class="event-data">${dataTags}</div>` : ""}
+            </div>
+          </div>`;
+      }).join("");
+    },
+    renderEventData(event) {
+      const data = event.data || {};
+      const tags = [];
+      if (data.symbol)
+        tags.push(`<span class="event-tag">${data.symbol}</span>`);
+      if (data.strategy)
+        tags.push(`<span class="event-tag">${data.strategy}</span>`);
+      if (data.realizedPnlSol !== void 0 && data.realizedPnlSol !== null) {
+        const pnl = data.realizedPnlSol;
+        const cls = pnl >= 0 ? "win" : "loss";
+        tags.push(
+          `<span class="event-tag ${cls}">${pnl >= 0 ? "+" : ""}${pnl.toFixed(4)} SOL</span>`
+        );
+      }
+      if (data.penalty)
+        tags.push(`<span class="event-tag">-${data.penalty} pts</span>`);
+      if (data.winStreak)
+        tags.push(`<span class="event-tag win">${data.winStreak}W Streak</span>`);
+      if (data.tradeCount)
+        tags.push(`<span class="event-tag">${data.tradeCount} trades</span>`);
+      return tags.join("");
+    },
+    getEventIcon(category) {
+      switch (category) {
+        case "TRADE":
+          return ICONS.TARGET;
+        case "ALERT":
+          return ICONS.TILT;
+        case "DISCIPLINE":
+          return ICONS.BRAIN;
+        case "MILESTONE":
+          return ICONS.WIN;
+        default:
+          return ICONS.ZERO;
+      }
+    },
+    /** Get all events (unfiltered) for stats computation */
+    _getAllEvents(state, { session, trades, isHistorical }) {
+      if (isHistorical && trades) {
+        return this._reconstructEventsFromTrades(trades);
+      }
+      return Analytics.getEventLog(state, { limit: 100 });
+    },
+    /** Compute event stats, respecting elite gating */
+    _computeEventStats(allEvents, isElite) {
+      const stats = {
+        total: 0,
+        trades: 0,
+        alerts: 0,
+        disciplineEvents: 0,
+        milestones: 0
+      };
+      for (const e of allEvents) {
+        if (e.category === "TRADE")
+          stats.trades++;
+        else if (e.category === "ALERT")
+          stats.alerts++;
+        else if (e.category === "DISCIPLINE")
+          stats.disciplineEvents++;
+        else if (e.category === "MILESTONE")
+          stats.milestones++;
+      }
+      if (isElite) {
+        stats.total = stats.trades + stats.alerts + stats.disciplineEvents + stats.milestones;
+      } else {
+        stats.total = stats.trades + stats.milestones;
+      }
+      return stats;
+    },
+    /** Reconstruct timeline events from a trades array (for historical sessions) */
+    _reconstructEventsFromTrades(trades) {
+      return trades.map((trade) => {
+        const pnlText = trade.realizedPnlSol ? `P&L: ${trade.realizedPnlSol > 0 ? "+" : ""}${trade.realizedPnlSol.toFixed(4)} SOL` : `Size: ${(trade.solAmount || 0).toFixed(4)} SOL`;
+        const message = `${trade.side} ${trade.symbol || "?"} @ $${trade.priceUsd?.toFixed(6) || "N/A"} | ${pnlText}`;
+        return {
+          id: trade.id,
+          ts: trade.ts,
+          type: trade.side,
+          category: "TRADE",
+          message,
+          data: {
+            tradeId: trade.id,
+            symbol: trade.symbol,
+            priceUsd: trade.priceUsd,
+            solAmount: trade.solAmount,
+            realizedPnlSol: trade.realizedPnlSol,
+            strategy: trade.strategy
+          }
+        };
+      });
+    },
+    getFilteredEvents(state, { session, trades, isHistorical, isElite } = {}) {
+      let allEvents;
+      if (isHistorical && trades) {
+        allEvents = this._reconstructEventsFromTrades(trades);
+      } else {
+        allEvents = Analytics.getEventLog(state, { limit: 100 });
+      }
+      let filtered = allEvents.filter((e) => this.activeFilters.includes(e.category));
+      if (!isElite) {
+        filtered = filtered.filter(
+          (e) => e.category !== "DISCIPLINE" && e.category !== "ALERT"
+        );
+      }
+      return filtered;
+    },
+    toggleFilter(category) {
+      const idx = this.activeFilters.indexOf(category);
+      if (idx > -1) {
+        this.activeFilters.splice(idx, 1);
+      } else {
+        this.activeFilters.push(category);
+      }
+      this.render();
+    },
+    drawEquityCurve(root, session) {
+      const canvas = root.querySelector("#replay-equity-canvas");
+      if (!canvas)
+        return;
+      const ctx = canvas.getContext("2d");
+      const history = session.equityHistory || [];
+      if (history.length < 2)
+        return;
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = canvas.clientWidth * dpr;
+      canvas.height = canvas.clientHeight * dpr;
+      ctx.scale(dpr, dpr);
+      const w = canvas.clientWidth;
+      const h = canvas.clientHeight;
+      const padding = 16;
+      const points = history.map((e) => e.equity);
+      const min = Math.min(...points) * 0.99;
+      const max = Math.max(...points) * 1.01;
+      const range = max - min || 1;
+      ctx.clearRect(0, 0, w, h);
+      ctx.beginPath();
+      ctx.strokeStyle = "#14b8a6";
+      ctx.lineWidth = 1.5;
+      ctx.lineJoin = "round";
+      history.forEach((entry, i) => {
+        const x = padding + i / (history.length - 1) * (w - padding * 2);
+        const y = h - padding - (entry.equity - min) / range * (h - padding * 2);
+        if (i === 0)
+          ctx.moveTo(x, y);
+        else
+          ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+      const grad = ctx.createLinearGradient(0, 0, 0, h);
+      grad.addColorStop(0, "rgba(20, 184, 166, 0.15)");
+      grad.addColorStop(1, "rgba(20, 184, 166, 0)");
+      ctx.lineTo(w - padding, h - padding);
+      ctx.lineTo(padding, h - padding);
+      ctx.fillStyle = grad;
+      ctx.fill();
+      if (this._selectedEventIdx >= 0) {
+        const overlay = root.querySelector(".replay-overlay") || root;
+        const selectedEl = overlay.querySelector(`.timeline-event[data-idx="${this._selectedEventIdx}"]`);
+        if (selectedEl) {
+          const state = Store.state;
+          const isElite = FeatureManager.isElite(state);
+          const { session: sess, trades, isHistorical } = this._resolveSession();
+          const events = this.getFilteredEvents(state, { session: sess, trades, isHistorical, isElite });
+          const selectedEvent = events[this._selectedEventIdx];
+          if (selectedEvent && selectedEvent.ts) {
+            let closestIdx = 0;
+            let closestDist = Infinity;
+            history.forEach((pt, i) => {
+              const dist = Math.abs(pt.ts - selectedEvent.ts);
+              if (dist < closestDist) {
+                closestDist = dist;
+                closestIdx = i;
+              }
+            });
+            const markerX = padding + closestIdx / (history.length - 1) * (w - padding * 2);
+            ctx.beginPath();
+            ctx.setLineDash([4, 4]);
+            ctx.strokeStyle = "#8b5cf6";
+            ctx.lineWidth = 1;
+            ctx.moveTo(markerX, padding);
+            ctx.lineTo(markerX, h - padding);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            const markerY = h - padding - (history[closestIdx].equity - min) / range * (h - padding * 2);
+            ctx.beginPath();
+            ctx.arc(markerX, markerY, 4, 0, Math.PI * 2);
+            ctx.fillStyle = "#8b5cf6";
+            ctx.fill();
+          }
+        }
+      }
+    },
+    bindEvents(overlay) {
+      const closeBtn = overlay.querySelector(".replay-close");
+      if (closeBtn) {
+        closeBtn.onclick = () => this.close();
+      }
+      overlay.onclick = (e) => {
+        if (e.target === overlay)
+          this.close();
+      };
+      overlay.querySelectorAll(".filter-btn").forEach((btn) => {
+        btn.onclick = () => {
+          const filter = btn.getAttribute("data-filter");
+          this.toggleFilter(filter);
+        };
+      });
+      overlay.querySelectorAll(".timeline-event").forEach((el) => {
+        el.onclick = (e) => {
+          if (e.target.closest(".filter-btn"))
+            return;
+          const idx = parseInt(el.getAttribute("data-idx"), 10);
+          if (isNaN(idx))
+            return;
+          if (this._selectedEventIdx === idx) {
+            this._selectedEventIdx = -1;
+          } else {
+            this._selectedEventIdx = idx;
+          }
+          overlay.querySelectorAll(".timeline-event").forEach((ev) => {
+            ev.classList.remove("selected");
+          });
+          if (this._selectedEventIdx >= 0) {
+            const selectedEl = overlay.querySelector(
+              `.timeline-event[data-idx="${this._selectedEventIdx}"]`
+            );
+            if (selectedEl)
+              selectedEl.classList.add("selected");
+          }
+          const { session } = this._resolveSession();
+          if (session.equityHistory && session.equityHistory.length >= 2) {
+            this.drawEquityCurve(overlay, session);
+          }
+        };
+      });
+    }
+  };
+
   // src/modules/ui/dashboard.js
   var Dashboard = {
     isOpen: false,
@@ -8340,6 +9407,15 @@ canvas#equity-canvas {
                         <div class="dash-share-sub">Includes paper session stats only</div>
                     </div>
 
+                    ${stats.totalTrades > 0 ? `
+                    <div style="padding:0 20px 12px;">
+                        <button class="dash-share-btn" id="dashboard-replay-btn" style="background:rgba(139,92,246,0.1);border-color:rgba(139,92,246,0.25);color:#c4b5fd;">
+                            <span style="font-size:14px;">&#9654;</span>
+                            <span>Replay session</span>
+                        </button>
+                    </div>
+                    ` : ""}
+
                     <div class="dash-elite-section">
                         <div class="dash-elite-toggle" id="dash-elite-toggle">
                             <div class="dash-elite-toggle-left">
@@ -8357,11 +9433,32 @@ canvas#equity-canvas {
                                 </div>
                                 <div class="dash-metric-card">
                                     <div class="dash-metric-k">Consistency</div>
-                                    <div class="dash-metric-v" style="color:#8b5cf6;">\u2014</div>
+                                    <div class="dash-metric-v" style="color:#8b5cf6;">${(() => {
+        const c = Analytics.calculateConsistencyScore(state);
+        return c.score !== null ? c.score : "\u2014";
+      })()}</div>
+                                </div>
+                                <div class="dash-metric-card">
+                                    <div class="dash-metric-k">Max Drawdown</div>
+                                    <div class="dash-metric-v loss">${stats.maxDrawdown > 0 ? "-" + stats.maxDrawdown.toFixed(4) + " SOL" : "\u2014"}</div>
                                 </div>
                                 <div class="dash-metric-card">
                                     <div class="dash-metric-k">Behavior Profile</div>
                                     <div class="dash-metric-v" style="color:#8b5cf6;">${behavior?.profile || "Disciplined"}</div>
+                                </div>
+                                <div class="dash-metric-card">
+                                    <div class="dash-metric-k">Trade Pacing</div>
+                                    <div class="dash-metric-v" style="color:#8b5cf6;">${(() => {
+        const dur = (Date.now() - (session.startTime || Date.now())) / 36e5;
+        return dur > 0 && stats.totalTrades > 0 ? (stats.totalTrades / dur).toFixed(1) + "/hr" : "\u2014";
+      })()}</div>
+                                </div>
+                                <div class="dash-metric-card">
+                                    <div class="dash-metric-k">Plan Adherence</div>
+                                    <div class="dash-metric-v" style="color:#8b5cf6;">${(() => {
+        const pa = Analytics.analyzePlanAdherence(state);
+        return pa.totalStops > 0 ? pa.stopsRespected + "/" + pa.totalStops + " stops" : "\u2014";
+      })()}</div>
                                 </div>
                             </div>
                             ` : `
@@ -8397,6 +9494,15 @@ canvas#equity-canvas {
           const text = Analytics.generateXShareText(state);
           const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
           window.open(url, "_blank");
+        };
+      }
+      const replayBtn = overlay.querySelector("#dashboard-replay-btn");
+      if (replayBtn) {
+        replayBtn.onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          self.close();
+          SessionReplay.open();
         };
       }
       const notesInput = overlay.querySelector("#dash-session-notes");
@@ -8638,9 +9744,105 @@ canvas#equity-canvas {
     color: #64748b;
     margin-top: 4px;
 }
+
+.insights-mode-filters {
+    display: flex;
+    gap: 6px;
+    padding: 0 0 16px;
+}
+
+.insights-mode-btn {
+    padding: 5px 12px;
+    border-radius: 16px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: transparent;
+    color: #64748b;
+}
+
+.insights-mode-btn:hover {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.insights-mode-btn.active {
+    background: rgba(139, 92, 246, 0.15);
+    border-color: rgba(139, 92, 246, 0.4);
+    color: #a78bfa;
+}
+
+.insights-tod-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.insights-tod-card {
+    background: #161b22;
+    border: 1px solid rgba(255, 255, 255, 0.025);
+    border-radius: 8px;
+    padding: 10px 12px;
+}
+
+.insights-tod-hour {
+    font-size: 12px;
+    font-weight: 700;
+    color: #e2e8f0;
+    margin-bottom: 4px;
+}
+
+.insights-tod-stat {
+    font-size: 11px;
+    color: #64748b;
+}
+
+.insights-mc-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 8px;
+}
+
+.insights-mc-table th {
+    font-size: 9px;
+    font-weight: 700;
+    color: #475569;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    text-align: left;
+    padding: 6px 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.insights-mc-table td {
+    font-size: 11px;
+    color: #cbd5e1;
+    padding: 6px 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+}
+
+.insights-mc-table .win { color: #10b981; }
+.insights-mc-table .loss { color: #ef4444; }
+
+.insights-note {
+    font-size: 11px;
+    color: #475569;
+    font-style: italic;
+    padding: 8px 0;
+}
+
+.insights-disclaimer {
+    font-size: 10px;
+    color: #334155;
+    margin-top: 8px;
+    font-style: italic;
+}
 `;
   var Insights = {
     isOpen: false,
+    _modeFilter: "all",
     toggle() {
       if (this.isOpen)
         this.close();
@@ -8704,6 +9906,14 @@ canvas#equity-canvas {
         if (e.target === overlay)
           self.close();
       };
+      overlay.querySelectorAll(".insights-mode-btn").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          self._modeFilter = btn.getAttribute("data-mode-filter");
+          self.render();
+        });
+      });
     },
     renderFreeContent() {
       const categories = [
@@ -8751,7 +9961,15 @@ canvas#equity-canvas {
     renderEliteContent(state) {
       const session = Store.getActiveSession();
       const behavior = Store.getActiveBehavior();
-      return `
+      const mf = this._modeFilter;
+      let html = `
+            <div class="insights-mode-filters">
+                <button class="insights-mode-btn ${mf === "paper" ? "active" : ""}" data-mode-filter="paper">Paper</button>
+                <button class="insights-mode-btn ${mf === "real" ? "active" : ""}" data-mode-filter="real">Real (Observed)</button>
+                <button class="insights-mode-btn ${mf === "all" ? "active" : ""}" data-mode-filter="all">All</button>
+            </div>
+        `;
+      html += `
             <div class="insights-section-label">SESSION OVERVIEW</div>
             <div class="insights-grid">
                 <div class="insights-elite-card">
@@ -8765,7 +9983,8 @@ canvas#equity-canvas {
                     <div class="insights-elite-card-desc">Your current trading behavior classification.</div>
                 </div>
             </div>
-
+        `;
+      html += `
             <div class="insights-section-label">BEHAVIORAL PATTERNS</div>
             <div class="insights-grid">
                 <div class="insights-elite-card">
@@ -8782,6 +10001,55 @@ canvas#equity-canvas {
                 </div>
             </div>
         `;
+      const tod = Analytics.analyzeTimeOfDay(state, mf);
+      html += `<div class="insights-section-label">TIME-OF-DAY PERFORMANCE</div>`;
+      if (tod.hasEnoughData && tod.topHours.length > 0) {
+        html += `<div class="insights-tod-grid">`;
+        tod.topHours.forEach((h) => {
+          const hour12 = h.hour % 12 || 12;
+          const ampm = h.hour < 12 ? "AM" : "PM";
+          const nextHour = (h.hour + 1) % 12 || 12;
+          const nextAmpm = h.hour + 1 < 12 ? "AM" : "PM";
+          const pnlColor = h.netPnl >= 0 ? "#10b981" : "#ef4444";
+          const winRate = h.count > 0 ? (h.wins / h.count * 100).toFixed(0) : 0;
+          html += `
+                <div class="insights-tod-card">
+                    <div class="insights-tod-hour">${hour12}${ampm}-${nextHour}${nextAmpm}</div>
+                    <div class="insights-tod-stat" style="color:${pnlColor};font-weight:600;">${h.netPnl >= 0 ? "+" : ""}${h.netPnl.toFixed(4)} SOL</div>
+                    <div class="insights-tod-stat">${winRate}% win rate (${h.count} trades)</div>
+                </div>
+            `;
+        });
+        html += `</div>`;
+        html += `<div class="insights-disclaimer">Based on your recorded sessions. Not financial advice.</div>`;
+      } else {
+        html += `<div class="insights-note">Not enough data yet \u2014 at least 5 trades per hour needed.</div>`;
+      }
+      const mc = Analytics.analyzeMarketCapBuckets(state, mf);
+      html += `<div class="insights-section-label">MARKET CAP PERFORMANCE</div>`;
+      if (mc.hasData) {
+        html += `
+            <table class="insights-mc-table">
+                <thead><tr><th>Bucket</th><th>Trades</th><th>Net PnL</th><th>Win Rate</th></tr></thead>
+                <tbody>
+            `;
+        mc.buckets.filter((b) => b.count > 0).forEach((b) => {
+          const pnlCls = b.netPnl >= 0 ? "win" : "loss";
+          html += `
+                <tr>
+                    <td>${b.label}</td>
+                    <td>${b.count}</td>
+                    <td class="${pnlCls}">${b.netPnl >= 0 ? "+" : ""}${b.netPnl.toFixed(4)}</td>
+                    <td>${b.winRate.toFixed(0)}%</td>
+                </tr>
+            `;
+        });
+        html += `</tbody></table>`;
+        html += `<div class="insights-disclaimer">Based on your recorded sessions. Not financial advice.</div>`;
+      } else {
+        html += `<div class="insights-note">Market cap insights will appear once market cap data is available.</div>`;
+      }
+      return html;
     }
   };
 
@@ -9204,6 +10472,7 @@ canvas#equity-canvas {
     return Math.max(min, Math.min(max, v));
   }
   var positionsExpanded = false;
+  var sessionHistoryExpanded = false;
   var PnlHud = {
     mountPnlHud(makeDraggable) {
       const container = OverlayManager.getContainer();
@@ -9288,6 +10557,16 @@ canvas#equity-canvas {
                 <div class="positionsList" style="display:none;" data-k="positionsList"></div>
               </div>
               <div class="tradeList" style="display:none;"></div>
+              <div class="sessionHistoryPanel">
+                <div class="positionsHeader" data-act="toggleSessionHistory">
+                  <div class="positionsTitle">
+                    <span>SESSION HISTORY</span>
+                    <span class="positionCount" data-k="sessionHistoryCount">(0)</span>
+                  </div>
+                  <span class="positionsToggle sessionHistoryToggle">\u25BC</span>
+                </div>
+                <div class="sessionHistoryList" style="display:none;" data-k="sessionHistoryList"></div>
+              </div>
             </div>
          `;
       this.bindPnlDrag(root, makeDraggable);
@@ -9380,6 +10659,15 @@ canvas#equity-canvas {
         if (act === "togglePositions") {
           positionsExpanded = !positionsExpanded;
           this.updatePositionsPanel(root);
+        }
+        if (act === "toggleSessionHistory") {
+          sessionHistoryExpanded = !sessionHistoryExpanded;
+          this.updateSessionHistoryPanel(root);
+        }
+        if (act === "replaySession") {
+          const sessionId = actEl.getAttribute("data-session-id");
+          if (sessionId)
+            SessionReplay.open(sessionId);
         }
         if (act === "quickSell") {
           const mint = actEl.getAttribute("data-mint");
@@ -9530,13 +10818,16 @@ canvas#equity-canvas {
       overlay.querySelector(".cancel").onclick = () => overlay.remove();
       overlay.querySelector(".confirm").onclick = async () => {
         await Store.startNewSession();
+        if (Store._trialJustExpired) {
+          Store._trialJustExpired = false;
+          Paywall.showTrialExpiredModal();
+        }
         Store.state.positions = {};
         await Store.save();
         window.postMessage({ __paper: true, type: "PAPER_CLEAR_MARKERS" }, "*");
         if (window.ZeroHUD && window.ZeroHUD.updateAll) {
           window.ZeroHUD.updateAll();
         }
-        overlay.remove();
         overlay.remove();
       };
     },
@@ -9686,6 +10977,54 @@ canvas#equity-canvas {
         return p.toFixed(6);
       const leadingZeros = Math.floor(-Math.log10(p));
       return p.toFixed(leadingZeros + 3);
+    },
+    updateSessionHistoryPanel(root) {
+      if (!root)
+        root = OverlayManager.getContainer().querySelector("#" + IDS.pnlHud);
+      if (!root)
+        return;
+      const history = Store.getActiveSessionHistory() || [];
+      const recent = history.slice(-10).reverse();
+      const listEl = root.querySelector('[data-k="sessionHistoryList"]');
+      const toggleIcon = root.querySelector(".sessionHistoryToggle");
+      const countEl = root.querySelector('[data-k="sessionHistoryCount"]');
+      if (countEl)
+        countEl.textContent = `(${history.length})`;
+      if (toggleIcon) {
+        toggleIcon.textContent = sessionHistoryExpanded ? "\u25B2" : "\u25BC";
+      }
+      if (listEl) {
+        listEl.style.display = sessionHistoryExpanded ? "block" : "none";
+        if (sessionHistoryExpanded) {
+          if (recent.length === 0) {
+            listEl.innerHTML = '<div class="noPositions">No past sessions</div>';
+          } else {
+            listEl.innerHTML = recent.map((s) => {
+              const date = new Date(s.startTime || s.ts || 0);
+              const dateStr = date.toLocaleDateString([], { month: "short", day: "numeric" });
+              const timeStr = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+              const pnl = s.realized || 0;
+              const tradeCount = (s.trades || []).length;
+              const pnlColor = pnl >= 0 ? "#10b981" : "#ef4444";
+              const pnlStr = (pnl >= 0 ? "+" : "") + pnl.toFixed(4);
+              return `
+                            <div class="positionRow" style="align-items:center;">
+                                <div class="positionInfo" style="flex:1;">
+                                    <div class="positionSymbol" style="font-size:11px;">${dateStr} ${timeStr}</div>
+                                    <div class="positionDetails">
+                                        <span class="positionQty">${tradeCount} trades</span>
+                                    </div>
+                                </div>
+                                <div style="text-align:right;margin-right:8px;">
+                                    <div style="font-size:12px;font-weight:700;color:${pnlColor};">${pnlStr} SOL</div>
+                                </div>
+                                <button class="qSellBtn" data-act="replaySession" data-session-id="${s.id}" style="background:rgba(139,92,246,0.15);color:#a78bfa;border-color:rgba(139,92,246,0.3);font-size:10px;">Replay</button>
+                            </div>
+                        `;
+            }).join("");
+          }
+        }
+      }
     },
     async executeQuickSell(mint, pct) {
       const pos = Store.state.positions[mint];

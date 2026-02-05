@@ -14,14 +14,14 @@ export const EVENT_CATEGORIES = {
 export const Analytics = {
   // --- Mode-aware state resolver ---
   _resolve(state) {
-    const isShadow = state.settings?.tradingMode === "shadow";
+    const isReal = Store.isRealTradingMode();
     return {
-      session: isShadow ? state.shadowSession : state.session,
-      trades: isShadow ? state.shadowTrades : state.trades,
-      positions: isShadow ? state.shadowPositions : state.positions,
-      behavior: isShadow ? state.shadowBehavior : state.behavior,
-      eventLog: isShadow ? state.shadowEventLog : state.eventLog,
-      isShadow,
+      session: isReal ? state.shadowSession : state.session,
+      trades: isReal ? state.shadowTrades : state.trades,
+      positions: isReal ? state.shadowPositions : state.positions,
+      behavior: isReal ? state.shadowBehavior : state.behavior,
+      eventLog: isReal ? state.shadowEventLog : state.eventLog,
+      isRealTrading: isReal,
     };
   },
 
@@ -1293,6 +1293,247 @@ export const Analytics = {
     if (currentSession.length > 0) sessions.push(currentSession);
 
     return sessions;
+  },
+
+  // ==========================================
+  // CROSS-MODE TRADE FILTERING
+  // ==========================================
+
+  /**
+   * Merge paper + shadow trades and filter by mode category.
+   * modeFilter: 'paper' | 'real' | 'all'
+   * Returns filtered trades as an object (same shape as trades map).
+   */
+  _getFilteredTradesMap(state, modeFilter) {
+    const paperTrades = state.trades || {};
+    const shadowTrades = state.shadowTrades || {};
+    const merged = Object.assign({}, paperTrades, shadowTrades);
+
+    if (modeFilter === "all") return merged;
+
+    const filtered = {};
+    for (const [id, trade] of Object.entries(merged)) {
+      if (modeFilter === "paper") {
+        if (trade.mode === "paper" || trade.mode === undefined) {
+          filtered[id] = trade;
+        }
+      } else if (modeFilter === "real") {
+        if (trade.mode === "analysis" || trade.mode === "shadow") {
+          filtered[id] = trade;
+        }
+      }
+    }
+    return filtered;
+  },
+
+  // ==========================================
+  // TIME-OF-DAY ANALYSIS
+  // ==========================================
+
+  /**
+   * Analyze trade performance by hour of day (0-23, local time).
+   * modeFilter: 'paper' | 'real' | 'all'
+   */
+  analyzeTimeOfDay(state, modeFilter) {
+    const tradesMap = this._getFilteredTradesMap(state, modeFilter || "all");
+    const sellTrades = Object.values(tradesMap).filter((t) => t.side === "SELL");
+
+    // Initialize 24 buckets
+    const buckets = [];
+    for (let h = 0; h < 24; h++) {
+      buckets.push({ hour: h, netPnl: 0, wins: 0, losses: 0, count: 0 });
+    }
+
+    for (const trade of sellTrades) {
+      const hour = new Date(trade.ts).getHours();
+      const pnl = trade.realizedPnlSol || 0;
+      buckets[hour].count++;
+      buckets[hour].netPnl += pnl;
+      if (pnl > 0) buckets[hour].wins++;
+      else if (pnl < 0) buckets[hour].losses++;
+    }
+
+    // Top 3 hours by netPnl where count >= 5
+    const qualifying = buckets.filter((b) => b.count >= 5);
+    const topHours = qualifying
+      .slice()
+      .sort((a, b) => b.netPnl - a.netPnl)
+      .slice(0, 3);
+
+    return {
+      buckets,
+      topHours,
+      hasEnoughData: qualifying.length >= 1,
+    };
+  },
+
+  // ==========================================
+  // MARKET CAP BUCKET ANALYSIS
+  // ==========================================
+
+  /**
+   * Analyze trade performance by market cap at fill.
+   * modeFilter: 'paper' | 'real' | 'all'
+   */
+  analyzeMarketCapBuckets(state, modeFilter) {
+    const tradesMap = this._getFilteredTradesMap(state, modeFilter || "all");
+    const sellTrades = Object.values(tradesMap).filter(
+      (t) => t.side === "SELL" && t.marketCapUsdAtFill > 0
+    );
+
+    const ranges = [
+      { label: "<1M", max: 1e6 },
+      { label: "1-5M", max: 5e6 },
+      { label: "5-20M", max: 20e6 },
+      { label: "20-100M", max: 100e6 },
+      { label: ">100M", max: Infinity },
+    ];
+
+    const buckets = ranges.map((r) => ({
+      label: r.label,
+      max: r.max,
+      netPnl: 0,
+      wins: 0,
+      losses: 0,
+      count: 0,
+      winRate: 0,
+    }));
+
+    for (const trade of sellTrades) {
+      const mc = trade.marketCapUsdAtFill;
+      for (const bucket of buckets) {
+        if (mc <= bucket.max) {
+          const pnl = trade.realizedPnlSol || 0;
+          bucket.count++;
+          bucket.netPnl += pnl;
+          if (pnl > 0) bucket.wins++;
+          else if (pnl < 0) bucket.losses++;
+          break;
+        }
+      }
+    }
+
+    // Calculate win rates
+    for (const bucket of buckets) {
+      bucket.winRate = bucket.count > 0 ? ((bucket.wins / bucket.count) * 100) : 0;
+    }
+
+    // Clean up internal max field before returning
+    const result = buckets.map(({ label, netPnl, wins, losses, count, winRate }) => ({
+      label, netPnl, wins, losses, count, winRate,
+    }));
+
+    return {
+      buckets: result,
+      hasData: sellTrades.length > 0,
+    };
+  },
+
+  // ==========================================
+  // PLAN ADHERENCE ANALYSIS
+  // ==========================================
+
+  /**
+   * Analyze how well the trader followed their trade plans.
+   * Uses active trades (mode-aware via Store).
+   */
+  analyzePlanAdherence(state) {
+    const tradesMap = Store.getActiveTrades() || {};
+    const sellTrades = Object.values(tradesMap).filter(
+      (t) => t.side === "SELL" && t.planAdherence
+    );
+
+    let totalPlanned = sellTrades.length;
+    let stopsRespected = 0;
+    let totalStops = 0;
+    let targetsHit = 0;
+    let totalTargets = 0;
+
+    for (const trade of sellTrades) {
+      const pa = trade.planAdherence;
+      if (pa.plannedStop !== undefined && pa.plannedStop !== null) {
+        totalStops++;
+        if (!pa.stopViolated) stopsRespected++;
+      }
+      if (pa.plannedTarget !== undefined && pa.plannedTarget !== null) {
+        totalTargets++;
+        if (pa.hitTarget) targetsHit++;
+      }
+    }
+
+    return {
+      totalPlanned,
+      stopsRespected,
+      totalStops,
+      targetsHit,
+      totalTargets,
+    };
+  },
+
+  // ==========================================
+  // EMOTION BREAKDOWN ANALYSIS
+  // ==========================================
+
+  /**
+   * Analyze trade performance grouped by emotion tag.
+   * Uses active trades (mode-aware via Store).
+   */
+  analyzeEmotionBreakdown(state) {
+    const tradesMap = Store.getActiveTrades() || {};
+    const sellTrades = Object.values(tradesMap).filter(
+      (t) => t.side === "SELL" && t.emotion
+    );
+
+    const emotionMap = {};
+    for (const trade of sellTrades) {
+      const tag = trade.emotion;
+      if (!emotionMap[tag]) {
+        emotionMap[tag] = { tag, count: 0, netPnl: 0, wins: 0, losses: 0, winRate: 0 };
+      }
+      const entry = emotionMap[tag];
+      const pnl = trade.realizedPnlSol || 0;
+      entry.count++;
+      entry.netPnl += pnl;
+      if (pnl > 0) entry.wins++;
+      else if (pnl < 0) entry.losses++;
+    }
+
+    const emotions = Object.values(emotionMap);
+    for (const e of emotions) {
+      e.winRate = e.count > 0 ? ((e.wins / e.count) * 100) : 0;
+    }
+
+    return {
+      emotions,
+      hasData: emotions.length > 0,
+    };
+  },
+
+  // ==========================================
+  // SESSION REPLAY — TRADE LOOKUP
+  // ==========================================
+
+  /**
+   * Get trades for a specific session (current or historical/archived).
+   * Looks up trade IDs in both paper and shadow trades.
+   * Returns array sorted by timestamp ascending.
+   */
+  getTradesForSession(state, session) {
+    if (!session || !Array.isArray(session.trades) || session.trades.length === 0) {
+      return [];
+    }
+
+    const paperTrades = state.trades || {};
+    const shadowTrades = state.shadowTrades || {};
+    const results = [];
+
+    for (const id of session.trades) {
+      const trade = paperTrades[id] || shadowTrades[id];
+      if (trade) results.push(trade);
+    }
+
+    results.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+    return results;
   },
 
   calculateConsistencyScore(state) {

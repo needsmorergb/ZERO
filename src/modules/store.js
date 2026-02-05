@@ -169,28 +169,33 @@ export const Store = {
         return this.state?.settings?.tradingMode === 'shadow';
     },
 
+    isRealTradingMode() {
+        const mode = this.state?.settings?.tradingMode;
+        return mode === 'shadow' || mode === 'analysis';
+    },
+
     getActiveSession() {
-        return this.isShadowMode() ? this.state.shadowSession : this.state.session;
+        return this.isRealTradingMode() ? this.state.shadowSession : this.state.session;
     },
 
     getActivePositions() {
-        return this.isShadowMode() ? this.state.shadowPositions : this.state.positions;
+        return this.isRealTradingMode() ? this.state.shadowPositions : this.state.positions;
     },
 
     getActiveTrades() {
-        return this.isShadowMode() ? this.state.shadowTrades : this.state.trades;
+        return this.isRealTradingMode() ? this.state.shadowTrades : this.state.trades;
     },
 
     getActiveBehavior() {
-        return this.isShadowMode() ? this.state.shadowBehavior : this.state.behavior;
+        return this.isRealTradingMode() ? this.state.shadowBehavior : this.state.behavior;
     },
 
     getActiveEventLog() {
-        return this.isShadowMode() ? this.state.shadowEventLog : this.state.eventLog;
+        return this.isRealTradingMode() ? this.state.shadowEventLog : this.state.eventLog;
     },
 
     getActiveSessionHistory() {
-        return this.isShadowMode() ? this.state.shadowSessionHistory : this.state.sessionHistory;
+        return this.isRealTradingMode() ? this.state.shadowSessionHistory : this.state.sessionHistory;
     },
 
     async load() {

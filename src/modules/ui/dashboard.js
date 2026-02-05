@@ -5,6 +5,7 @@ import { FeatureManager } from "../featureManager.js";
 import { DASHBOARD_CSS } from "./dashboard-styles.js";
 import { Market } from "../core/market.js";
 import { renderEliteLockedCard } from "./elite-helpers.js";
+import { SessionReplay } from './session-replay.js';
 
 export const Dashboard = {
   isOpen: false,
@@ -297,6 +298,15 @@ export const Dashboard = {
                         <div class="dash-share-sub">Includes paper session stats only</div>
                     </div>
 
+                    ${stats.totalTrades > 0 ? `
+                    <div style="padding:0 20px 12px;">
+                        <button class="dash-share-btn" id="dashboard-replay-btn" style="background:rgba(139,92,246,0.1);border-color:rgba(139,92,246,0.25);color:#c4b5fd;">
+                            <span style="font-size:14px;">&#9654;</span>
+                            <span>Replay session</span>
+                        </button>
+                    </div>
+                    ` : ''}
+
                     <div class="dash-elite-section">
                         <div class="dash-elite-toggle" id="dash-elite-toggle">
                             <div class="dash-elite-toggle-left">
@@ -316,11 +326,23 @@ export const Dashboard = {
                                 </div>
                                 <div class="dash-metric-card">
                                     <div class="dash-metric-k">Consistency</div>
-                                    <div class="dash-metric-v" style="color:#8b5cf6;">\u2014</div>
+                                    <div class="dash-metric-v" style="color:#8b5cf6;">${(() => { const c = Analytics.calculateConsistencyScore(state); return c.score !== null ? c.score : '\u2014'; })()}</div>
+                                </div>
+                                <div class="dash-metric-card">
+                                    <div class="dash-metric-k">Max Drawdown</div>
+                                    <div class="dash-metric-v loss">${stats.maxDrawdown > 0 ? '-' + stats.maxDrawdown.toFixed(4) + ' SOL' : '\u2014'}</div>
                                 </div>
                                 <div class="dash-metric-card">
                                     <div class="dash-metric-k">Behavior Profile</div>
                                     <div class="dash-metric-v" style="color:#8b5cf6;">${behavior?.profile || "Disciplined"}</div>
+                                </div>
+                                <div class="dash-metric-card">
+                                    <div class="dash-metric-k">Trade Pacing</div>
+                                    <div class="dash-metric-v" style="color:#8b5cf6;">${(() => { const dur = (Date.now() - (session.startTime || Date.now())) / 3600000; return dur > 0 && stats.totalTrades > 0 ? (stats.totalTrades / dur).toFixed(1) + '/hr' : '\u2014'; })()}</div>
+                                </div>
+                                <div class="dash-metric-card">
+                                    <div class="dash-metric-k">Plan Adherence</div>
+                                    <div class="dash-metric-v" style="color:#8b5cf6;">${(() => { const pa = Analytics.analyzePlanAdherence(state); return pa.totalStops > 0 ? pa.stopsRespected + '/' + pa.totalStops + ' stops' : '\u2014'; })()}</div>
                                 </div>
                             </div>
                             `
@@ -363,6 +385,17 @@ export const Dashboard = {
         const text = Analytics.generateXShareText(state);
         const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
         window.open(url, "_blank");
+      };
+    }
+
+    // Replay button
+    const replayBtn = overlay.querySelector('#dashboard-replay-btn');
+    if (replayBtn) {
+      replayBtn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        self.close();
+        SessionReplay.open();
       };
     }
 

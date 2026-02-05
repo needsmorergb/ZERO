@@ -119,4 +119,53 @@ export const SHADOW_INSIGHTS_CSS = `
 .zero-shadow-insights-modal .si-action:hover {
     background: rgba(139, 92, 246, 0.2);
 }
+
+/* Dual CTA buttons for Replay + Review */
+.zero-shadow-insights-modal .si-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+.zero-shadow-insights-modal .si-action-primary {
+    display: block;
+    width: 100%;
+    padding: 11px;
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(139, 92, 246, 0.12));
+    border: 1px solid rgba(139, 92, 246, 0.4);
+    border-radius: 8px;
+    color: #e9d5ff;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    text-align: center;
+    transition: background 0.15s;
+    letter-spacing: 0.2px;
+}
+
+.zero-shadow-insights-modal .si-action-primary:hover {
+    background: rgba(139, 92, 246, 0.3);
+}
+
+.zero-shadow-insights-modal .si-action-secondary {
+    display: block;
+    width: 100%;
+    padding: 11px;
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.15s;
+    letter-spacing: 0.2px;
+}
+
+.zero-shadow-insights-modal .si-action-secondary:hover {
+    background: rgba(255, 255, 255, 0.03);
+    color: #94a3b8;
+}
 `;

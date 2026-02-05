@@ -1,8 +1,7 @@
 import { Store } from "../store.js";
 import { OverlayManager } from "./overlay.js";
-import { Analytics, EVENT_CATEGORIES } from "../core/analytics.js";
+import { Analytics } from "../core/analytics.js";
 import { FeatureManager } from "../featureManager.js";
-import { Paywall } from "./paywall.js";
 import { ICONS } from "./icons.js";
 
 export const SESSION_REPLAY_CSS = `
@@ -317,19 +316,71 @@ export const SESSION_REPLAY_CSS = `
     transform: translateY(-2px);
     box-shadow: 0 8px 20px rgba(139, 92, 246, 0.3);
 }
+
+.replay-equity-section {
+    padding: 16px 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.replay-section-label {
+    font-size: 9px;
+    font-weight: 700;
+    color: #64748b;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+}
+
+#replay-equity-canvas {
+    width: 100%;
+    height: 120px;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.3);
+}
+
+.replay-subheader {
+    font-size: 11px;
+    color: #64748b;
+    font-weight: 500;
+}
+
+.timeline-event.selected {
+    background: rgba(139, 92, 246, 0.08);
+    border-left: 2px solid #8b5cf6;
+    margin: 0 -20px;
+    padding: 12px 18px 12px 20px;
+}
+
+.timeline-event {
+    cursor: pointer;
+}
+
+.replay-no-equity {
+    padding: 16px 20px;
+    text-align: center;
+    font-size: 11px;
+    color: #475569;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
 `;
 
 export const SessionReplay = {
   isOpen: false,
   activeFilters: ["TRADE", "ALERT", "DISCIPLINE", "MILESTONE"],
+  _targetSessionId: null,
+  _selectedEventIdx: -1,
 
-  open() {
+  open(sessionId) {
+    this._targetSessionId = sessionId || null;
+    this._selectedEventIdx = -1;
     this.isOpen = true;
     this.render();
   },
 
   close() {
     this.isOpen = false;
+    this._targetSessionId = null;
+    this._selectedEventIdx = -1;
     const overlay = OverlayManager.getShadowRoot().querySelector(".replay-overlay");
     if (overlay) overlay.remove();
   },
@@ -337,6 +388,54 @@ export const SessionReplay = {
   toggle() {
     if (this.isOpen) this.close();
     else this.open();
+  },
+
+  _resolveSession() {
+    const state = Store.state;
+    if (!this._targetSessionId) {
+      // Current active session
+      return {
+        session: Store.getActiveSession(),
+        trades: null,
+        isHistorical: false,
+      };
+    }
+    // Search both history arrays
+    const allHistory = [
+      ...(state.sessionHistory || []),
+      ...(state.shadowSessionHistory || []),
+    ];
+    const session = allHistory.find((s) => s.id === this._targetSessionId);
+    if (!session) {
+      return { session: Store.getActiveSession(), trades: null, isHistorical: false };
+    }
+
+    // Resolve trades for historical session
+    const tradeIds = session.trades || [];
+    const allTrades = { ...(state.trades || {}), ...(state.shadowTrades || {}) };
+    const trades = tradeIds
+      .map((id) => allTrades[id])
+      .filter(Boolean)
+      .sort((a, b) => a.ts - b.ts);
+
+    return { session, trades, isHistorical: true };
+  },
+
+  _getModeLabel(session, trades) {
+    // Check the first trade's mode field
+    const firstTrade = trades && trades.length > 0 ? trades[0] : null;
+    if (firstTrade) {
+      if (firstTrade.mode === "shadow" || firstTrade.mode === "analysis") {
+        return "Real trades (observed)";
+      }
+    }
+    return "Paper session";
+  },
+
+  _getSessionDuration(session) {
+    if (!session || !session.startTime) return 0;
+    const endTime = session.endTime || Date.now();
+    return Math.floor((endTime - session.startTime) / 60000);
   },
 
   render() {
@@ -359,119 +458,120 @@ export const SessionReplay = {
     }
 
     const state = Store.state;
-    const flags = FeatureManager.resolveFlags(state, "SESSION_REPLAY");
-    const eventStats = Analytics.getEventStats(state);
-    const session = Store.getActiveSession();
+    const isElite = FeatureManager.isElite(state);
+    const { session, trades, isHistorical } = this._resolveSession();
+    const modeLabel = this._getModeLabel(session, trades);
+    const duration = isHistorical ? this._getSessionDuration(session) : Store.getSessionDuration();
 
-    if (flags.gated) {
-      overlay.innerHTML = this.renderLockedState();
-      this.bindLockedEvents(overlay);
-      return;
+    // Build event stats from resolved events
+    const events = this.getFilteredEvents(state, { session, trades, isHistorical, isElite });
+    const allEvents = this._getAllEvents(state, { session, trades, isHistorical });
+    const eventStats = this._computeEventStats(allEvents, isElite);
+
+    // Equity curve availability
+    const hasEquity = session.equityHistory && session.equityHistory.length >= 2;
+
+    // Build filter buttons — hide discipline and alert for non-elite
+    let filterButtons = `
+      <button class="filter-btn trade ${this.activeFilters.includes("TRADE") ? "active" : ""}" data-filter="TRADE">
+        Trades (${eventStats.trades})
+      </button>`;
+    if (isElite) {
+      filterButtons += `
+        <button class="filter-btn alert ${this.activeFilters.includes("ALERT") ? "active" : ""}" data-filter="ALERT">
+          Alerts (${eventStats.alerts})
+        </button>
+        <button class="filter-btn discipline ${this.activeFilters.includes("DISCIPLINE") ? "active" : ""}" data-filter="DISCIPLINE">
+          Discipline (${eventStats.disciplineEvents})
+        </button>`;
     }
-
-    const events = this.getFilteredEvents(state);
+    filterButtons += `
+      <button class="filter-btn milestone ${this.activeFilters.includes("MILESTONE") ? "active" : ""}" data-filter="MILESTONE">
+        Milestones (${eventStats.milestones})
+      </button>`;
 
     overlay.innerHTML = `
-            <div class="replay-modal">
-                <div class="replay-header">
-                    <div class="replay-title">
-                        ${ICONS.BRAIN}
-                        <span>Session Replay</span>
-                    </div>
-                    <button class="replay-close">${ICONS.X}</button>
-                </div>
-
-                <div class="replay-stats">
-                    <div class="replay-stat">
-                        <div class="k">Session ID</div>
-                        <div class="v" style="font-size:11px; color:#a78bfa;">${session.id ? session.id.split("_")[1] : "--"}</div>
-                    </div>
-                    <div class="replay-stat">
-                        <div class="k">Duration</div>
-                        <div class="v">${Store.getSessionDuration()} min</div>
-                    </div>
-                    <div class="replay-stat">
-                        <div class="k">Total Events</div>
-                        <div class="v">${eventStats.total}</div>
-                    </div>
-                    <div class="replay-stat">
-                        <div class="k">Trades</div>
-                        <div class="v" style="color:#14b8a6;">${eventStats.trades}</div>
-                    </div>
-                    <div class="replay-stat">
-                        <div class="k">Alerts</div>
-                        <div class="v" style="color:#ef4444;">${eventStats.alerts}</div>
-                    </div>
-                    <div class="replay-stat">
-                        <div class="k">Discipline</div>
-                        <div class="v" style="color:#f59e0b;">${eventStats.disciplineEvents}</div>
-                    </div>
-                </div>
-
-                <div class="replay-filters">
-                    <button class="filter-btn trade ${this.activeFilters.includes("TRADE") ? "active" : ""}" data-filter="TRADE">
-                        Trades (${eventStats.trades})
-                    </button>
-                    <button class="filter-btn alert ${this.activeFilters.includes("ALERT") ? "active" : ""}" data-filter="ALERT">
-                        Alerts (${eventStats.alerts})
-                    </button>
-                    <button class="filter-btn discipline ${this.activeFilters.includes("DISCIPLINE") ? "active" : ""}" data-filter="DISCIPLINE">
-                        Discipline (${eventStats.disciplineEvents})
-                    </button>
-                    <button class="filter-btn milestone ${this.activeFilters.includes("MILESTONE") ? "active" : ""}" data-filter="MILESTONE">
-                        Milestones (${eventStats.milestones})
-                    </button>
-                </div>
-
-                <div class="replay-timeline">
-                    ${events.length > 0 ? this.renderEvents(events) : this.renderEmpty()}
-                </div>
-
-                <div class="replay-footer">
-                    <div class="replay-count">Showing ${events.length} of ${eventStats.total} events</div>
-                    <div class="replay-elite-badge">
-                        ${ICONS.BRAIN} ELITE FEATURE
-                    </div>
-                </div>
+      <div class="replay-modal">
+        <div class="replay-header">
+          <div>
+            <div class="replay-title">
+              ${ICONS.BRAIN}
+              <span>Session Replay</span>
             </div>
-        `;
+            <div class="replay-subheader">${modeLabel}</div>
+          </div>
+          <button class="replay-close">${ICONS.X}</button>
+        </div>
+
+        <div class="replay-stats">
+          <div class="replay-stat">
+            <div class="k">Session ID</div>
+            <div class="v" style="font-size:11px; color:#a78bfa;">${session.id ? session.id.split("_")[1] : "--"}</div>
+          </div>
+          <div class="replay-stat">
+            <div class="k">Duration</div>
+            <div class="v">${duration} min</div>
+          </div>
+          <div class="replay-stat">
+            <div class="k">Total Events</div>
+            <div class="v">${eventStats.total}</div>
+          </div>
+          <div class="replay-stat">
+            <div class="k">Trades</div>
+            <div class="v" style="color:#14b8a6;">${eventStats.trades}</div>
+          </div>
+          ${isElite ? `
+          <div class="replay-stat">
+            <div class="k">Alerts</div>
+            <div class="v" style="color:#ef4444;">${eventStats.alerts}</div>
+          </div>
+          <div class="replay-stat">
+            <div class="k">Discipline</div>
+            <div class="v" style="color:#f59e0b;">${eventStats.disciplineEvents}</div>
+          </div>` : ""}
+        </div>
+
+        ${hasEquity ? `
+        <div class="replay-equity-section">
+          <div class="replay-section-label">EQUITY CURVE</div>
+          <canvas id="replay-equity-canvas"></canvas>
+        </div>` : `
+        <div class="replay-no-equity">No equity data for this session</div>`}
+
+        <div class="replay-filters">
+          ${filterButtons}
+        </div>
+
+        <div class="replay-timeline">
+          ${events.length > 0 ? this.renderEvents(events) : this.renderEmpty()}
+        </div>
+
+        <div class="replay-footer">
+          <div class="replay-count">Showing ${events.length} of ${eventStats.total} events</div>
+          ${isElite ? `<div class="replay-elite-badge">${ICONS.BRAIN} ELITE</div>` : ""}
+        </div>
+      </div>`;
 
     this.bindEvents(overlay);
-  },
 
-  renderLockedState() {
-    return `
-            <div class="replay-modal">
-                <div class="replay-header">
-                    <div class="replay-title">
-                        ${ICONS.BRAIN}
-                        <span>Session Replay</span>
-                    </div>
-                    <button class="replay-close">${ICONS.X}</button>
-                </div>
-                <div class="locked-replay">
-                    ${ICONS.LOCK}
-                    <h3>Session Replay is Elite</h3>
-                    <p>Review your entire trading session with a visual timeline of trades, alerts, discipline events, and milestones.</p>
-                    <button class="unlock-btn">Upgrade to Elite</button>
-                </div>
-            </div>
-        `;
+    // Draw equity curve after DOM is ready
+    if (hasEquity) {
+      setTimeout(() => this.drawEquityCurve(overlay, session), 100);
+    }
   },
 
   renderEmpty() {
     return `
-            <div class="timeline-empty">
-                ${ICONS.TARGET}
-                <div style="font-size:14px; font-weight:600; margin-bottom:4px;">No events yet</div>
-                <div style="font-size:12px;">Start trading to build your session timeline</div>
-            </div>
-        `;
+      <div class="timeline-empty">
+        ${ICONS.TARGET}
+        <div style="font-size:14px; font-weight:600; margin-bottom:4px;">No events yet</div>
+        <div style="font-size:12px;">Start trading to build your session timeline</div>
+      </div>`;
   },
 
   renderEvents(events) {
     return events
-      .map((event) => {
+      .map((event, index) => {
         const time = new Date(event.ts).toLocaleTimeString([], {
           hour: "2-digit",
           minute: "2-digit",
@@ -480,18 +580,18 @@ export const SessionReplay = {
         const category = event.category.toLowerCase();
         const icon = this.getEventIcon(event.category);
         const dataTags = this.renderEventData(event);
+        const selectedClass = this._selectedEventIdx === index ? " selected" : "";
 
         return `
-                <div class="timeline-event">
-                    <div class="event-time">${time}</div>
-                    <div class="event-icon ${category}">${icon}</div>
-                    <div class="event-content">
-                        <div class="event-type ${category}">${event.type}</div>
-                        <div class="event-message">${event.message}</div>
-                        ${dataTags ? `<div class="event-data">${dataTags}</div>` : ""}
-                    </div>
-                </div>
-            `;
+          <div class="timeline-event${selectedClass}" data-idx="${index}">
+            <div class="event-time">${time}</div>
+            <div class="event-icon ${category}">${icon}</div>
+            <div class="event-content">
+              <div class="event-type ${category}">${event.type}</div>
+              <div class="event-message">${event.message}</div>
+              ${dataTags ? `<div class="event-data">${dataTags}</div>` : ""}
+            </div>
+          </div>`;
       })
       .join("");
   },
@@ -531,9 +631,83 @@ export const SessionReplay = {
     }
   },
 
-  getFilteredEvents(state) {
-    const allEvents = Analytics.getEventLog(state, { limit: 100 });
-    return allEvents.filter((e) => this.activeFilters.includes(e.category));
+  /** Get all events (unfiltered) for stats computation */
+  _getAllEvents(state, { session, trades, isHistorical }) {
+    if (isHistorical && trades) {
+      return this._reconstructEventsFromTrades(trades);
+    }
+    return Analytics.getEventLog(state, { limit: 100 });
+  },
+
+  /** Compute event stats, respecting elite gating */
+  _computeEventStats(allEvents, isElite) {
+    const stats = {
+      total: 0,
+      trades: 0,
+      alerts: 0,
+      disciplineEvents: 0,
+      milestones: 0,
+    };
+    for (const e of allEvents) {
+      if (e.category === "TRADE") stats.trades++;
+      else if (e.category === "ALERT") stats.alerts++;
+      else if (e.category === "DISCIPLINE") stats.disciplineEvents++;
+      else if (e.category === "MILESTONE") stats.milestones++;
+    }
+    // Total visible events depends on elite status
+    if (isElite) {
+      stats.total = stats.trades + stats.alerts + stats.disciplineEvents + stats.milestones;
+    } else {
+      stats.total = stats.trades + stats.milestones;
+    }
+    return stats;
+  },
+
+  /** Reconstruct timeline events from a trades array (for historical sessions) */
+  _reconstructEventsFromTrades(trades) {
+    return trades.map((trade) => {
+      const pnlText = trade.realizedPnlSol
+        ? `P&L: ${trade.realizedPnlSol > 0 ? "+" : ""}${trade.realizedPnlSol.toFixed(4)} SOL`
+        : `Size: ${(trade.solAmount || 0).toFixed(4)} SOL`;
+      const message = `${trade.side} ${trade.symbol || "?"} @ $${trade.priceUsd?.toFixed(6) || "N/A"} | ${pnlText}`;
+
+      return {
+        id: trade.id,
+        ts: trade.ts,
+        type: trade.side,
+        category: "TRADE",
+        message,
+        data: {
+          tradeId: trade.id,
+          symbol: trade.symbol,
+          priceUsd: trade.priceUsd,
+          solAmount: trade.solAmount,
+          realizedPnlSol: trade.realizedPnlSol,
+          strategy: trade.strategy,
+        },
+      };
+    });
+  },
+
+  getFilteredEvents(state, { session, trades, isHistorical, isElite } = {}) {
+    let allEvents;
+    if (isHistorical && trades) {
+      allEvents = this._reconstructEventsFromTrades(trades);
+    } else {
+      allEvents = Analytics.getEventLog(state, { limit: 100 });
+    }
+
+    // Filter by active filters
+    let filtered = allEvents.filter((e) => this.activeFilters.includes(e.category));
+
+    // Non-elite: remove DISCIPLINE and ALERT categories
+    if (!isElite) {
+      filtered = filtered.filter(
+        (e) => e.category !== "DISCIPLINE" && e.category !== "ALERT"
+      );
+    }
+
+    return filtered;
   },
 
   toggleFilter(category) {
@@ -544,6 +718,102 @@ export const SessionReplay = {
       this.activeFilters.push(category);
     }
     this.render();
+  },
+
+  drawEquityCurve(root, session) {
+    const canvas = root.querySelector("#replay-equity-canvas");
+    if (!canvas) return;
+
+    const ctx = canvas.getContext("2d");
+    const history = session.equityHistory || [];
+    if (history.length < 2) return;
+
+    // Resize for DPI
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = canvas.clientWidth * dpr;
+    canvas.height = canvas.clientHeight * dpr;
+    ctx.scale(dpr, dpr);
+
+    const w = canvas.clientWidth;
+    const h = canvas.clientHeight;
+    const padding = 16;
+
+    const points = history.map((e) => e.equity);
+    const min = Math.min(...points) * 0.99;
+    const max = Math.max(...points) * 1.01;
+    const range = max - min || 1;
+
+    ctx.clearRect(0, 0, w, h);
+
+    // Line
+    ctx.beginPath();
+    ctx.strokeStyle = "#14b8a6";
+    ctx.lineWidth = 1.5;
+    ctx.lineJoin = "round";
+
+    history.forEach((entry, i) => {
+      const x = padding + (i / (history.length - 1)) * (w - padding * 2);
+      const y = h - padding - ((entry.equity - min) / range) * (h - padding * 2);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+
+    // Fill gradient
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, "rgba(20, 184, 166, 0.15)");
+    grad.addColorStop(1, "rgba(20, 184, 166, 0)");
+    ctx.lineTo(w - padding, h - padding);
+    ctx.lineTo(padding, h - padding);
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // Draw selected event marker
+    if (this._selectedEventIdx >= 0) {
+      const overlay = root.querySelector(".replay-overlay") || root;
+      const selectedEl = overlay.querySelector(`.timeline-event[data-idx="${this._selectedEventIdx}"]`);
+      if (selectedEl) {
+        // Get the event timestamp from the rendered events
+        const state = Store.state;
+        const isElite = FeatureManager.isElite(state);
+        const { session: sess, trades, isHistorical } = this._resolveSession();
+        const events = this.getFilteredEvents(state, { session: sess, trades, isHistorical, isElite });
+        const selectedEvent = events[this._selectedEventIdx];
+
+        if (selectedEvent && selectedEvent.ts) {
+          // Find the closest equity point by timestamp
+          let closestIdx = 0;
+          let closestDist = Infinity;
+          history.forEach((pt, i) => {
+            const dist = Math.abs(pt.ts - selectedEvent.ts);
+            if (dist < closestDist) {
+              closestDist = dist;
+              closestIdx = i;
+            }
+          });
+
+          const markerX = padding + (closestIdx / (history.length - 1)) * (w - padding * 2);
+
+          // Vertical dashed purple line
+          ctx.beginPath();
+          ctx.setLineDash([4, 4]);
+          ctx.strokeStyle = "#8b5cf6";
+          ctx.lineWidth = 1;
+          ctx.moveTo(markerX, padding);
+          ctx.lineTo(markerX, h - padding);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          // Small dot at intersection
+          const markerY =
+            h - padding - ((history[closestIdx].equity - min) / range) * (h - padding * 2);
+          ctx.beginPath();
+          ctx.arc(markerX, markerY, 4, 0, Math.PI * 2);
+          ctx.fillStyle = "#8b5cf6";
+          ctx.fill();
+        }
+      }
+    }
   },
 
   bindEvents(overlay) {
@@ -562,24 +832,40 @@ export const SessionReplay = {
         this.toggleFilter(filter);
       };
     });
-  },
 
-  bindLockedEvents(overlay) {
-    const closeBtn = overlay.querySelector(".replay-close");
-    if (closeBtn) {
-      closeBtn.onclick = () => this.close();
-    }
+    // Event click handlers for equity highlighting
+    overlay.querySelectorAll(".timeline-event").forEach((el) => {
+      el.onclick = (e) => {
+        // Don't trigger on filter button clicks
+        if (e.target.closest(".filter-btn")) return;
 
-    const unlockBtn = overlay.querySelector(".unlock-btn");
-    if (unlockBtn) {
-      unlockBtn.onclick = () => {
-        this.close();
-        Paywall.showUpgradeModal("SESSION_REPLAY");
+        const idx = parseInt(el.getAttribute("data-idx"), 10);
+        if (isNaN(idx)) return;
+
+        // Toggle selection
+        if (this._selectedEventIdx === idx) {
+          this._selectedEventIdx = -1;
+        } else {
+          this._selectedEventIdx = idx;
+        }
+
+        // Update selected class
+        overlay.querySelectorAll(".timeline-event").forEach((ev) => {
+          ev.classList.remove("selected");
+        });
+        if (this._selectedEventIdx >= 0) {
+          const selectedEl = overlay.querySelector(
+            `.timeline-event[data-idx="${this._selectedEventIdx}"]`
+          );
+          if (selectedEl) selectedEl.classList.add("selected");
+        }
+
+        // Redraw equity curve
+        const { session } = this._resolveSession();
+        if (session.equityHistory && session.equityHistory.length >= 2) {
+          this.drawEquityCurve(overlay, session);
+        }
       };
-    }
-
-    overlay.onclick = (e) => {
-      if (e.target === overlay) this.close();
-    };
+    });
   },
 };

@@ -3,6 +3,7 @@ import { OverlayManager } from "./overlay.js";
 import { FeatureManager, TEASED_FEATURES } from "../featureManager.js";
 import { renderEliteLockedCard } from "./elite-helpers.js";
 import { ICONS } from "./icons.js";
+import { Analytics } from "../core/analytics.js";
 
 const INSIGHTS_CSS = `
 .insights-overlay {
@@ -153,10 +154,106 @@ const INSIGHTS_CSS = `
     color: #64748b;
     margin-top: 4px;
 }
+
+.insights-mode-filters {
+    display: flex;
+    gap: 6px;
+    padding: 0 0 16px;
+}
+
+.insights-mode-btn {
+    padding: 5px 12px;
+    border-radius: 16px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: transparent;
+    color: #64748b;
+}
+
+.insights-mode-btn:hover {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.insights-mode-btn.active {
+    background: rgba(139, 92, 246, 0.15);
+    border-color: rgba(139, 92, 246, 0.4);
+    color: #a78bfa;
+}
+
+.insights-tod-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.insights-tod-card {
+    background: #161b22;
+    border: 1px solid rgba(255, 255, 255, 0.025);
+    border-radius: 8px;
+    padding: 10px 12px;
+}
+
+.insights-tod-hour {
+    font-size: 12px;
+    font-weight: 700;
+    color: #e2e8f0;
+    margin-bottom: 4px;
+}
+
+.insights-tod-stat {
+    font-size: 11px;
+    color: #64748b;
+}
+
+.insights-mc-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 8px;
+}
+
+.insights-mc-table th {
+    font-size: 9px;
+    font-weight: 700;
+    color: #475569;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    text-align: left;
+    padding: 6px 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.insights-mc-table td {
+    font-size: 11px;
+    color: #cbd5e1;
+    padding: 6px 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+}
+
+.insights-mc-table .win { color: #10b981; }
+.insights-mc-table .loss { color: #ef4444; }
+
+.insights-note {
+    font-size: 11px;
+    color: #475569;
+    font-style: italic;
+    padding: 8px 0;
+}
+
+.insights-disclaimer {
+    font-size: 10px;
+    color: #334155;
+    margin-top: 8px;
+    font-style: italic;
+}
 `;
 
 export const Insights = {
   isOpen: false,
+  _modeFilter: "all",
 
   toggle() {
     if (this.isOpen) this.close();
@@ -228,6 +325,16 @@ export const Insights = {
     overlay.onclick = (e) => {
       if (e.target === overlay) self.close();
     };
+
+    // Mode filter buttons
+    overlay.querySelectorAll('.insights-mode-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        self._modeFilter = btn.getAttribute('data-mode-filter');
+        self.render();
+      });
+    });
   },
 
   renderFreeContent() {
@@ -280,8 +387,19 @@ export const Insights = {
   renderEliteContent(state) {
     const session = Store.getActiveSession();
     const behavior = Store.getActiveBehavior();
+    const mf = this._modeFilter;
 
-    return `
+    // Mode filter tabs
+    let html = `
+            <div class="insights-mode-filters">
+                <button class="insights-mode-btn ${mf === 'paper' ? 'active' : ''}" data-mode-filter="paper">Paper</button>
+                <button class="insights-mode-btn ${mf === 'real' ? 'active' : ''}" data-mode-filter="real">Real (Observed)</button>
+                <button class="insights-mode-btn ${mf === 'all' ? 'active' : ''}" data-mode-filter="all">All</button>
+            </div>
+        `;
+
+    // Session overview
+    html += `
             <div class="insights-section-label">SESSION OVERVIEW</div>
             <div class="insights-grid">
                 <div class="insights-elite-card">
@@ -295,7 +413,10 @@ export const Insights = {
                     <div class="insights-elite-card-desc">Your current trading behavior classification.</div>
                 </div>
             </div>
+        `;
 
+    // Behavioral patterns
+    html += `
             <div class="insights-section-label">BEHAVIORAL PATTERNS</div>
             <div class="insights-grid">
                 <div class="insights-elite-card">
@@ -312,5 +433,59 @@ export const Insights = {
                 </div>
             </div>
         `;
+
+    // Time-of-day analysis
+    const tod = Analytics.analyzeTimeOfDay(state, mf);
+    html += `<div class="insights-section-label">TIME-OF-DAY PERFORMANCE</div>`;
+    if (tod.hasEnoughData && tod.topHours.length > 0) {
+      html += `<div class="insights-tod-grid">`;
+      tod.topHours.forEach(h => {
+        const hour12 = h.hour % 12 || 12;
+        const ampm = h.hour < 12 ? 'AM' : 'PM';
+        const nextHour = (h.hour + 1) % 12 || 12;
+        const nextAmpm = (h.hour + 1) < 12 ? 'AM' : 'PM';
+        const pnlColor = h.netPnl >= 0 ? '#10b981' : '#ef4444';
+        const winRate = h.count > 0 ? ((h.wins / h.count) * 100).toFixed(0) : 0;
+        html += `
+                <div class="insights-tod-card">
+                    <div class="insights-tod-hour">${hour12}${ampm}-${nextHour}${nextAmpm}</div>
+                    <div class="insights-tod-stat" style="color:${pnlColor};font-weight:600;">${h.netPnl >= 0 ? '+' : ''}${h.netPnl.toFixed(4)} SOL</div>
+                    <div class="insights-tod-stat">${winRate}% win rate (${h.count} trades)</div>
+                </div>
+            `;
+      });
+      html += `</div>`;
+      html += `<div class="insights-disclaimer">Based on your recorded sessions. Not financial advice.</div>`;
+    } else {
+      html += `<div class="insights-note">Not enough data yet \u2014 at least 5 trades per hour needed.</div>`;
+    }
+
+    // Market cap buckets
+    const mc = Analytics.analyzeMarketCapBuckets(state, mf);
+    html += `<div class="insights-section-label">MARKET CAP PERFORMANCE</div>`;
+    if (mc.hasData) {
+      html += `
+            <table class="insights-mc-table">
+                <thead><tr><th>Bucket</th><th>Trades</th><th>Net PnL</th><th>Win Rate</th></tr></thead>
+                <tbody>
+            `;
+      mc.buckets.filter(b => b.count > 0).forEach(b => {
+        const pnlCls = b.netPnl >= 0 ? 'win' : 'loss';
+        html += `
+                <tr>
+                    <td>${b.label}</td>
+                    <td>${b.count}</td>
+                    <td class="${pnlCls}">${b.netPnl >= 0 ? '+' : ''}${b.netPnl.toFixed(4)}</td>
+                    <td>${b.winRate.toFixed(0)}%</td>
+                </tr>
+            `;
+      });
+      html += `</tbody></table>`;
+      html += `<div class="insights-disclaimer">Based on your recorded sessions. Not financial advice.</div>`;
+    } else {
+      html += `<div class="insights-note">Market cap insights will appear once market cap data is available.</div>`;
+    }
+
+    return html;
   },
 };
