@@ -65,20 +65,30 @@ export const HUD = {
 
   renderAll() {
     if (!Store.state) return; // Wait for state load
-    Banner.mountBanner();
+
+    const onTokenPage = !!Market.currentMint;
+
+    // PnL HUD: always visible (user request)
     PnlHud.mountPnlHud(this.makeDraggable.bind(this));
 
-    // BUY/SELL HUD: only mount in Paper Mode; remove from DOM in Analysis/Shadow
-    if (ModeManager.shouldShowBuyHud()) {
+    // Banner: only on token pages
+    if (onTokenPage) {
+      Banner.mountBanner();
+    } else {
+      Banner.removeBanner();
+    }
+
+    // BUY/SELL HUD: only mount in Paper Mode + on token page
+    if (onTokenPage && ModeManager.shouldShowBuyHud()) {
       BuyHud.mountBuyHud(this.makeDraggable.bind(this));
     } else {
       const container = OverlayManager.getContainer();
-      const buyRoot = container.querySelector("#" + IDS.buyHud);
+      const buyRoot = container?.querySelector("#" + IDS.buyHud);
       if (buyRoot) buyRoot.remove();
     }
 
-    // SHADOW HUD: mount for Elite users (any mode); remove from DOM otherwise
-    if (ModeManager.shouldShowShadowHud()) {
+    // SHADOW HUD: mount for Elite users + on token page
+    if (onTokenPage && ModeManager.shouldShowShadowHud()) {
       ShadowHud.mountShadowHud(this.makeDraggable.bind(this));
       // Lazy-init NarrativeTrust for mid-session tier upgrades
       if (!NarrativeTrust.initialized) {
@@ -95,16 +105,23 @@ export const HUD = {
     // Apply correct mode class to container
     ModesUI.applyContainerClass();
 
-    Banner.updateBanner();
+    const onTokenPage = !!Market.currentMint;
+
+    // Banner: only update on token pages
+    if (onTokenPage) {
+      Banner.updateBanner();
+    }
+
+    // PnL HUD: always update
     await PnlHud.updatePnlHud();
 
     // Only update BuyHud if it should be visible
-    if (ModeManager.shouldShowBuyHud()) {
+    if (onTokenPage && ModeManager.shouldShowBuyHud()) {
       BuyHud.updateBuyHud();
     }
 
     // Only update ShadowHud if it should be visible
-    if (ModeManager.shouldShowShadowHud()) {
+    if (onTokenPage && ModeManager.shouldShowShadowHud()) {
       ShadowHud.updateShadowHud();
     }
   },

@@ -39,6 +39,12 @@ export const Banner = {
     }
   },
 
+  removeBanner() {
+    const root = OverlayManager.getShadowRoot();
+    const bar = root?.getElementById(IDS.banner);
+    if (bar) bar.remove();
+  },
+
   mountBanner() {
     const root = OverlayManager.getShadowRoot();
     if (!root) return;

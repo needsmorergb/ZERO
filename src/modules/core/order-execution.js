@@ -76,6 +76,12 @@ export const OrderExecution = {
 
     const fillId = this.recordFill(state, fillData);
 
+    // Log trade event for Session Replay
+    const trade = state.trades[fillId];
+    if (trade) {
+      Analytics.logTradeEvent(state, trade);
+    }
+
     // Deduct SOL from session balance
     state.session.balance -= solAmount;
 
@@ -171,9 +177,13 @@ export const OrderExecution = {
     // Track realized PnL in session
     state.session.realized = (state.session.realized || 0) + pnlEventSol;
 
-    // Update win/loss streaks via Analytics
+    // Update win/loss streaks and log trade event via Analytics
     try {
       Analytics.updateStreaks({ side: "SELL", realizedPnlSol: pnlEventSol }, state);
+      const trade = state.trades[fillId];
+      if (trade) {
+        Analytics.logTradeEvent(state, trade);
+      }
     } catch (e) {
       /* Analytics should not block trade recording */
     }

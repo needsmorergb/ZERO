@@ -5600,6 +5600,12 @@ input:checked + .slider:before {
         body.style.paddingTop = `${offset}px`;
       }
     },
+    removeBanner() {
+      const root = OverlayManager.getShadowRoot();
+      const bar = root?.getElementById(IDS.banner);
+      if (bar)
+        bar.remove();
+    },
     mountBanner() {
       const root = OverlayManager.getShadowRoot();
       if (!root)
@@ -7346,6 +7352,10 @@ input:checked + .slider:before {
         // Store if provided
       };
       const fillId = this.recordFill(state, fillData);
+      const trade = state.trades[fillId];
+      if (trade) {
+        Analytics.logTradeEvent(state, trade);
+      }
       state.session.balance -= solAmount;
       await Store.save();
       return { success: true, message: `Bought ${symbol}`, trade: { id: fillId } };
@@ -7411,6 +7421,10 @@ input:checked + .slider:before {
       state.session.realized = (state.session.realized || 0) + pnlEventSol;
       try {
         Analytics.updateStreaks({ side: "SELL", realizedPnlSol: pnlEventSol }, state);
+        const trade = state.trades[fillId];
+        if (trade) {
+          Analytics.logTradeEvent(state, trade);
+        }
       } catch (e) {
       }
       await Store.save();
@@ -13571,17 +13585,22 @@ canvas#equity-canvas {
     renderAll() {
       if (!Store.state)
         return;
-      Banner.mountBanner();
+      const onTokenPage = !!Market.currentMint;
       PnlHud.mountPnlHud(this.makeDraggable.bind(this));
-      if (ModeManager.shouldShowBuyHud()) {
+      if (onTokenPage) {
+        Banner.mountBanner();
+      } else {
+        Banner.removeBanner();
+      }
+      if (onTokenPage && ModeManager.shouldShowBuyHud()) {
         BuyHud.mountBuyHud(this.makeDraggable.bind(this));
       } else {
         const container = OverlayManager.getContainer();
-        const buyRoot = container.querySelector("#" + IDS.buyHud);
+        const buyRoot = container?.querySelector("#" + IDS.buyHud);
         if (buyRoot)
           buyRoot.remove();
       }
-      if (ModeManager.shouldShowShadowHud()) {
+      if (onTokenPage && ModeManager.shouldShowShadowHud()) {
         ShadowHud.mountShadowHud(this.makeDraggable.bind(this));
         if (!NarrativeTrust.initialized) {
           NarrativeTrust.init();
@@ -13593,12 +13612,15 @@ canvas#equity-canvas {
     },
     async updateAll() {
       ModesUI.applyContainerClass();
-      Banner.updateBanner();
+      const onTokenPage = !!Market.currentMint;
+      if (onTokenPage) {
+        Banner.updateBanner();
+      }
       await PnlHud.updatePnlHud();
-      if (ModeManager.shouldShowBuyHud()) {
+      if (onTokenPage && ModeManager.shouldShowBuyHud()) {
         BuyHud.updateBuyHud();
       }
-      if (ModeManager.shouldShowShadowHud()) {
+      if (onTokenPage && ModeManager.shouldShowShadowHud()) {
         ShadowHud.updateShadowHud();
       }
     },
