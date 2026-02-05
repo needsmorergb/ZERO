@@ -234,6 +234,31 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return;
     }
 
+    // Promo code redemption via Context API Worker
+    if (msg?.type === "REDEEM_PROMO") {
+      const { promoCode } = msg;
+      if (!promoCode) {
+        sendResponse({ ok: false, error: "no_code" });
+        return;
+      }
+      try {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 10000);
+        const r = await fetch("https://api.get-zero.xyz/promo/redeem", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ promoCode }),
+          signal: ctrl.signal,
+        });
+        clearTimeout(t);
+        const data = await r.json();
+        sendResponse(data);
+      } catch (e) {
+        sendResponse({ ok: false, error: e.toString() });
+      }
+      return;
+    }
+
     // Generic Proxy Fetch (Avoids CORS on Content Scripts)
     if (msg?.type === "PROXY_FETCH") {
       const { url, options } = msg;

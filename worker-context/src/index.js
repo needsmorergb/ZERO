@@ -1790,6 +1790,90 @@ function workerParseSwap(tx, walletAddress, signature) {
 }
 
 // ---------------------------------------------------------------------------
+// Promo Code Redemption
+// ---------------------------------------------------------------------------
+
+/**
+ * Handle POST /promo/redeem
+ * Validates a promo code against PROMO_CODES KV and grants a trial session allotment.
+ * @param {Request} request
+ * @param {object} env
+ * @returns {Promise<Response>}
+ */
+async function handlePromoRedeem(request, env) {
+    if (!env.PROMO_CODES) {
+        return json({ ok: false, error: 'server_misconfigured' }, 500);
+    }
+
+    // Rate limit by IP
+    const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+    if (await isRateLimited(ip, env)) {
+        return json({ ok: false, error: 'rate_limited' }, 429);
+    }
+
+    // Parse body
+    let body;
+    try {
+        body = await request.json();
+    } catch (_) {
+        return json({ ok: false, error: 'invalid_json' }, 400);
+    }
+
+    const { promoCode } = body;
+    if (!promoCode || typeof promoCode !== 'string' || promoCode.trim().length < 3 || promoCode.trim().length > 32) {
+        return json({ ok: false, error: 'invalid_code' }, 400);
+    }
+
+    const code = promoCode.trim().toUpperCase();
+    const kvKey = `promo:${code}`;
+
+    // Look up code in KV
+    let promoData;
+    try {
+        promoData = await env.PROMO_CODES.get(kvKey, { type: 'json' });
+    } catch (_) {
+        return json({ ok: false, error: 'lookup_failed' }, 500);
+    }
+
+    if (!promoData) {
+        return json({ ok: false, error: 'invalid_code' }, 404);
+    }
+
+    // Validate code is active
+    if (!promoData.active) {
+        return json({ ok: false, error: 'code_inactive' }, 403);
+    }
+
+    // Validate expiration
+    if (promoData.expiresAt && new Date(promoData.expiresAt) < new Date()) {
+        return json({ ok: false, error: 'code_expired' }, 403);
+    }
+
+    // Validate redemption limit
+    const current = promoData.currentRedemptions || 0;
+    const max = promoData.maxRedemptions || Infinity;
+    if (current >= max) {
+        return json({ ok: false, error: 'code_exhausted' }, 403);
+    }
+
+    // Increment redemption count
+    promoData.currentRedemptions = current + 1;
+    try {
+        await env.PROMO_CODES.put(kvKey, JSON.stringify(promoData));
+    } catch (_) {
+        console.warn('[Promo] Failed to update redemption count');
+        // Non-fatal — continue with redemption
+    }
+
+    console.log(`[Promo] Code "${code}" redeemed (${promoData.currentRedemptions}/${max})`);
+
+    return json({
+        ok: true,
+        sessions: promoData.sessions || 5,
+    });
+}
+
+// ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
 
@@ -1821,6 +1905,12 @@ export default {
         // Verify Membership (Whop)
         if (path === '/verify-membership' && request.method === 'POST') {
             const response = await handleVerifyMembership(request, env);
+            return withCors(response, request);
+        }
+
+        // Promo Code Redemption
+        if (path === '/promo/redeem' && request.method === 'POST') {
+            const response = await handlePromoRedeem(request, env);
             return withCors(response, request);
         }
 

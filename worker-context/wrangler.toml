@@ -24,3 +24,11 @@ id = "fa0f017ce8164bc381c93b316d9b1b28"
 [[kv_namespaces]]
 binding = "LICENSE_CACHE"
 id = "35c09f2708da4b35b168e6cfdbe33437"
+
+# KV namespace for promo code management
+# Create with: wrangler kv:namespace create PROMO_CODES
+# Then replace the id below with the returned namespace ID
+# Seed codes via: wrangler kv:key put --namespace-id=<ID> "promo:LAUNCH5" '{"sessions":5,"maxRedemptions":1000,"currentRedemptions":0,"expiresAt":"2026-06-01T00:00:00Z","active":true}'
+[[kv_namespaces]]
+binding = "PROMO_CODES"
+id = "REPLACE_WITH_NAMESPACE_ID"

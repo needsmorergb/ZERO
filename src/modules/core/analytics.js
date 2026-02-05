@@ -473,6 +473,8 @@ export const Analytics = {
     const { positions, behavior } = this._resolve(state);
 
     Object.values(positions).forEach((pos) => {
+      if ((pos.qtyTokens || 0) <= 0) return; // skip closed positions
+
       const pnlPct = pos.pnlPct || 0;
       const peakPct = pos.peakPnlPct !== undefined ? pos.peakPnlPct : 0;
 

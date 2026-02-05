@@ -5,6 +5,7 @@ import { FeatureManager } from "../featureManager.js";
 import { ICONS } from "./icons.js";
 import { ModeManager, MODES } from "../mode-manager.js";
 import { ModesUI } from "./modes-ui.js";
+import { Trial } from "../trial.js";
 
 export const Banner = {
   ensurePageOffset() {
@@ -48,12 +49,17 @@ export const Banner = {
     bar = document.createElement("div");
     bar.id = IDS.banner;
     const modeHint = ModesUI.getBannerHint();
+    const trialBadge = Trial.isActive()
+      ? `<div class="trial-badge" style="margin-left:10px; background:rgba(245,158,11,0.15); border:1px solid rgba(245,158,11,0.3); color:#fbbf24; font-size:10px; font-weight:600; padding:2px 8px; border-radius:4px; white-space:nowrap;">ELITE TRIAL — ${Trial.sessionsRemaining()}/${Trial.sessionsTotal()}</div>`
+      : "";
+
     bar.innerHTML = `
             <div class="inner" style="cursor:pointer;" title="Click to toggle ZERØ Mode">
                 <div class="dot"></div>
                 <div class="label">ZERØ MODE</div>
                 <div class="state">ENABLED</div>
                 <div class="hint" style="margin-left:8px; opacity:0.5; font-size:11px;">${modeHint}</div>
+                ${trialBadge}
             </div>
             <div style="position:absolute; right:20px; font-size:10px; color:#334155; pointer-events:none;">v${Store.state?.version || "0.9.1"}</div>
         `;
@@ -86,6 +92,26 @@ export const Banner = {
     const hintEl = bar.querySelector(".hint");
     if (hintEl) hintEl.textContent = ModesUI.getBannerHint();
 
+    // Update trial badge
+    const existingBadge = bar.querySelector(".trial-badge");
+    if (Trial.isActive()) {
+      const badgeText = `ELITE TRIAL — ${Trial.sessionsRemaining()}/${Trial.sessionsTotal()}`;
+      if (existingBadge) {
+        existingBadge.textContent = badgeText;
+      } else {
+        const inner = bar.querySelector(".inner");
+        if (inner) {
+          const badge = document.createElement("div");
+          badge.className = "trial-badge";
+          badge.style.cssText = "margin-left:10px; background:rgba(245,158,11,0.15); border:1px solid rgba(245,158,11,0.3); color:#fbbf24; font-size:10px; font-weight:600; padding:2px 8px; border-radius:4px; white-space:nowrap;";
+          badge.textContent = badgeText;
+          inner.appendChild(badge);
+        }
+      }
+    } else if (existingBadge) {
+      existingBadge.remove();
+    }
+
     this.updateAlerts();
   },
 
@@ -111,6 +137,14 @@ export const Banner = {
     const alerts = Store.getActiveSession().activeAlerts || [];
     const existingIds = Array.from(container.children).map((c) => c.dataset.ts);
 
+    const removeAlertFromState = (ts) => {
+      const session = Store.getActiveSession();
+      if (session?.activeAlerts) {
+        const idx = session.activeAlerts.findIndex(a => a.ts.toString() === ts);
+        if (idx !== -1) session.activeAlerts.splice(idx, 1);
+      }
+    };
+
     alerts.forEach((alert) => {
       if (!existingIds.includes(alert.ts.toString())) {
         const el = document.createElement("div");
@@ -126,6 +160,7 @@ export const Banner = {
 
         el.querySelector(".elite-alert-close").onclick = () => {
           el.style.animation = "alertFadeOut 0.3s forwards";
+          removeAlertFromState(el.dataset.ts);
           setTimeout(() => el.remove(), 300);
         };
 
@@ -135,6 +170,7 @@ export const Banner = {
         setTimeout(() => {
           if (el.parentNode) {
             el.style.animation = "alertFadeOut 0.3s forwards";
+            removeAlertFromState(el.dataset.ts);
             setTimeout(() => el.remove(), 300);
           }
         }, 5000);

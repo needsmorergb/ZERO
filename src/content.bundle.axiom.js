@@ -1930,6 +1930,7 @@
     border-radius: 6px;
     overflow: hidden;
     transition: border-color 0.2s;
+    min-width: 0;
 }
 
 #${IDS.buyHud} .plan-input-wrap:focus-within {
@@ -5445,6 +5446,135 @@ input:checked + .slider:before {
     }
   };
 
+  // src/modules/trial.js
+  init_store();
+
+  // src/modules/logger.js
+  var Logger = {
+    isProduction: false,
+    // Set to true in prod builds
+    info(msg, ...args) {
+      if (this.isProduction)
+        return;
+      console.log(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
+    },
+    warn(msg, ...args) {
+      console.warn(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
+    },
+    error(msg, ...args) {
+      console.error(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
+    },
+    cleanArgs(args) {
+      return args.map((arg) => {
+        if (arg instanceof Error) {
+          return { name: arg.name, message: arg.message, stack: arg.stack };
+        }
+        if (typeof DOMException !== "undefined" && arg instanceof DOMException) {
+          return { name: arg.name, message: arg.message, code: arg.code };
+        }
+        if (typeof arg === "object" && arg !== null) {
+          const clean = { ...arg };
+          ["key", "secret", "token", "auth", "password"].forEach((k) => {
+            if (k in clean)
+              clean[k] = "***REDACTED***";
+          });
+          return clean;
+        }
+        return arg;
+      });
+    }
+  };
+
+  // src/modules/trial.js
+  var Trial = {
+    /**
+     * Check if the trial is currently active (redeemed, not expired, sessions remaining).
+     * @returns {boolean}
+     */
+    isActive() {
+      const t = Store.state?.settings?.trial;
+      if (!t || !t.activated || t.expired)
+        return false;
+      return (t.sessionsUsed || 0) < (t.sessionsLimit || 5);
+    },
+    /**
+     * Check if a promo has ever been redeemed (blocks re-trial).
+     * @returns {boolean}
+     */
+    hasBeenUsed() {
+      return Store.state?.settings?.trial?.activated === true;
+    },
+    /**
+     * Get remaining trial sessions.
+     * @returns {number}
+     */
+    sessionsRemaining() {
+      const t = Store.state?.settings?.trial;
+      if (!t || !t.activated)
+        return 0;
+      return Math.max(0, (t.sessionsLimit || 5) - (t.sessionsUsed || 0));
+    },
+    /**
+     * Get total trial sessions.
+     * @returns {number}
+     */
+    sessionsTotal() {
+      return Store.state?.settings?.trial?.sessionsLimit || 5;
+    },
+    /**
+     * Get number of sessions used.
+     * @returns {number}
+     */
+    sessionsUsed() {
+      return Store.state?.settings?.trial?.sessionsUsed || 0;
+    },
+    /**
+     * Redeem a promo code. Sends to background → worker for validation.
+     * @param {string} code
+     * @returns {Promise<{ ok: boolean, sessions?: number, error?: string }>}
+     */
+    async redeem(code) {
+      if (!code || typeof code !== "string" || code.trim().length < 3) {
+        return { ok: false, error: "invalid_code" };
+      }
+      if (this.hasBeenUsed()) {
+        return { ok: false, error: "already_used" };
+      }
+      code = code.trim().toUpperCase();
+      Logger.info("[Trial] Redeeming promo code...");
+      const response = await new Promise((resolve) => {
+        chrome.runtime.sendMessage(
+          { type: "REDEEM_PROMO", promoCode: code },
+          (res) => {
+            if (chrome.runtime.lastError) {
+              resolve({ ok: false, error: chrome.runtime.lastError.message });
+              return;
+            }
+            resolve(res || { ok: false, error: "no_response" });
+          }
+        );
+      });
+      if (response.ok) {
+        const sessions = response.sessions || 5;
+        Store.state.settings.trial = {
+          promoCode: code,
+          activated: true,
+          activatedAt: Date.now(),
+          sessionsUsed: 0,
+          sessionsLimit: sessions,
+          expired: false,
+          expiredAt: null
+        };
+        Store.validateState();
+        await Store.save();
+        Logger.info(`[Trial] Promo redeemed: ${sessions} sessions`);
+        return { ok: true, sessions };
+      }
+      Logger.warn("[Trial] Promo redemption failed:", response.error);
+      return { ok: false, error: response.error || "redemption_failed" };
+    }
+  };
+
   // src/modules/ui/banner.js
   var Banner = {
     ensurePageOffset() {
@@ -5480,12 +5610,14 @@ input:checked + .slider:before {
       bar = document.createElement("div");
       bar.id = IDS.banner;
       const modeHint = ModesUI.getBannerHint();
+      const trialBadge = Trial.isActive() ? `<div class="trial-badge" style="margin-left:10px; background:rgba(245,158,11,0.15); border:1px solid rgba(245,158,11,0.3); color:#fbbf24; font-size:10px; font-weight:600; padding:2px 8px; border-radius:4px; white-space:nowrap;">ELITE TRIAL \u2014 ${Trial.sessionsRemaining()}/${Trial.sessionsTotal()}</div>` : "";
       bar.innerHTML = `
             <div class="inner" style="cursor:pointer;" title="Click to toggle ZER\xD8 Mode">
                 <div class="dot"></div>
                 <div class="label">ZER\xD8 MODE</div>
                 <div class="state">ENABLED</div>
                 <div class="hint" style="margin-left:8px; opacity:0.5; font-size:11px;">${modeHint}</div>
+                ${trialBadge}
             </div>
             <div style="position:absolute; right:20px; font-size:10px; color:#334155; pointer-events:none;">v${Store.state?.version || "0.9.1"}</div>
         `;
@@ -5514,6 +5646,24 @@ input:checked + .slider:before {
       const hintEl = bar.querySelector(".hint");
       if (hintEl)
         hintEl.textContent = ModesUI.getBannerHint();
+      const existingBadge = bar.querySelector(".trial-badge");
+      if (Trial.isActive()) {
+        const badgeText = `ELITE TRIAL \u2014 ${Trial.sessionsRemaining()}/${Trial.sessionsTotal()}`;
+        if (existingBadge) {
+          existingBadge.textContent = badgeText;
+        } else {
+          const inner = bar.querySelector(".inner");
+          if (inner) {
+            const badge = document.createElement("div");
+            badge.className = "trial-badge";
+            badge.style.cssText = "margin-left:10px; background:rgba(245,158,11,0.15); border:1px solid rgba(245,158,11,0.3); color:#fbbf24; font-size:10px; font-weight:600; padding:2px 8px; border-radius:4px; white-space:nowrap;";
+            badge.textContent = badgeText;
+            inner.appendChild(badge);
+          }
+        }
+      } else if (existingBadge) {
+        existingBadge.remove();
+      }
       this.updateAlerts();
     },
     updateAlerts() {
@@ -5536,6 +5686,14 @@ input:checked + .slider:before {
       }
       const alerts = Store.getActiveSession().activeAlerts || [];
       const existingIds = Array.from(container.children).map((c) => c.dataset.ts);
+      const removeAlertFromState = (ts) => {
+        const session = Store.getActiveSession();
+        if (session?.activeAlerts) {
+          const idx = session.activeAlerts.findIndex((a) => a.ts.toString() === ts);
+          if (idx !== -1)
+            session.activeAlerts.splice(idx, 1);
+        }
+      };
       alerts.forEach((alert) => {
         if (!existingIds.includes(alert.ts.toString())) {
           const el = document.createElement("div");
@@ -5550,12 +5708,14 @@ input:checked + .slider:before {
                 `;
           el.querySelector(".elite-alert-close").onclick = () => {
             el.style.animation = "alertFadeOut 0.3s forwards";
+            removeAlertFromState(el.dataset.ts);
             setTimeout(() => el.remove(), 300);
           };
           container.appendChild(el);
           setTimeout(() => {
             if (el.parentNode) {
               el.style.animation = "alertFadeOut 0.3s forwards";
+              removeAlertFromState(el.dataset.ts);
               setTimeout(() => el.remove(), 300);
             }
           }, 5e3);
@@ -5946,6 +6106,8 @@ input:checked + .slider:before {
         return;
       const { positions, behavior } = this._resolve(state);
       Object.values(positions).forEach((pos) => {
+        if ((pos.qtyTokens || 0) <= 0)
+          return;
         const pnlPct = pos.pnlPct || 0;
         const peakPct = pos.peakPnlPct !== void 0 ? pos.peakPnlPct : 0;
         if (peakPct > 10 && pnlPct < 0) {
@@ -7321,44 +7483,6 @@ input:checked + .slider:before {
 
   // src/modules/license.js
   init_store();
-
-  // src/modules/logger.js
-  var Logger = {
-    isProduction: false,
-    // Set to true in prod builds
-    info(msg, ...args) {
-      if (this.isProduction)
-        return;
-      console.log(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
-    },
-    warn(msg, ...args) {
-      console.warn(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
-    },
-    error(msg, ...args) {
-      console.error(`[ZER\xD8] ${msg}`, ...this.cleanArgs(args));
-    },
-    cleanArgs(args) {
-      return args.map((arg) => {
-        if (arg instanceof Error) {
-          return { name: arg.name, message: arg.message, stack: arg.stack };
-        }
-        if (typeof DOMException !== "undefined" && arg instanceof DOMException) {
-          return { name: arg.name, message: arg.message, code: arg.code };
-        }
-        if (typeof arg === "object" && arg !== null) {
-          const clean = { ...arg };
-          ["key", "secret", "token", "auth", "password"].forEach((k) => {
-            if (k in clean)
-              clean[k] = "***REDACTED***";
-          });
-          return clean;
-        }
-        return arg;
-      });
-    }
-  };
-
-  // src/modules/license.js
   var WHOP_PRODUCT_URL = "https://whop.com/crowd-ctrl/zero-elite/";
   var REVALIDATION_INTERVAL_MS = 24 * 60 * 60 * 1e3;
   var License = {
@@ -7640,6 +7764,24 @@ input:checked + .slider:before {
                     <div class="paywall-key-status" style="margin-top:8px; font-size:12px; min-height:18px;"></div>
                 </div>
 
+                ${!Trial.hasBeenUsed() ? `
+                <div class="paywall-promo-section" style="margin-top:12px; border-top:1px solid rgba(255,255,255,0.05); padding-top:12px;">
+                    <button class="paywall-btn text" data-act="show-promo-input" style="background:none; border:none; color:#f59e0b; font-size:12px; cursor:pointer; padding:6px; width:100%; text-align:center;">
+                        Have a promo code?
+                    </button>
+                    <div class="paywall-promo-input-section" style="display:none; margin-top:8px;">
+                        <div style="display:flex; gap:8px;">
+                            <input type="text" class="paywall-promo-code-input" placeholder="Enter promo code" maxlength="32"
+                                style="flex:1; background:rgba(255,255,255,0.05); border:1px solid rgba(245,158,11,0.2); border-radius:6px; padding:10px 12px; color:#f8fafc; font-size:13px; outline:none; text-transform:uppercase;">
+                            <button class="paywall-btn" data-act="redeem-promo" style="background:rgba(245,158,11,0.15); border:1px solid rgba(245,158,11,0.3); color:#fbbf24; padding:10px 16px; border-radius:6px; font-weight:600; font-size:13px; cursor:pointer; white-space:nowrap;">
+                                Redeem
+                            </button>
+                        </div>
+                        <div class="paywall-promo-status" style="margin-top:8px; font-size:12px; min-height:18px;"></div>
+                    </div>
+                </div>
+                ` : ""}
+
                 <div class="paywall-footer">
                     <p style="font-size:11px; color:#475569; margin-top:12px;">Manage your membership at whop.com/orders</p>
                 </div>
@@ -7659,6 +7801,52 @@ input:checked + .slider:before {
             const input = keySection.querySelector(".paywall-license-input");
             if (input)
               input.focus();
+          }
+        }
+        if (e.target.closest('[data-act="show-promo-input"]')) {
+          const promoSection = overlay.querySelector(".paywall-promo-input-section");
+          if (promoSection) {
+            promoSection.style.display = promoSection.style.display === "none" ? "block" : "none";
+            const input = promoSection.querySelector(".paywall-promo-code-input");
+            if (input)
+              input.focus();
+          }
+        }
+        if (e.target.closest('[data-act="redeem-promo"]')) {
+          const input = overlay.querySelector(".paywall-promo-code-input");
+          const statusEl = overlay.querySelector(".paywall-promo-status");
+          const code = input?.value?.trim();
+          if (!code) {
+            if (statusEl) {
+              statusEl.textContent = "Please enter a promo code";
+              statusEl.style.color = "#f59e0b";
+            }
+            return;
+          }
+          const btn = e.target.closest('[data-act="redeem-promo"]');
+          const origText = btn.textContent;
+          btn.textContent = "Redeeming...";
+          btn.disabled = true;
+          if (statusEl) {
+            statusEl.textContent = "Validating promo code...";
+            statusEl.style.color = "#94a3b8";
+          }
+          const result = await Trial.redeem(code);
+          btn.textContent = origText;
+          btn.disabled = false;
+          if (result.ok) {
+            if (statusEl) {
+              statusEl.textContent = `Elite Trial Activated \u2014 ${result.sessions} Sessions`;
+              statusEl.style.color = "#10b981";
+            }
+            this._showSuccessToast(`Elite Trial \u2014 ${result.sessions} Sessions`);
+            setTimeout(() => overlay.remove(), 1500);
+          } else {
+            const errorMsg = result.error === "invalid_code" ? "Invalid promo code" : result.error === "already_used" ? "You've already used a trial" : result.error === "code_expired" ? "This promo code has expired" : result.error === "code_exhausted" ? "This promo code has been fully redeemed" : result.error === "code_inactive" ? "This promo code is no longer active" : "Could not verify code \u2014 check your connection";
+            if (statusEl) {
+              statusEl.textContent = errorMsg;
+              statusEl.style.color = "#ef4444";
+            }
           }
         }
         if (e.target.closest('[data-act="activate"]')) {
@@ -7731,6 +7919,143 @@ input:checked + .slider:before {
         return false;
       const flags = FeatureManager.resolveFlags(Store.state, featureName);
       return flags.gated;
+    },
+    showTrialExpiredModal() {
+      const root = OverlayManager.getShadowRoot();
+      const existing = root.getElementById("trial-expired-modal-overlay");
+      if (existing)
+        existing.remove();
+      const overlay = document.createElement("div");
+      overlay.id = "trial-expired-modal-overlay";
+      overlay.className = "paywall-modal-overlay";
+      overlay.innerHTML = `
+            <div class="paywall-modal">
+                <div class="paywall-header">
+                    <div class="paywall-badge">
+                        ${ICONS.ZERO}
+                        <span>TRIAL COMPLETE</span>
+                    </div>
+                    <button class="paywall-close" data-act="close">${ICONS.X}</button>
+                </div>
+
+                <div class="paywall-hero">
+                    <h2 class="paywall-title">Your Elite Trial Has Ended</h2>
+                    <p class="paywall-subtitle">
+                        You've completed all ${Store.state?.settings?.trial?.sessionsLimit || 5} trial sessions.
+                        If you enjoyed advanced analytics, discipline scoring, and tilt detection,
+                        consider upgrading to keep all premium features.
+                    </p>
+                </div>
+
+                <div class="paywall-features">
+                    <div class="feature-item">
+                        <svg class="feature-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                        <div class="feature-text">
+                            <div class="feature-name">Trade Planning</div>
+                            <div class="feature-desc">Stop losses, targets, and thesis capture</div>
+                        </div>
+                    </div>
+                    <div class="feature-item">
+                        <svg class="feature-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"></path><path d="m9 12 2 2 4-4"></path></svg>
+                        <div class="feature-text">
+                            <div class="feature-name">Discipline Scoring</div>
+                            <div class="feature-desc">Track how well you follow your rules</div>
+                        </div>
+                    </div>
+                    <div class="feature-item">
+                        <svg class="feature-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                        <div class="feature-text">
+                            <div class="feature-name">Tilt Detection</div>
+                            <div class="feature-desc">Real-time alerts for emotional trading</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="paywall-pricing" style="text-align:center; margin:16px 0 8px; font-size:12px; color:#94a3b8; line-height:1.6;">
+                    <span style="color:#f8fafc; font-weight:600;">$19/mo</span> &middot;
+                    <span style="color:#f8fafc; font-weight:600;">$149/yr</span>
+                </div>
+
+                <div class="paywall-actions" style="display:flex; flex-direction:column; gap:8px;">
+                    <button class="paywall-btn primary" data-act="purchase" style="background:linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color:white; border:none; padding:12px 20px; border-radius:8px; font-weight:700; font-size:14px; cursor:pointer;">
+                        Get Elite on Whop
+                    </button>
+                    <button class="paywall-btn text" data-act="show-key-input" style="background:none; border:none; color:#8b5cf6; font-size:12px; cursor:pointer; padding:6px;">
+                        I have a license key
+                    </button>
+                </div>
+
+                <div class="paywall-key-section" style="display:none; margin-top:12px;">
+                    <div style="display:flex; gap:8px;">
+                        <input type="text" class="paywall-license-input" placeholder="Enter license key (mem_xxx...)" maxlength="64"
+                            style="flex:1; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:6px; padding:10px 12px; color:#f8fafc; font-size:13px; outline:none;">
+                        <button class="paywall-btn" data-act="activate" style="background:rgba(139,92,246,0.15); border:1px solid rgba(139,92,246,0.3); color:#a78bfa; padding:10px 16px; border-radius:6px; font-weight:600; font-size:13px; cursor:pointer; white-space:nowrap;">
+                            Activate
+                        </button>
+                    </div>
+                    <div class="paywall-key-status" style="margin-top:8px; font-size:12px; min-height:18px;"></div>
+                </div>
+
+                <div class="paywall-footer">
+                    <p style="font-size:11px; color:#475569; margin-top:12px;">Your trading data is preserved. Elite unlocks deeper analysis.</p>
+                </div>
+            </div>
+        `;
+      overlay.addEventListener("click", async (e) => {
+        if (e.target === overlay || e.target.closest('[data-act="close"]')) {
+          overlay.remove();
+        }
+        if (e.target.closest('[data-act="purchase"]')) {
+          License.openPurchasePage();
+        }
+        if (e.target.closest('[data-act="show-key-input"]')) {
+          const keySection = overlay.querySelector(".paywall-key-section");
+          if (keySection) {
+            keySection.style.display = keySection.style.display === "none" ? "block" : "none";
+            const input = keySection.querySelector(".paywall-license-input");
+            if (input)
+              input.focus();
+          }
+        }
+        if (e.target.closest('[data-act="activate"]')) {
+          const input = overlay.querySelector(".paywall-license-input");
+          const statusEl = overlay.querySelector(".paywall-key-status");
+          const key = input?.value?.trim();
+          if (!key) {
+            if (statusEl) {
+              statusEl.textContent = "Please enter a license key";
+              statusEl.style.color = "#f59e0b";
+            }
+            return;
+          }
+          const btn = e.target.closest('[data-act="activate"]');
+          const origText = btn.textContent;
+          btn.textContent = "Verifying...";
+          btn.disabled = true;
+          if (statusEl) {
+            statusEl.textContent = "Verifying your license...";
+            statusEl.style.color = "#94a3b8";
+          }
+          const result = await License.activate(key);
+          btn.textContent = origText;
+          btn.disabled = false;
+          if (result.ok) {
+            if (statusEl) {
+              statusEl.textContent = "Elite activated!";
+              statusEl.style.color = "#10b981";
+            }
+            this._showSuccessToast(License.getPlanLabel());
+            setTimeout(() => overlay.remove(), 1500);
+          } else {
+            const errorMsg = result.error === "invalid_key" ? "Invalid license key" : result.error === "invalid_product" ? "Key not for this product" : result.error === "membership_inactive" ? "Membership is not active" : "Verification failed \u2014 try again";
+            if (statusEl) {
+              statusEl.textContent = errorMsg;
+              statusEl.style.color = "#ef4444";
+            }
+          }
+        }
+      });
+      root.appendChild(overlay);
     }
   };
 
@@ -8122,6 +8447,32 @@ canvas#equity-canvas {
     gap: 8px;
 }
 
+/* SESSION HISTORY */
+.dash-history-row {
+    display: flex;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+.dash-history-row:last-child { border-bottom: none; }
+.dash-history-date { font-size: 11px; color: #94a3b8; font-weight: 600; }
+.dash-history-trades { font-size: 10px; color: #64748b; }
+.dash-history-pnl { font-size: 12px; font-weight: 700; text-align: right; flex: 1; }
+.dash-history-replay {
+    font-size: 10px;
+    padding: 4px 10px;
+    background: rgba(139, 92, 246, 0.15);
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    border-radius: 4px;
+    color: #a78bfa;
+    cursor: pointer;
+    font-weight: 600;
+    margin-left: 8px;
+    transition: all 0.15s;
+}
+.dash-history-replay:hover { background: rgba(139, 92, 246, 0.25); }
+.dash-history-empty { text-align: center; color: #64748b; font-size: 11px; padding: 12px 0; font-style: italic; }
+
 /* SHARED UTILITIES */
 .win { color: #10b981; }
 .loss { color: #ef4444; }
@@ -8156,6 +8507,7 @@ canvas#equity-canvas {
     align-items: center;
     justify-content: center;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    pointer-events: auto;
 }
 
 .replay-modal {
@@ -9183,6 +9535,13 @@ canvas#equity-canvas {
                     </div>
                     ` : ""}
 
+                    <div class="dash-card" style="margin:0 20px 12px;">
+                        <div class="dash-section-label">SESSION HISTORY</div>
+                        <div id="dash-session-history-list">
+                            ${this.renderSessionHistory()}
+                        </div>
+                    </div>
+
                     <div class="dash-elite-section">
                         <div class="dash-elite-toggle" id="dash-elite-toggle">
                             <div class="dash-elite-toggle-left">
@@ -9272,6 +9631,16 @@ canvas#equity-canvas {
           SessionReplay.open();
         };
       }
+      overlay.querySelectorAll('[data-act="replay-history"]').forEach((btn) => {
+        btn.onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const sessionId = btn.getAttribute("data-session-id");
+          self.close();
+          if (sessionId)
+            SessionReplay.open(sessionId);
+        };
+      });
       const notesInput = overlay.querySelector("#dash-session-notes");
       const notesCount = overlay.querySelector("#dash-notes-count");
       const notesSave = overlay.querySelector("#dash-notes-save");
@@ -9357,6 +9726,32 @@ canvas#equity-canvas {
       ctx.lineTo(padding, h - padding);
       ctx.fillStyle = grad;
       ctx.fill();
+    },
+    renderSessionHistory() {
+      const history = Store.getActiveSessionHistory() || [];
+      const recent = history.slice(-10).reverse();
+      if (recent.length === 0) {
+        return '<div class="dash-history-empty">No past sessions</div>';
+      }
+      return recent.map((s) => {
+        const date = new Date(s.startTime || s.ts || 0);
+        const dateStr = date.toLocaleDateString([], { month: "short", day: "numeric" });
+        const timeStr = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        const pnl = s.realized || 0;
+        const tradeCount = (s.trades || []).length;
+        const pnlColor = pnl >= 0 ? "#10b981" : "#ef4444";
+        const pnlStr = (pnl >= 0 ? "+" : "") + pnl.toFixed(4);
+        return `
+            <div class="dash-history-row">
+                <div>
+                    <div class="dash-history-date">${dateStr} ${timeStr}</div>
+                    <div class="dash-history-trades">${tradeCount} trades</div>
+                </div>
+                <div class="dash-history-pnl" style="color:${pnlColor};">${pnlStr} SOL</div>
+                <button class="dash-history-replay" data-act="replay-history" data-session-id="${s.id}">Replay</button>
+            </div>
+        `;
+      }).join("");
     }
   };
 
@@ -10239,7 +10634,6 @@ canvas#equity-canvas {
     return Math.max(min, Math.min(max, v));
   }
   var positionsExpanded = false;
-  var sessionHistoryExpanded = false;
   var PnlHud = {
     mountPnlHud(makeDraggable) {
       const container = OverlayManager.getContainer();
@@ -10324,16 +10718,6 @@ canvas#equity-canvas {
                 <div class="positionsList" style="display:none;" data-k="positionsList"></div>
               </div>
               <div class="tradeList" style="display:none;"></div>
-              <div class="sessionHistoryPanel">
-                <div class="positionsHeader" data-act="toggleSessionHistory">
-                  <div class="positionsTitle">
-                    <span>SESSION HISTORY</span>
-                    <span class="positionCount" data-k="sessionHistoryCount">(0)</span>
-                  </div>
-                  <span class="positionsToggle sessionHistoryToggle">\u25BC</span>
-                </div>
-                <div class="sessionHistoryList" style="display:none;" data-k="sessionHistoryList"></div>
-              </div>
             </div>
          `;
       this.bindPnlDrag(root, makeDraggable);
@@ -10426,15 +10810,6 @@ canvas#equity-canvas {
         if (act === "togglePositions") {
           positionsExpanded = !positionsExpanded;
           this.updatePositionsPanel(root);
-        }
-        if (act === "toggleSessionHistory") {
-          sessionHistoryExpanded = !sessionHistoryExpanded;
-          this.updateSessionHistoryPanel(root);
-        }
-        if (act === "replaySession") {
-          const sessionId = actEl.getAttribute("data-session-id");
-          if (sessionId)
-            SessionReplay.open(sessionId);
         }
         if (act === "quickSell") {
           const mint = actEl.getAttribute("data-mint");
@@ -10744,54 +11119,6 @@ canvas#equity-canvas {
         return p.toFixed(6);
       const leadingZeros = Math.floor(-Math.log10(p));
       return p.toFixed(leadingZeros + 3);
-    },
-    updateSessionHistoryPanel(root) {
-      if (!root)
-        root = OverlayManager.getContainer().querySelector("#" + IDS.pnlHud);
-      if (!root)
-        return;
-      const history = Store.getActiveSessionHistory() || [];
-      const recent = history.slice(-10).reverse();
-      const listEl = root.querySelector('[data-k="sessionHistoryList"]');
-      const toggleIcon = root.querySelector(".sessionHistoryToggle");
-      const countEl = root.querySelector('[data-k="sessionHistoryCount"]');
-      if (countEl)
-        countEl.textContent = `(${history.length})`;
-      if (toggleIcon) {
-        toggleIcon.textContent = sessionHistoryExpanded ? "\u25B2" : "\u25BC";
-      }
-      if (listEl) {
-        listEl.style.display = sessionHistoryExpanded ? "block" : "none";
-        if (sessionHistoryExpanded) {
-          if (recent.length === 0) {
-            listEl.innerHTML = '<div class="noPositions">No past sessions</div>';
-          } else {
-            listEl.innerHTML = recent.map((s) => {
-              const date = new Date(s.startTime || s.ts || 0);
-              const dateStr = date.toLocaleDateString([], { month: "short", day: "numeric" });
-              const timeStr = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-              const pnl = s.realized || 0;
-              const tradeCount = (s.trades || []).length;
-              const pnlColor = pnl >= 0 ? "#10b981" : "#ef4444";
-              const pnlStr = (pnl >= 0 ? "+" : "") + pnl.toFixed(4);
-              return `
-                            <div class="positionRow" style="align-items:center;">
-                                <div class="positionInfo" style="flex:1;">
-                                    <div class="positionSymbol" style="font-size:11px;">${dateStr} ${timeStr}</div>
-                                    <div class="positionDetails">
-                                        <span class="positionQty">${tradeCount} trades</span>
-                                    </div>
-                                </div>
-                                <div style="text-align:right;margin-right:8px;">
-                                    <div style="font-size:12px;font-weight:700;color:${pnlColor};">${pnlStr} SOL</div>
-                                </div>
-                                <button class="qSellBtn" data-act="replaySession" data-session-id="${s.id}" style="background:rgba(139,92,246,0.15);color:#a78bfa;border-color:rgba(139,92,246,0.3);font-size:10px;">Replay</button>
-                            </div>
-                        `;
-            }).join("");
-          }
-        }
-      }
     },
     async executeQuickSell(mint, pct) {
       const pos = Store.state.positions[mint];
@@ -12044,7 +12371,7 @@ canvas#equity-canvas {
         }
         if (act === "toggle-plan") {
           this.tradePlanExpanded = !this.tradePlanExpanded;
-          this.mountBuyHud();
+          this.mountBuyHud(null, true);
         }
         if (act === "toggle-market-context") {
           this.marketContextExpanded = !this.marketContextExpanded;
@@ -12255,20 +12582,11 @@ canvas#equity-canvas {
                         <div class="plan-collapse-arrow" data-act="toggle-plan">${ICONS.CHEVRON_UP}</div>
                     </div>
                 </div>
-                <div class="plan-row">
-                    <div class="plan-field">
-                        <label class="plan-label">Stop Loss</label>
-                        <div class="plan-input-wrap">
-                            <input type="text" class="plan-input" data-k="stopLoss" placeholder="0.00" value="${plan.stopLoss || ""}">
-                            <span class="plan-unit">USD</span>
-                        </div>
-                    </div>
-                    <div class="plan-field">
-                        <label class="plan-label">Target</label>
-                        <div class="plan-input-wrap">
-                            <input type="text" class="plan-input" data-k="target" placeholder="0.00" value="${plan.target || ""}">
-                            <span class="plan-unit">USD</span>
-                        </div>
+                <div class="plan-field full">
+                    <label class="plan-label">Target</label>
+                    <div class="plan-input-wrap">
+                        <input type="text" class="plan-input" data-k="target" placeholder="50K" value="${plan.target || ""}">
+                        <span class="plan-unit">MC</span>
                     </div>
                 </div>
                 <div class="plan-field full">
@@ -12281,15 +12599,10 @@ canvas#equity-canvas {
     // Save pending plan values as user types
     savePendingPlan(root) {
       if (!Store.state.pendingPlan) {
-        Store.state.pendingPlan = { stopLoss: null, target: null, thesis: "", maxRiskPct: null };
+        Store.state.pendingPlan = { target: null, thesis: "" };
       }
-      const stopEl = root.querySelector('[data-k="stopLoss"]');
       const targetEl = root.querySelector('[data-k="target"]');
       const thesisEl = root.querySelector('[data-k="thesis"]');
-      if (stopEl) {
-        const val = parseFloat(stopEl.value);
-        Store.state.pendingPlan.stopLoss = isNaN(val) ? null : val;
-      }
       if (targetEl) {
         const val = parseFloat(targetEl.value);
         Store.state.pendingPlan.target = isNaN(val) ? null : val;
@@ -12301,21 +12614,16 @@ canvas#equity-canvas {
     // Get and clear pending plan for trade execution
     consumePendingPlan() {
       const plan = Store.state.pendingPlan || {};
-      Store.state.pendingPlan = { stopLoss: null, target: null, thesis: "", maxRiskPct: null };
+      Store.state.pendingPlan = { target: null, thesis: "" };
       return {
-        plannedStop: plan.stopLoss || null,
         plannedTarget: plan.target || null,
-        entryThesis: plan.thesis || "",
-        riskDefined: !!(plan.stopLoss && plan.stopLoss > 0)
+        entryThesis: plan.thesis || ""
       };
     },
     // Clear plan input fields in the UI
     clearPlanFields(root) {
-      const stopEl = root.querySelector('[data-k="stopLoss"]');
       const targetEl = root.querySelector('[data-k="target"]');
       const thesisEl = root.querySelector('[data-k="thesis"]');
-      if (stopEl)
-        stopEl.value = "";
       if (targetEl)
         targetEl.value = "";
       if (thesisEl)

@@ -449,6 +449,7 @@ export const BUY_HUD_CSS = `
     border-radius: 6px;
     overflow: hidden;
     transition: border-color 0.2s;
+    min-width: 0;
 }
 
 #${IDS.buyHud} .plan-input-wrap:focus-within {

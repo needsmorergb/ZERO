@@ -382,6 +382,32 @@ canvas#equity-canvas {
     gap: 8px;
 }
 
+/* SESSION HISTORY */
+.dash-history-row {
+    display: flex;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+.dash-history-row:last-child { border-bottom: none; }
+.dash-history-date { font-size: 11px; color: #94a3b8; font-weight: 600; }
+.dash-history-trades { font-size: 10px; color: #64748b; }
+.dash-history-pnl { font-size: 12px; font-weight: 700; text-align: right; flex: 1; }
+.dash-history-replay {
+    font-size: 10px;
+    padding: 4px 10px;
+    background: rgba(139, 92, 246, 0.15);
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    border-radius: 4px;
+    color: #a78bfa;
+    cursor: pointer;
+    font-weight: 600;
+    margin-left: 8px;
+    transition: all 0.15s;
+}
+.dash-history-replay:hover { background: rgba(139, 92, 246, 0.25); }
+.dash-history-empty { text-align: center; color: #64748b; font-size: 11px; padding: 12px 0; font-style: italic; }
+
 /* SHARED UTILITIES */
 .win { color: #10b981; }
 .loss { color: #ef4444; }

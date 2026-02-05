@@ -2,6 +2,7 @@ import { Store } from "../store.js";
 import { OverlayManager } from "./overlay.js";
 import { FeatureManager } from "../featureManager.js";
 import { License } from "../license.js";
+import { Trial } from "../trial.js";
 import { ICONS } from "./icons.js";
 
 export const Paywall = {
@@ -119,6 +120,24 @@ export const Paywall = {
                     <div class="paywall-key-status" style="margin-top:8px; font-size:12px; min-height:18px;"></div>
                 </div>
 
+                ${!Trial.hasBeenUsed() ? `
+                <div class="paywall-promo-section" style="margin-top:12px; border-top:1px solid rgba(255,255,255,0.05); padding-top:12px;">
+                    <button class="paywall-btn text" data-act="show-promo-input" style="background:none; border:none; color:#f59e0b; font-size:12px; cursor:pointer; padding:6px; width:100%; text-align:center;">
+                        Have a promo code?
+                    </button>
+                    <div class="paywall-promo-input-section" style="display:none; margin-top:8px;">
+                        <div style="display:flex; gap:8px;">
+                            <input type="text" class="paywall-promo-code-input" placeholder="Enter promo code" maxlength="32"
+                                style="flex:1; background:rgba(255,255,255,0.05); border:1px solid rgba(245,158,11,0.2); border-radius:6px; padding:10px 12px; color:#f8fafc; font-size:13px; outline:none; text-transform:uppercase;">
+                            <button class="paywall-btn" data-act="redeem-promo" style="background:rgba(245,158,11,0.15); border:1px solid rgba(245,158,11,0.3); color:#fbbf24; padding:10px 16px; border-radius:6px; font-weight:600; font-size:13px; cursor:pointer; white-space:nowrap;">
+                                Redeem
+                            </button>
+                        </div>
+                        <div class="paywall-promo-status" style="margin-top:8px; font-size:12px; min-height:18px;"></div>
+                    </div>
+                </div>
+                ` : ""}
+
                 <div class="paywall-footer">
                     <p style="font-size:11px; color:#475569; margin-top:12px;">Manage your membership at whop.com/orders</p>
                 </div>
@@ -141,6 +160,68 @@ export const Paywall = {
           keySection.style.display = keySection.style.display === "none" ? "block" : "none";
           const input = keySection.querySelector(".paywall-license-input");
           if (input) input.focus();
+        }
+      }
+
+      if (e.target.closest('[data-act="show-promo-input"]')) {
+        const promoSection = overlay.querySelector(".paywall-promo-input-section");
+        if (promoSection) {
+          promoSection.style.display = promoSection.style.display === "none" ? "block" : "none";
+          const input = promoSection.querySelector(".paywall-promo-code-input");
+          if (input) input.focus();
+        }
+      }
+
+      if (e.target.closest('[data-act="redeem-promo"]')) {
+        const input = overlay.querySelector(".paywall-promo-code-input");
+        const statusEl = overlay.querySelector(".paywall-promo-status");
+        const code = input?.value?.trim();
+        if (!code) {
+          if (statusEl) {
+            statusEl.textContent = "Please enter a promo code";
+            statusEl.style.color = "#f59e0b";
+          }
+          return;
+        }
+
+        const btn = e.target.closest('[data-act="redeem-promo"]');
+        const origText = btn.textContent;
+        btn.textContent = "Redeeming...";
+        btn.disabled = true;
+        if (statusEl) {
+          statusEl.textContent = "Validating promo code...";
+          statusEl.style.color = "#94a3b8";
+        }
+
+        const result = await Trial.redeem(code);
+
+        btn.textContent = origText;
+        btn.disabled = false;
+
+        if (result.ok) {
+          if (statusEl) {
+            statusEl.textContent = `Elite Trial Activated — ${result.sessions} Sessions`;
+            statusEl.style.color = "#10b981";
+          }
+          this._showSuccessToast(`Elite Trial — ${result.sessions} Sessions`);
+          setTimeout(() => overlay.remove(), 1500);
+        } else {
+          const errorMsg =
+            result.error === "invalid_code"
+              ? "Invalid promo code"
+              : result.error === "already_used"
+                ? "You've already used a trial"
+                : result.error === "code_expired"
+                  ? "This promo code has expired"
+                  : result.error === "code_exhausted"
+                    ? "This promo code has been fully redeemed"
+                    : result.error === "code_inactive"
+                      ? "This promo code is no longer active"
+                      : "Could not verify code — check your connection";
+          if (statusEl) {
+            statusEl.textContent = errorMsg;
+            statusEl.style.color = "#ef4444";
+          }
         }
       }
 
@@ -229,5 +310,162 @@ export const Paywall = {
     if (!FeatureManager) return false;
     const flags = FeatureManager.resolveFlags(Store.state, featureName);
     return flags.gated;
+  },
+
+  showTrialExpiredModal() {
+    const root = OverlayManager.getShadowRoot();
+
+    // Remove existing
+    const existing = root.getElementById("trial-expired-modal-overlay");
+    if (existing) existing.remove();
+
+    const overlay = document.createElement("div");
+    overlay.id = "trial-expired-modal-overlay";
+    overlay.className = "paywall-modal-overlay";
+
+    overlay.innerHTML = `
+            <div class="paywall-modal">
+                <div class="paywall-header">
+                    <div class="paywall-badge">
+                        ${ICONS.ZERO}
+                        <span>TRIAL COMPLETE</span>
+                    </div>
+                    <button class="paywall-close" data-act="close">${ICONS.X}</button>
+                </div>
+
+                <div class="paywall-hero">
+                    <h2 class="paywall-title">Your Elite Trial Has Ended</h2>
+                    <p class="paywall-subtitle">
+                        You've completed all ${Store.state?.settings?.trial?.sessionsLimit || 5} trial sessions.
+                        If you enjoyed advanced analytics, discipline scoring, and tilt detection,
+                        consider upgrading to keep all premium features.
+                    </p>
+                </div>
+
+                <div class="paywall-features">
+                    <div class="feature-item">
+                        <svg class="feature-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                        <div class="feature-text">
+                            <div class="feature-name">Trade Planning</div>
+                            <div class="feature-desc">Stop losses, targets, and thesis capture</div>
+                        </div>
+                    </div>
+                    <div class="feature-item">
+                        <svg class="feature-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"></path><path d="m9 12 2 2 4-4"></path></svg>
+                        <div class="feature-text">
+                            <div class="feature-name">Discipline Scoring</div>
+                            <div class="feature-desc">Track how well you follow your rules</div>
+                        </div>
+                    </div>
+                    <div class="feature-item">
+                        <svg class="feature-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                        <div class="feature-text">
+                            <div class="feature-name">Tilt Detection</div>
+                            <div class="feature-desc">Real-time alerts for emotional trading</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="paywall-pricing" style="text-align:center; margin:16px 0 8px; font-size:12px; color:#94a3b8; line-height:1.6;">
+                    <span style="color:#f8fafc; font-weight:600;">$19/mo</span> &middot;
+                    <span style="color:#f8fafc; font-weight:600;">$149/yr</span>
+                </div>
+
+                <div class="paywall-actions" style="display:flex; flex-direction:column; gap:8px;">
+                    <button class="paywall-btn primary" data-act="purchase" style="background:linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%); color:white; border:none; padding:12px 20px; border-radius:8px; font-weight:700; font-size:14px; cursor:pointer;">
+                        Get Elite on Whop
+                    </button>
+                    <button class="paywall-btn text" data-act="show-key-input" style="background:none; border:none; color:#8b5cf6; font-size:12px; cursor:pointer; padding:6px;">
+                        I have a license key
+                    </button>
+                </div>
+
+                <div class="paywall-key-section" style="display:none; margin-top:12px;">
+                    <div style="display:flex; gap:8px;">
+                        <input type="text" class="paywall-license-input" placeholder="Enter license key (mem_xxx...)" maxlength="64"
+                            style="flex:1; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:6px; padding:10px 12px; color:#f8fafc; font-size:13px; outline:none;">
+                        <button class="paywall-btn" data-act="activate" style="background:rgba(139,92,246,0.15); border:1px solid rgba(139,92,246,0.3); color:#a78bfa; padding:10px 16px; border-radius:6px; font-weight:600; font-size:13px; cursor:pointer; white-space:nowrap;">
+                            Activate
+                        </button>
+                    </div>
+                    <div class="paywall-key-status" style="margin-top:8px; font-size:12px; min-height:18px;"></div>
+                </div>
+
+                <div class="paywall-footer">
+                    <p style="font-size:11px; color:#475569; margin-top:12px;">Your trading data is preserved. Elite unlocks deeper analysis.</p>
+                </div>
+            </div>
+        `;
+
+    // Event handlers (same pattern as upgrade modal)
+    overlay.addEventListener("click", async (e) => {
+      if (e.target === overlay || e.target.closest('[data-act="close"]')) {
+        overlay.remove();
+      }
+
+      if (e.target.closest('[data-act="purchase"]')) {
+        License.openPurchasePage();
+      }
+
+      if (e.target.closest('[data-act="show-key-input"]')) {
+        const keySection = overlay.querySelector(".paywall-key-section");
+        if (keySection) {
+          keySection.style.display = keySection.style.display === "none" ? "block" : "none";
+          const input = keySection.querySelector(".paywall-license-input");
+          if (input) input.focus();
+        }
+      }
+
+      if (e.target.closest('[data-act="activate"]')) {
+        const input = overlay.querySelector(".paywall-license-input");
+        const statusEl = overlay.querySelector(".paywall-key-status");
+        const key = input?.value?.trim();
+        if (!key) {
+          if (statusEl) {
+            statusEl.textContent = "Please enter a license key";
+            statusEl.style.color = "#f59e0b";
+          }
+          return;
+        }
+
+        const btn = e.target.closest('[data-act="activate"]');
+        const origText = btn.textContent;
+        btn.textContent = "Verifying...";
+        btn.disabled = true;
+        if (statusEl) {
+          statusEl.textContent = "Verifying your license...";
+          statusEl.style.color = "#94a3b8";
+        }
+
+        const result = await License.activate(key);
+
+        btn.textContent = origText;
+        btn.disabled = false;
+
+        if (result.ok) {
+          if (statusEl) {
+            statusEl.textContent = "Elite activated!";
+            statusEl.style.color = "#10b981";
+          }
+          this._showSuccessToast(License.getPlanLabel());
+          setTimeout(() => overlay.remove(), 1500);
+        } else {
+          const errorMsg =
+            result.error === "invalid_key"
+              ? "Invalid license key"
+              : result.error === "invalid_product"
+                ? "Key not for this product"
+                : result.error === "membership_inactive"
+                  ? "Membership is not active"
+                  : "Verification failed — try again";
+          if (statusEl) {
+            statusEl.textContent = errorMsg;
+            statusEl.style.color = "#ef4444";
+          }
+        }
+      }
+    });
+
+    root.appendChild(overlay);
   },
 };

@@ -276,7 +276,7 @@ export const BuyHud = {
             }
             if (act === 'toggle-plan') {
                 this.tradePlanExpanded = !this.tradePlanExpanded;
-                this.mountBuyHud();
+                this.mountBuyHud(null, true);
             }
             if (act === 'toggle-market-context') {
                 this.marketContextExpanded = !this.marketContextExpanded;
@@ -509,20 +509,11 @@ export const BuyHud = {
                         <div class="plan-collapse-arrow" data-act="toggle-plan">${ICONS.CHEVRON_UP}</div>
                     </div>
                 </div>
-                <div class="plan-row">
-                    <div class="plan-field">
-                        <label class="plan-label">Stop Loss</label>
-                        <div class="plan-input-wrap">
-                            <input type="text" class="plan-input" data-k="stopLoss" placeholder="0.00" value="${plan.stopLoss || ''}">
-                            <span class="plan-unit">USD</span>
-                        </div>
-                    </div>
-                    <div class="plan-field">
-                        <label class="plan-label">Target</label>
-                        <div class="plan-input-wrap">
-                            <input type="text" class="plan-input" data-k="target" placeholder="0.00" value="${plan.target || ''}">
-                            <span class="plan-unit">USD</span>
-                        </div>
+                <div class="plan-field full">
+                    <label class="plan-label">Target</label>
+                    <div class="plan-input-wrap">
+                        <input type="text" class="plan-input" data-k="target" placeholder="50K" value="${plan.target || ''}">
+                        <span class="plan-unit">MC</span>
                     </div>
                 </div>
                 <div class="plan-field full">
@@ -536,17 +527,12 @@ export const BuyHud = {
     // Save pending plan values as user types
     savePendingPlan(root) {
         if (!Store.state.pendingPlan) {
-            Store.state.pendingPlan = { stopLoss: null, target: null, thesis: '', maxRiskPct: null };
+            Store.state.pendingPlan = { target: null, thesis: '' };
         }
 
-        const stopEl = root.querySelector('[data-k="stopLoss"]');
         const targetEl = root.querySelector('[data-k="target"]');
         const thesisEl = root.querySelector('[data-k="thesis"]');
 
-        if (stopEl) {
-            const val = parseFloat(stopEl.value);
-            Store.state.pendingPlan.stopLoss = isNaN(val) ? null : val;
-        }
         if (targetEl) {
             const val = parseFloat(targetEl.value);
             Store.state.pendingPlan.target = isNaN(val) ? null : val;
@@ -560,22 +546,18 @@ export const BuyHud = {
     consumePendingPlan() {
         const plan = Store.state.pendingPlan || {};
         // Reset after consuming
-        Store.state.pendingPlan = { stopLoss: null, target: null, thesis: '', maxRiskPct: null };
+        Store.state.pendingPlan = { target: null, thesis: '' };
         return {
-            plannedStop: plan.stopLoss || null,
             plannedTarget: plan.target || null,
             entryThesis: plan.thesis || '',
-            riskDefined: !!(plan.stopLoss && plan.stopLoss > 0)
         };
     },
 
     // Clear plan input fields in the UI
     clearPlanFields(root) {
-        const stopEl = root.querySelector('[data-k="stopLoss"]');
         const targetEl = root.querySelector('[data-k="target"]');
         const thesisEl = root.querySelector('[data-k="thesis"]');
 
-        if (stopEl) stopEl.value = '';
         if (targetEl) targetEl.value = '';
         if (thesisEl) thesisEl.value = '';
     },

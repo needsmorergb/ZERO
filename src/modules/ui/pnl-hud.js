@@ -11,14 +11,11 @@ import { Dashboard } from './dashboard.js';
 import { Insights } from './insights.js';
 import { SettingsPanel } from './settings-panel.js';
 import { Market } from '../core/market.js';
-import { SessionReplay } from './session-replay.js';
-
 function px(n) { return n + 'px'; }
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 
 // Positions panel state
 let positionsExpanded = false;
-let sessionHistoryExpanded = false;
 
 export const PnlHud = {
     mountPnlHud(makeDraggable) {
@@ -110,16 +107,6 @@ export const PnlHud = {
                 <div class="positionsList" style="display:none;" data-k="positionsList"></div>
               </div>
               <div class="tradeList" style="display:none;"></div>
-              <div class="sessionHistoryPanel">
-                <div class="positionsHeader" data-act="toggleSessionHistory">
-                  <div class="positionsTitle">
-                    <span>SESSION HISTORY</span>
-                    <span class="positionCount" data-k="sessionHistoryCount">(0)</span>
-                  </div>
-                  <span class="positionsToggle sessionHistoryToggle">▼</span>
-                </div>
-                <div class="sessionHistoryList" style="display:none;" data-k="sessionHistoryList"></div>
-              </div>
             </div>
          `;
 
@@ -220,14 +207,6 @@ export const PnlHud = {
             if (act === 'togglePositions') {
                 positionsExpanded = !positionsExpanded;
                 this.updatePositionsPanel(root);
-            }
-            if (act === 'toggleSessionHistory') {
-                sessionHistoryExpanded = !sessionHistoryExpanded;
-                this.updateSessionHistoryPanel(root);
-            }
-            if (act === 'replaySession') {
-                const sessionId = actEl.getAttribute('data-session-id');
-                if (sessionId) SessionReplay.open(sessionId);
             }
             if (act === 'quickSell') {
                 const mint = actEl.getAttribute('data-mint');
@@ -588,55 +567,6 @@ export const PnlHud = {
         // For micro-cap tokens (e.g. $0.0000418), show full decimal instead of scientific notation
         const leadingZeros = Math.floor(-Math.log10(p));
         return p.toFixed(leadingZeros + 3);
-    },
-
-    updateSessionHistoryPanel(root) {
-        if (!root) root = OverlayManager.getContainer().querySelector('#' + IDS.pnlHud);
-        if (!root) return;
-
-        const history = Store.getActiveSessionHistory() || [];
-        const recent = history.slice(-10).reverse();
-        const listEl = root.querySelector('[data-k="sessionHistoryList"]');
-        const toggleIcon = root.querySelector('.sessionHistoryToggle');
-        const countEl = root.querySelector('[data-k="sessionHistoryCount"]');
-
-        if (countEl) countEl.textContent = `(${history.length})`;
-        if (toggleIcon) {
-            toggleIcon.textContent = sessionHistoryExpanded ? '▲' : '▼';
-        }
-
-        if (listEl) {
-            listEl.style.display = sessionHistoryExpanded ? 'block' : 'none';
-            if (sessionHistoryExpanded) {
-                if (recent.length === 0) {
-                    listEl.innerHTML = '<div class="noPositions">No past sessions</div>';
-                } else {
-                    listEl.innerHTML = recent.map(s => {
-                        const date = new Date(s.startTime || s.ts || 0);
-                        const dateStr = date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-                        const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                        const pnl = s.realized || 0;
-                        const tradeCount = (s.trades || []).length;
-                        const pnlColor = pnl >= 0 ? '#10b981' : '#ef4444';
-                        const pnlStr = (pnl >= 0 ? '+' : '') + pnl.toFixed(4);
-                        return `
-                            <div class="positionRow" style="align-items:center;">
-                                <div class="positionInfo" style="flex:1;">
-                                    <div class="positionSymbol" style="font-size:11px;">${dateStr} ${timeStr}</div>
-                                    <div class="positionDetails">
-                                        <span class="positionQty">${tradeCount} trades</span>
-                                    </div>
-                                </div>
-                                <div style="text-align:right;margin-right:8px;">
-                                    <div style="font-size:12px;font-weight:700;color:${pnlColor};">${pnlStr} SOL</div>
-                                </div>
-                                <button class="qSellBtn" data-act="replaySession" data-session-id="${s.id}" style="background:rgba(139,92,246,0.15);color:#a78bfa;border-color:rgba(139,92,246,0.3);font-size:10px;">Replay</button>
-                            </div>
-                        `;
-                    }).join('');
-                }
-            }
-        }
     },
 
     async executeQuickSell(mint, pct) {

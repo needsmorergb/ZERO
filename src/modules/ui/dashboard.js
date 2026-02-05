@@ -307,6 +307,13 @@ export const Dashboard = {
                     </div>
                     ` : ''}
 
+                    <div class="dash-card" style="margin:0 20px 12px;">
+                        <div class="dash-section-label">SESSION HISTORY</div>
+                        <div id="dash-session-history-list">
+                            ${this.renderSessionHistory()}
+                        </div>
+                    </div>
+
                     <div class="dash-elite-section">
                         <div class="dash-elite-toggle" id="dash-elite-toggle">
                             <div class="dash-elite-toggle-left">
@@ -388,7 +395,7 @@ export const Dashboard = {
       };
     }
 
-    // Replay button
+    // Replay button (current session)
     const replayBtn = overlay.querySelector('#dashboard-replay-btn');
     if (replayBtn) {
       replayBtn.onclick = (e) => {
@@ -398,6 +405,17 @@ export const Dashboard = {
         SessionReplay.open();
       };
     }
+
+    // Session history replay buttons
+    overlay.querySelectorAll('[data-act="replay-history"]').forEach(btn => {
+      btn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const sessionId = btn.getAttribute('data-session-id');
+        self.close();
+        if (sessionId) SessionReplay.open(sessionId);
+      };
+    });
 
     // Session notes
     const notesInput = overlay.querySelector("#dash-session-notes");
@@ -498,5 +516,34 @@ export const Dashboard = {
     ctx.lineTo(padding, h - padding);
     ctx.fillStyle = grad;
     ctx.fill();
+  },
+
+  renderSessionHistory() {
+    const history = Store.getActiveSessionHistory() || [];
+    const recent = history.slice(-10).reverse();
+
+    if (recent.length === 0) {
+        return '<div class="dash-history-empty">No past sessions</div>';
+    }
+
+    return recent.map(s => {
+        const date = new Date(s.startTime || s.ts || 0);
+        const dateStr = date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+        const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const pnl = s.realized || 0;
+        const tradeCount = (s.trades || []).length;
+        const pnlColor = pnl >= 0 ? '#10b981' : '#ef4444';
+        const pnlStr = (pnl >= 0 ? '+' : '') + pnl.toFixed(4);
+        return `
+            <div class="dash-history-row">
+                <div>
+                    <div class="dash-history-date">${dateStr} ${timeStr}</div>
+                    <div class="dash-history-trades">${tradeCount} trades</div>
+                </div>
+                <div class="dash-history-pnl" style="color:${pnlColor};">${pnlStr} SOL</div>
+                <button class="dash-history-replay" data-act="replay-history" data-session-id="${s.id}">Replay</button>
+            </div>
+        `;
+    }).join('');
   },
 };
