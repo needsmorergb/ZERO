@@ -124,11 +124,64 @@ Sends `SHADOW_TRADE_DETECTED` via `window.postMessage` for the content script to
 - When editing `view-model.js`, always handle all FieldStatus variants (ok, pending, error, skipped)
 - For authority fields (`mintAuthority`, `freezeAuthority`), distinguish `null` (revoked) from `undefined` (not fetched) — they have different display meanings
 
+## Behavioral Alert System
+
+Alerts are stored in `session.activeAlerts` and rendered by `Banner.updateAlerts()`. When a DOM alert element is dismissed (close button or 5s auto-timeout), it MUST be spliced from `session.activeAlerts` — otherwise `updateAlerts()` will recreate it on the next cycle.
+
+- `addAlert(state, type, message)` pushes to `session.activeAlerts`, keeps last 3
+- Detection functions (e.g., `monitorProfitOverstay`) should guard against re-firing with per-position/per-behavior flags
+- `monitorProfitOverstay` skips closed positions (`qtyTokens <= 0`)
+
+## Trade Plan
+
+The Trade Plan section in BuyHud has a single **Target** field using **Market Cap (MC)** as the unit. Stop Loss was removed — MC-based targets are more practical for Solana memecoins since traders reference market cap on charts.
+
+- `pendingPlan` state: `{ target, thesis }`
+- `consumePendingPlan()` returns `{ plannedTarget, entryThesis }`
+- Legacy trades may still have `plannedStop` / `riskDefined` — analytics code null-guards these
+
+## Session History
+
+Session History lives in the **Dashboard modal** (Stats tab), not in the PNL HUD. It shows the last 10 sessions with date, trade count, PnL, and a Replay button that opens `SessionReplay`.
+
 ## When Editing
 
 - After changing any source in `src/`, run `npm run build` and verify the bundle diff is reasonable
 - Test on both Axiom and Padre — they have different DOM structures and interception patterns
 - Check the extension popup still loads correctly after manifest changes
+
+## Worktree Layout
+
+Parallel development uses git worktrees in `D:\apaul\Documents\zero-worktrees\`. Each worktree gets its own Claude session (open folder in VS Code, then launch Claude Code).
+
+| Worktree | Branch | Purpose |
+|----------|--------|---------|
+| `sol-paper-ext-beta/` | `main` | Primary — releases, CLAUDE.md, shared config |
+| `tree-Chrome-release` | `prod` | Chrome Web Store release builds |
+| `tree-dev-tab` | `feature/dev-tab-improvement` | DEV tab UI/signals work |
+| `tree-feature-ideas` | `feature-ideas` | Experimental features |
+| `tree-pnl-logic` | `upgrades` | PnL calculation and trade ingestion |
+| `tree-whop-integration` | `feature/whop` | Whop OAuth sign-in |
+| `tree-promo-ideas` | `promo/ideas` | Marketing and promotional content |
+| `tree-bugs` | `fix/bugs` | Bug fixes |
+
+### Worktree commands (PowerShell)
+```powershell
+# List all worktrees
+git worktree list
+
+# Create new worktree
+git worktree add "D:\apaul\Documents\zero-worktrees\tree-NAME" -b "branch/name"
+
+# Remove worktree
+git worktree remove "D:\apaul\Documents\zero-worktrees\tree-NAME"
+
+# Open Claude in a worktree (new VS Code window → File > Open Folder → launch Claude Code)
+```
+
+### Branch naming rules
+- Do NOT create branches that are sub-paths of existing branches (e.g., `upgrades/bugs` fails if `upgrades` exists)
+- Use flat names or separate prefixes: `fix/bugs`, `feature/new-thing`, `promo/ideas`
 
 ## Subagent Usage
 
