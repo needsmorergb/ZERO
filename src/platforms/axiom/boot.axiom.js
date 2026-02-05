@@ -12,7 +12,7 @@ import { TokenContextResolver } from '../../modules/core/token-context.js';
 (async () => {
     "use strict";
     const PLATFORM = 'Axiom';
-    Logger.info(`ZERØ v1.11.14 (${PLATFORM} Platform)`);
+    Logger.info(`ZERØ v2.0.0 (${PLATFORM} Platform)`);
     TokenContextResolver.init(PLATFORM);
 
     // Initialize Store

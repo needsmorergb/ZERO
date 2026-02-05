@@ -153,6 +153,13 @@ export const BuyHud = {
     },
 
     setupBuyHudInteractions(root) {
+        // Prevent key events from bubbling to the host page (e.g. platform hotkeys)
+        root.addEventListener('keydown', (e) => {
+            if (e.target.matches('input, select, textarea')) {
+                e.stopPropagation();
+            }
+        });
+
         root.addEventListener('click', async (e) => {
             const t = e.target;
             if (t.matches('input') || t.matches('select')) return;

@@ -80,7 +80,7 @@ const DEFAULTS = {
     eventLog: [], // { ts, type, category, message, data }
     // Categories: TRADE, ALERT, DISCIPLINE, SYSTEM, MILESTONE
     schemaVersion: 2,
-    version: '1.11.8'
+    version: '2.0.0'
 };
 
 // Helper utils
@@ -257,11 +257,6 @@ export const Store = {
             // Build-time Elite override for dev testing
             if (DEV_FORCE_ELITE) {
                 this.state.settings.tier = 'elite';
-            }
-
-            // Elite users don't need Analysis — upgrade to Shadow
-            if (this.state.settings.tier === 'elite' && this.state.settings.tradingMode === 'analysis') {
-                this.state.settings.tradingMode = 'shadow';
             }
 
             // Migrate old ENTRY/EXIT side values to BUY/SELL

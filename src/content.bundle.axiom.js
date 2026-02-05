@@ -131,7 +131,7 @@
         // { ts, type, category, message, data }
         // Categories: TRADE, ALERT, DISCIPLINE, SYSTEM, MILESTONE
         schemaVersion: 2,
-        version: "1.11.8"
+        version: "2.0.0"
       };
       Store = {
         state: null,
@@ -261,9 +261,6 @@
             }
             if (DEV_FORCE_ELITE) {
               this.state.settings.tier = "elite";
-            }
-            if (this.state.settings.tier === "elite" && this.state.settings.tradingMode === "analysis") {
-              this.state.settings.tradingMode = "shadow";
             }
             if (this.state.fills) {
               this.state.fills.forEach((f) => {
@@ -7883,6 +7880,7 @@ canvas#equity-canvas {
       overlay.className = "confirm-modal-overlay zero-settings-overlay";
       const currentMode = Store.state.settings.tradingMode || "paper";
       const isElite = FeatureManager.isElite(Store.state);
+      const displayMode = currentMode === "paper" && isElite ? "paper-elite" : currentMode;
       const diagState = DiagnosticsStore.state || {};
       const isAutoSend = diagState.settings?.privacy?.autoSendDiagnostics || false;
       const lastUpload = diagState.settings?.diagnostics?.lastUploadedEventTs || 0;
@@ -7899,31 +7897,8 @@ canvas#equity-canvas {
                 <div class="settings-section-title">Trading Mode</div>
 
                 <div class="setting-row" style="flex-direction:column; align-items:stretch; gap:8px;">
-                    ${isElite ? `
-                    <label class="mode-option ${currentMode === "paper" ? "active" : ""}" data-mode="paper" style="display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; cursor:pointer; border:1px solid ${currentMode === "paper" ? "rgba(20,184,166,0.3)" : "rgba(255,255,255,0.06)"}; background:${currentMode === "paper" ? "rgba(20,184,166,0.06)" : "transparent"};">
-                        <input type="radio" name="tradingMode" value="paper" ${currentMode === "paper" ? "checked" : ""} style="accent-color:#14b8a6;">
-                        <div style="flex:1;">
-                            <div style="font-size:12px; font-weight:600; color:#f8fafc; display:flex; align-items:center; gap:6px;">
-                                ${ICONS.MODE_PAPER} Paper Mode
-                                <span style="font-size:9px; padding:1px 6px; border-radius:3px; background:rgba(20,184,166,0.12); color:#14b8a6; font-weight:700;">FREE</span>
-                            </div>
-                            <div style="font-size:11px; color:#64748b; margin-top:3px;">Simulated trades. BUY / SELL HUD visible. Elite analytics active.</div>
-                        </div>
-                    </label>
-
-                    <label class="mode-option ${currentMode === "shadow" ? "active" : ""}" data-mode="shadow" style="display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; cursor:pointer; border:1px solid ${currentMode === "shadow" ? "rgba(139,92,246,0.3)" : "rgba(255,255,255,0.06)"}; background:${currentMode === "shadow" ? "rgba(139,92,246,0.06)" : "transparent"};">
-                        <input type="radio" name="tradingMode" value="shadow" ${currentMode === "shadow" ? "checked" : ""} style="accent-color:#a78bfa;">
-                        <div style="flex:1;">
-                            <div style="font-size:12px; font-weight:600; color:#f8fafc; display:flex; align-items:center; gap:6px;">
-                                ${ICONS.MODE_SHADOW} Shadow Mode
-                                <span style="font-size:9px; padding:1px 6px; border-radius:3px; background:rgba(139,92,246,0.12); color:#a78bfa; font-weight:700;">ELITE</span>
-                            </div>
-                            <div style="font-size:11px; color:#64748b; margin-top:3px;">Observes real trades with elite behavioral analysis.</div>
-                        </div>
-                    </label>
-                    ` : `
-                    <label class="mode-option ${currentMode === "paper" ? "active" : ""}" data-mode="paper" style="display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; cursor:pointer; border:1px solid ${currentMode === "paper" ? "rgba(20,184,166,0.3)" : "rgba(255,255,255,0.06)"}; background:${currentMode === "paper" ? "rgba(20,184,166,0.06)" : "transparent"};">
-                        <input type="radio" name="tradingMode" value="paper" ${currentMode === "paper" ? "checked" : ""} style="accent-color:#14b8a6;">
+                    <label class="mode-option ${displayMode === "paper" ? "active" : ""}" data-mode="paper" style="display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; cursor:pointer; border:1px solid ${displayMode === "paper" ? "rgba(20,184,166,0.3)" : "rgba(255,255,255,0.06)"}; background:${displayMode === "paper" ? "rgba(20,184,166,0.06)" : "transparent"};">
+                        <input type="radio" name="tradingMode" value="paper" ${displayMode === "paper" ? "checked" : ""} style="accent-color:#14b8a6;">
                         <div style="flex:1;">
                             <div style="font-size:12px; font-weight:600; color:#f8fafc; display:flex; align-items:center; gap:6px;">
                                 ${ICONS.MODE_PAPER} Paper Mode
@@ -7933,8 +7908,8 @@ canvas#equity-canvas {
                         </div>
                     </label>
 
-                    <label class="mode-option ${currentMode === "analysis" ? "active" : ""}" data-mode="analysis" style="display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; cursor:pointer; border:1px solid ${currentMode === "analysis" ? "rgba(96,165,250,0.3)" : "rgba(255,255,255,0.06)"}; background:${currentMode === "analysis" ? "rgba(96,165,250,0.06)" : "transparent"};">
-                        <input type="radio" name="tradingMode" value="analysis" ${currentMode === "analysis" ? "checked" : ""} style="accent-color:#60a5fa;">
+                    <label class="mode-option ${displayMode === "analysis" ? "active" : ""}" data-mode="analysis" style="display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; cursor:pointer; border:1px solid ${displayMode === "analysis" ? "rgba(96,165,250,0.3)" : "rgba(255,255,255,0.06)"}; background:${displayMode === "analysis" ? "rgba(96,165,250,0.06)" : "transparent"};">
+                        <input type="radio" name="tradingMode" value="analysis" ${displayMode === "analysis" ? "checked" : ""} style="accent-color:#60a5fa;">
                         <div style="flex:1;">
                             <div style="font-size:12px; font-weight:600; color:#f8fafc; display:flex; align-items:center; gap:6px;">
                                 ${ICONS.MODE_ANALYSIS} Analysis Mode
@@ -7943,7 +7918,30 @@ canvas#equity-canvas {
                             <div style="font-size:11px; color:#64748b; margin-top:3px;">Observes real trades only. No BUY / SELL HUD.</div>
                         </div>
                     </label>
-                    `}
+
+                    <label class="mode-option ${displayMode === "paper-elite" ? "active" : ""}" data-mode="paper-elite" style="display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; cursor:pointer; border:1px solid ${displayMode === "paper-elite" ? "rgba(139,92,246,0.3)" : "rgba(255,255,255,0.06)"}; background:${displayMode === "paper-elite" ? "rgba(139,92,246,0.06)" : "transparent"}; ${!isElite ? "opacity:0.5;" : ""}">
+                        <input type="radio" name="tradingMode" value="paper-elite" ${displayMode === "paper-elite" ? "checked" : ""} ${!isElite ? "disabled" : ""} style="accent-color:#a78bfa;">
+                        <div style="flex:1;">
+                            <div style="font-size:12px; font-weight:600; color:#f8fafc; display:flex; align-items:center; gap:6px;">
+                                ${ICONS.MODE_PAPER} Paper Mode
+                                <span style="font-size:9px; padding:1px 6px; border-radius:3px; background:rgba(139,92,246,0.12); color:#a78bfa; font-weight:700;">ELITE</span>
+                                ${!isElite ? '<span style="font-size:10px; opacity:0.6;">&#128274;</span>' : ""}
+                            </div>
+                            <div style="font-size:11px; color:#64748b; margin-top:3px;">Simulated trades with elite analytics \u2014 discipline scoring, tilt detection, AI debrief, and cross-session trader profiling.</div>
+                        </div>
+                    </label>
+
+                    <label class="mode-option ${displayMode === "shadow" ? "active" : ""}" data-mode="shadow" style="display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; cursor:pointer; border:1px solid ${displayMode === "shadow" ? "rgba(139,92,246,0.3)" : "rgba(255,255,255,0.06)"}; background:${displayMode === "shadow" ? "rgba(139,92,246,0.06)" : "transparent"}; ${!isElite ? "opacity:0.5;" : ""}">
+                        <input type="radio" name="tradingMode" value="shadow" ${displayMode === "shadow" ? "checked" : ""} ${!isElite ? "disabled" : ""} style="accent-color:#a78bfa;">
+                        <div style="flex:1;">
+                            <div style="font-size:12px; font-weight:600; color:#f8fafc; display:flex; align-items:center; gap:6px;">
+                                ${ICONS.MODE_SHADOW} Shadow Mode
+                                <span style="font-size:9px; padding:1px 6px; border-radius:3px; background:rgba(139,92,246,0.12); color:#a78bfa; font-weight:700;">ELITE</span>
+                                ${!isElite ? '<span style="font-size:10px; opacity:0.6;">&#128274;</span>' : ""}
+                            </div>
+                            <div style="font-size:11px; color:#64748b; margin-top:3px;">Analyze real trades with elite behavioral analysis \u2014 discipline scoring, tilt detection, AI debrief, and trader profiling.</div>
+                        </div>
+                    </label>
                 </div>
 
                 <div class="setting-row">
@@ -8038,7 +8036,7 @@ canvas#equity-canvas {
                 `}
 
                 <div style="margin-top:20px; text-align:center; font-size:11px; color:#64748b;">
-                    ZER\xD8 v${Store.state.version || "1.11.6"}
+                    ZER\xD8 v${Store.state.version || "2.0.0"}
                 </div>
             </div>
         `;
@@ -8057,20 +8055,31 @@ canvas#equity-canvas {
           close();
       });
       const modeRadios = overlay.querySelectorAll('input[name="tradingMode"]');
+      const isEliteNow = FeatureManager.isElite(Store.state);
       modeRadios.forEach((radio) => {
         radio.onchange = async (e) => {
-          const newMode = e.target.value;
-          const success = await ModeManager.setMode(newMode);
+          const radioValue = e.target.value;
+          const actualMode = radioValue === "paper-elite" ? "paper" : radioValue;
+          if ((radioValue === "paper-elite" || radioValue === "shadow") && !isEliteNow) {
+            const currentDisplay = ModeManager.getMode() === "paper" && isEliteNow ? "paper-elite" : ModeManager.getMode();
+            const currentRadio = overlay.querySelector(`input[name="tradingMode"][value="${currentDisplay}"]`);
+            if (currentRadio)
+              currentRadio.checked = true;
+            this._showComingSoonModal(overlay, "SHADOW_HUD");
+            return;
+          }
+          const success = await ModeManager.setMode(actualMode);
           if (!success) {
-            const currentRadio = overlay.querySelector(`input[name="tradingMode"][value="${ModeManager.getMode()}"]`);
+            const currentDisplay = ModeManager.getMode() === "paper" && isEliteNow ? "paper-elite" : ModeManager.getMode();
+            const currentRadio = overlay.querySelector(`input[name="tradingMode"][value="${currentDisplay}"]`);
             if (currentRadio)
               currentRadio.checked = true;
             return;
           }
           overlay.querySelectorAll(".mode-option").forEach((opt) => {
             const mode = opt.getAttribute("data-mode");
-            const isActive = mode === newMode;
-            const colors = { paper: "20,184,166", analysis: "96,165,250", shadow: "139,92,246" };
+            const isActive = mode === radioValue;
+            const colors = { paper: "20,184,166", analysis: "96,165,250", "paper-elite": "139,92,246", shadow: "139,92,246" };
             const c = colors[mode] || colors.paper;
             opt.style.borderColor = isActive ? `rgba(${c},0.3)` : "rgba(255,255,255,0.06)";
             opt.style.background = isActive ? `rgba(${c},0.06)` : "transparent";
@@ -8207,7 +8216,7 @@ canvas#equity-canvas {
         clientId: "<redacted>",
         createdAt: Date.now(),
         schemaVersion: 3,
-        extensionVersion: Store.state.version || "1.11.6",
+        extensionVersion: Store.state.version || "2.0.0",
         eventsDelta: [
           { eventId: "evt_sample1", ts: Date.now() - 6e4, type: "SESSION_STARTED", platform: "AXIOM", payload: {} },
           { eventId: "evt_sample2", ts: Date.now() - 3e4, type: "TRADE_OPENED", platform: "AXIOM", payload: { side: "BUY", symbol: "TOKEN" } },
@@ -8395,6 +8404,11 @@ canvas#equity-canvas {
       });
     },
     bindPnlEvents(root) {
+      root.addEventListener("keydown", (e) => {
+        if (e.target.matches("input, select, textarea")) {
+          e.stopPropagation();
+        }
+      });
       root.addEventListener("click", async (e) => {
         const t = e.target;
         if (t.matches("input, label"))
@@ -8914,6 +8928,11 @@ canvas#equity-canvas {
       });
     },
     setupBuyHudInteractions(root) {
+      root.addEventListener("keydown", (e) => {
+        if (e.target.matches("input, select, textarea")) {
+          e.stopPropagation();
+        }
+      });
       root.addEventListener("click", async (e) => {
         const t = e.target;
         if (t.matches("input") || t.matches("select"))
@@ -10485,6 +10504,11 @@ canvas#equity-canvas {
           await Store.save();
         }
       });
+      root.addEventListener("keydown", (e) => {
+        if (e.target.matches("input, select, textarea")) {
+          e.stopPropagation();
+        }
+      });
       root.addEventListener("input", (e) => {
         if (e.target.matches(".sh-notes-textarea")) {
           const charCount = root.querySelector("[data-char-count]");
@@ -10696,7 +10720,7 @@ canvas#equity-canvas {
   (async () => {
     "use strict";
     const PLATFORM = "Axiom";
-    Logger.info(`ZER\xD8 v1.11.14 (${PLATFORM} Platform)`);
+    Logger.info(`ZER\xD8 v2.0.0 (${PLATFORM} Platform)`);
     TokenContextResolver.init(PLATFORM);
     try {
       Logger.info("Loading Store...");

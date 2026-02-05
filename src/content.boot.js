@@ -10,7 +10,7 @@ import { Logger } from './modules/logger.js';
 
 (async () => {
     "use strict";
-    Logger.info('ZERØ v1.11.14 (API-Driven Architecture)');
+    Logger.info('ZERØ v2.0.0 (API-Driven Architecture)');
 
     const PLATFORM = {
         isAxiom: window.location.hostname.includes('axiom.trade'),
