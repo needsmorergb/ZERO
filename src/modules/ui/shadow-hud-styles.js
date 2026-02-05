@@ -103,6 +103,61 @@ export const SHADOW_HUD_CSS = `
     border-top: 1px solid rgba(255, 255, 255, 0.04);
 }
 
+/* ===== Section Common (for Strategy & Notes — not inside .zero-market-context) ===== */
+#${IDS.shadowHud} .sh-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    cursor: pointer;
+    transition: background 0.15s;
+    user-select: none;
+}
+
+#${IDS.shadowHud} .sh-section-header:hover {
+    background: rgba(139, 92, 246, 0.04);
+}
+
+#${IDS.shadowHud} .sh-section-header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+#${IDS.shadowHud} .sh-section-icon {
+    color: #8b5cf6;
+    opacity: 0.7;
+    display: flex;
+    align-items: center;
+}
+
+#${IDS.shadowHud} .sh-section-title {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #94a3b8;
+}
+
+#${IDS.shadowHud} .sh-section-chevron {
+    color: #475569;
+    display: flex;
+    align-items: center;
+    transition: transform 0.2s;
+}
+
+#${IDS.shadowHud} .sh-section-chevron.expanded {
+    transform: rotate(180deg);
+}
+
+#${IDS.shadowHud} .sh-section-body {
+    padding: 0 14px 12px;
+}
+
+#${IDS.shadowHud} .sh-section-body.collapsed {
+    display: none;
+}
+
 /* ===== Strategy Section ===== */
 #${IDS.shadowHud} .sh-strategy-select {
     width: 100%;
