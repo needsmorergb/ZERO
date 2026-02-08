@@ -11643,6 +11643,10 @@ This level often precedes profit giveback.`
       if (discStatEl) {
         discStatEl.style.display = discFlags.visible && !discFlags.gated ? "" : "none";
       }
+      const disciplineEl = root.querySelector('[data-k="discipline"]');
+      if (disciplineEl) {
+        disciplineEl.textContent = s.session.disciplineScore ?? 100;
+      }
       const tokenSymbolEl = root.querySelector('[data-k="tokenSymbol"]');
       if (tokenSymbolEl) {
         const symbol = currentToken?.symbol || "TOKEN";
