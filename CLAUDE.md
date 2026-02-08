@@ -123,6 +123,7 @@ Sends `SHADOW_TRADE_DETECTED` via `window.postMessage` for the content script to
 - Bridge scripts run in page context — they cannot access `chrome.*` APIs
 - When editing `view-model.js`, always handle all FieldStatus variants (ok, pending, error, skipped)
 - For authority fields (`mintAuthority`, `freezeAuthority`), distinguish `null` (revoked) from `undefined` (not fetched) — they have different display meanings
+- HUD template values with `data-k="..."` attributes MUST have corresponding update code in `update*()` functions — if a value stays static (e.g., discipline stuck at 100), check that the update function reads from state and sets `.textContent`
 
 ## Behavioral Alert System
 
