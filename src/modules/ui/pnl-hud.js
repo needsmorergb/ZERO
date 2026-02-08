@@ -329,12 +329,18 @@ export const PnlHud = {
             streakEl.parentElement.className = winStreak > 0 ? "stat streak win" : "stat streak";
         }
 
-        // Update Discipline visibility — hide for Free users (gated)
+        // Update Discipline visibility and value
         const discFlags = FeatureManager.resolveFlags(s, 'DISCIPLINE_SCORING');
         const discStatEl = root.querySelector('.stat.discipline');
 
         if (discStatEl) {
             discStatEl.style.display = (discFlags.visible && !discFlags.gated) ? '' : 'none';
+        }
+
+        // Update discipline score value
+        const disciplineEl = root.querySelector('[data-k="discipline"]');
+        if (disciplineEl) {
+            disciplineEl.textContent = s.session.disciplineScore ?? 100;
         }
 
         // Update token symbol in title
